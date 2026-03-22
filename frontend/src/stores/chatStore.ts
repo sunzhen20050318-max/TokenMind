@@ -1,0 +1,340 @@
+import { create } from 'zustand';
+import type { Message, Session } from '../types';
+import { api } from '../services/api';
+
+export interface ToolCall {
+  id: string;
+  tool: string;
+  status: 'running' | 'completed' | 'error';
+  duration?: number;
+  timestamp: string;
+  turnId: string; // Associates this tool call with a specific user message timestamp
+}
+
+export interface ModelProvider {
+  id: string;
+  name: string;
+  enabled: boolean;
+  configured: boolean; // whether api_key/api_base is set
+  apiKeyMasked: string;
+  apiBase: string;
+  defaultModel: string;
+}
+
+interface ChatState {
+  currentSession: string | null;
+  messages: Message[];
+  sessions: Session[];
+  isLoading: boolean;
+  isConnected: boolean;
+  error: string | null;
+  activeTool: string | null;
+  currentTurnId: string | null; // The turnId for the current conversation turn
+  toolCalls: ToolCall[];
+  modelProviders: ModelProvider[];
+  activeModelId: string | null;
+
+  // Actions
+  setCurrentSession: (sessionId: string) => void;
+  addMessage: (message: Message) => void;
+  clearMessages: () => void;
+  setSessions: (sessions: Session[]) => void;
+  addSession: (session: Session) => void;
+  setLoading: (loading: boolean) => void;
+  setConnected: (connected: boolean) => void;
+  setError: (error: string | null) => void;
+  setActiveTool: (tool: string | null) => void;
+  addToolCall: (tool: string, toolId?: string) => string;
+  completeToolCall: (id: string, duration: number) => void;
+  completeAllRunningTools: (duration: number) => void;
+  clearToolCalls: () => void;
+  clearOldToolCalls: () => void;
+  setCurrentTurnId: (turnId: string | null) => void;
+  loadSessions: () => Promise<void>;
+  loadHistory: (sessionId: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
+  fetchModelProviders: () => Promise<void>;
+  setActiveModel: (providerId: string, model?: string) => Promise<void>;
+  updateProviderConfig: (providerId: string, config: { apiKey: string; apiBase: string }) => Promise<void>;
+}
+
+export const useChatStore = create<ChatState>((set, get) => ({
+  currentSession: null,
+  messages: [],
+  sessions: [],
+  isLoading: false,
+  isConnected: false,
+  error: null,
+  activeTool: null,
+  toolCalls: [],
+  currentTurnId: null,
+  modelProviders: [],
+  activeModelId: null,
+
+  setCurrentTurnId: (turnId) => {
+    set({ currentTurnId: turnId });
+  },
+
+  setCurrentSession: (sessionId) => {
+    // Add to sessions list if not exists
+    const { sessions } = get();
+    if (!sessions.find(s => s.session_id === sessionId)) {
+      const newSession: Session = {
+        session_id: sessionId,
+        message_count: 0,
+      };
+      set({ sessions: [newSession, ...sessions] });
+    }
+    set({ currentSession: sessionId, messages: [], error: null, activeTool: null, toolCalls: [], currentTurnId: null });
+    get().loadHistory(sessionId);
+  },
+
+  addMessage: (message) => {
+    set((state) => {
+      // Update message count for current session
+      const updatedSessions = state.sessions.map(s =>
+        s.session_id === state.currentSession
+          ? { ...s, message_count: s.message_count + 1 }
+          : s
+      );
+      return {
+        messages: [...state.messages, message],
+        sessions: updatedSessions,
+      };
+    });
+  },
+
+  clearMessages: () => {
+    set((state) => ({
+      messages: [],
+      sessions: state.sessions.map(s =>
+        s.session_id === state.currentSession
+          ? { ...s, message_count: 0 }
+          : s
+      ),
+    }));
+  },
+
+  setSessions: (sessions) => {
+    set({ sessions });
+  },
+
+  addSession: (session) => {
+    set((state) => ({
+      sessions: [session, ...state.sessions],
+    }));
+  },
+
+  setLoading: (isLoading) => {
+    set({ isLoading });
+  },
+
+  setConnected: (isConnected) => {
+    set({ isConnected });
+  },
+
+  setError: (error) => {
+    set({ error });
+  },
+
+  setActiveTool: (activeTool) => {
+    set({ activeTool });
+  },
+
+  addToolCall: (tool, toolId) => {
+    // Use provided toolId if available, otherwise generate one
+    const id = toolId || `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const state = get();
+    const currentTurnId = state.currentTurnId;
+
+    // Only check for duplicates within the current turn
+    if (currentTurnId) {
+      // Check if this tool with this exact ID is already running in current turn
+      if (state.toolCalls.some(tc => tc.id === id && tc.status === 'running' && tc.turnId === currentTurnId)) {
+        return id;
+      }
+      // Also check if this tool name is already running in current turn (dedup by name)
+      if (state.toolCalls.some(tc => tc.tool === tool && tc.status === 'running' && tc.turnId === currentTurnId)) {
+        return state.toolCalls.find(tc => tc.tool === tool && tc.status === 'running' && tc.turnId === currentTurnId)?.id || '';
+      }
+    }
+
+    const newCall: ToolCall = {
+      id,
+      tool,
+      status: 'running',
+      timestamp: new Date().toISOString(),
+      turnId: currentTurnId || '',
+    };
+    set((state) => ({ toolCalls: [...state.toolCalls, newCall] }));
+    return id;
+  },
+
+  completeToolCall: (id, duration) => {
+    set((state) => ({
+      toolCalls: state.toolCalls.map((tc) =>
+        tc.id === id ? { ...tc, status: 'completed' as const, duration } : tc
+      ),
+    }));
+  },
+
+  completeAllRunningTools: (duration) => {
+    // Only complete tools for the current turn
+    set((state) => ({
+      toolCalls: state.toolCalls.map((tc) =>
+        tc.status === 'running' && tc.turnId === state.currentTurnId
+          ? { ...tc, status: 'completed' as const, duration }
+          : tc
+      ),
+    }));
+  },
+
+  clearToolCalls: () => {
+    set({ toolCalls: [] });
+  },
+
+  // Clear only tool calls from previous turns (not the current one)
+  clearOldToolCalls: () => {
+    const state = get();
+    set({
+      toolCalls: state.toolCalls.filter(tc => tc.turnId === state.currentTurnId || tc.turnId === '')
+    });
+  },
+
+  loadSessions: async () => {
+    try {
+      const { sessions } = await api.listSessions();
+      set({ sessions });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load sessions' });
+    }
+  },
+
+  loadHistory: async (sessionId) => {
+    try {
+      set({ isLoading: true });
+      const { messages } = await api.getHistory(sessionId);
+      set({ messages, isLoading: false });
+    } catch (e) {
+      // Session might not exist yet, that's ok
+      set({ messages: [], isLoading: false });
+    }
+  },
+
+  deleteSession: async (sessionId) => {
+    try {
+      await api.deleteSession(sessionId);
+      set((state) => ({
+        sessions: state.sessions.filter((s) => s.session_id !== sessionId),
+        currentSession: state.currentSession === sessionId ? null : state.currentSession,
+      }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to delete session' });
+    }
+  },
+
+  fetchModelProviders: async () => {
+    try {
+      const res = await fetch('/api/config');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const providers = data.providers || {};
+      const defaultProvider = data.defaults?.provider;
+
+      const PROVIDER_NAMES: Record<string, string> = {
+        deepseek: 'Deepseek',
+        openrouter: 'OpenRouter',
+        anthropic: 'Anthropic',
+        openai: 'OpenAI',
+        gemini: 'Gemini',
+        zhipu: 'Zhipu',
+        dashscope: 'DashScope',
+        moonshot: 'Moonshot',
+        minimax: 'MiniMax',
+        ollama: 'Ollama',
+        vllm: 'vLLM',
+        groq: 'Groq',
+        github_copilot: 'GitHub Copilot',
+        openai_codex: 'OpenAI Codex',
+        azure_openai: 'Azure OpenAI',
+        custom: 'Custom',
+        aihubmix: 'AiHubMix',
+        siliconflow: 'SiliconFlow',
+        volcengine: 'VolcEngine',
+        byteplus: 'BytePlus',
+      };
+
+      // Show ALL providers from registry, mark configured ones
+      const ALL_PROVIDER_IDS = Object.keys(PROVIDER_NAMES);
+      const modelProviders: ModelProvider[] = ALL_PROVIDER_IDS.map((id) => {
+        const p = (providers as Record<string, any>)[id];
+        const isConfigured = p && (p.api_key !== '****' && p.api_key !== '' || p.api_base);
+        return {
+          id,
+          name: PROVIDER_NAMES[id],
+          enabled: id === defaultProvider,
+          configured: !!isConfigured,
+          apiKeyMasked: p?.api_key || '',
+          apiBase: p?.api_base || '',
+          defaultModel: p?.default_model || '',
+        };
+      });
+
+      set({
+        modelProviders,
+        activeModelId: defaultProvider || null,
+      });
+    } catch (e) {
+      console.error('fetchModelProviders failed:', e);
+    }
+  },
+
+  setActiveModel: async (providerId, model) => {
+    try {
+      const body: Record<string, string> = { provider: providerId };
+      if (model) body.model = model;
+      await fetch('/api/config/defaults', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      set((state) => ({
+        activeModelId: providerId,
+        modelProviders: state.modelProviders.map((p) => ({
+          ...p,
+          enabled: p.id === providerId,
+        })),
+      }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to set active model' });
+    }
+  },
+
+  updateProviderConfig: async (providerId, config) => {
+    try {
+      await fetch(`/api/config/providers/${providerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: config.apiKey || undefined,
+          api_base: config.apiBase || undefined,
+        }),
+      });
+      set((state) => ({
+        modelProviders: state.modelProviders.map((p) =>
+          p.id === providerId
+            ? {
+                ...p,
+                configured: true,
+                apiKeyMasked: config.apiKey ? '********' : p.apiKeyMasked,
+                apiBase: config.apiBase || p.apiBase,
+              }
+            : p
+        ),
+      }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to update provider config' });
+    }
+  },
+}));
