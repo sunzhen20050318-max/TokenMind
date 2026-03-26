@@ -1,7 +1,7 @@
 # sun-agent
 
 <p align="center">
-  <img src="sun-agent_logo.png" alt="sun-agent logo" width="260" />
+  <img src="sun-agent_logo.png" alt="sun-agent logo" width="920" />
 </p>
 
 <p align="center">
