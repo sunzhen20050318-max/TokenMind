@@ -2,7 +2,11 @@ import React from 'react';
 import { useChatStore } from '../../stores/chatStore';
 
 export const Header: React.FC = () => {
-  const { isConnected } = useChatStore();
+  const { isConnected, currentSession, sessions, activeModelId, modelProviders } = useChatStore();
+  const currentSessionMeta = sessions.find((session) => session.session_id === currentSession);
+  const currentModel = activeModelId
+    ? modelProviders.find((provider) => provider.id === activeModelId)?.name || activeModelId
+    : 'No model selected';
 
   return (
     <div
@@ -28,16 +32,21 @@ export const Header: React.FC = () => {
           <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
         </svg>
         <span style={{ fontSize: '16px', fontWeight: 600, color: '#fff' }}>sun-agent</span>
+        <div style={{ fontSize: '12px', color: '#707070' }}>
+          {currentSessionMeta?.title || currentSessionMeta?.first_message || 'Ready for a new conversation'}
+        </div>
       </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontSize: '12px',
-          color: '#8e8e93',
-        }}
-      >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ fontSize: '12px', color: '#8e8e93' }}>{currentModel}</div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '12px',
+            color: '#8e8e93',
+          }}
+        >
         <span
           style={{
             width: '8px',
@@ -48,6 +57,7 @@ export const Header: React.FC = () => {
           }}
         />
         {isConnected ? 'Connected' : 'Disconnected'}
+        </div>
       </div>
     </div>
   );

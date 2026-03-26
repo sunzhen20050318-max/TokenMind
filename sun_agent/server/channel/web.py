@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from textwrap import wrap
 from typing import Any
 
 from loguru import logger
@@ -115,18 +116,56 @@ class WebChannel(BaseChannel):
                 )
                 return
             # Skip regular progress messages
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "progress",
+                    "content": msg.content,
+                    "channel": msg.channel,
+                },
+            )
             return
 
-        # Forward to WebSocket manager
+        # Forward to WebSocket manager as chunked response events so the
+        # frontend can render a streaming-style reply incrementally.
         logger.info("Sending RESP: {}", msg.content[:50] if msg.content else "")
         await self._ws_manager.send_to_session(
             session_key=msg.chat_id,
             message={
-                "type": "response",
+                "type": "response_start",
+                "channel": msg.channel,
+            },
+        )
+        for chunk in self._iter_response_chunks(msg.content):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "response_delta",
+                    "content": chunk,
+                    "channel": msg.channel,
+                },
+            )
+        await self._ws_manager.send_to_session(
+            session_key=msg.chat_id,
+            message={
+                "type": "response_end",
                 "content": msg.content,
                 "channel": msg.channel,
             },
         )
+
+    @staticmethod
+    def _iter_response_chunks(content: str, chunk_size: int = 48) -> list[str]:
+        """Split a final response into UI-friendly chunks."""
+        if not content:
+            return [""]
+        chunks: list[str] = []
+        for line in content.splitlines(keepends=True):
+            if len(line) <= chunk_size:
+                chunks.append(line)
+                continue
+            chunks.extend(wrap(line, width=chunk_size, replace_whitespace=False, drop_whitespace=False))
+        return chunks or [content]
 
     async def handle_inbound(
         self,

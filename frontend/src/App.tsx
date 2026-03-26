@@ -28,7 +28,7 @@ const App: React.FC = () => {
       <Header />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Sidebar />
-        <main style={{ flex: 1, overflow: 'hidden' }}>
+        <main style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
           {currentSession ? (
             <ChatWindow sessionId={currentSession} />
           ) : (

@@ -2,10 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 
 interface InputAreaProps {
   onSend: (message: string) => void;
+  onStop?: () => void;
   disabled?: boolean;
+  isStreaming?: boolean;
 }
 
-export const InputArea: React.FC<InputAreaProps> = ({ onSend, disabled }) => {
+export const InputArea: React.FC<InputAreaProps> = ({ onSend, onStop, disabled, isStreaming }) => {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -106,6 +108,24 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSend, disabled }) => {
           <polyline points="5 12 12 5 19 12"></polyline>
         </svg>
       </button>
+      {isStreaming && (
+        <button
+          type="button"
+          onClick={onStop}
+          style={{
+            padding: '0 14px',
+            height: '36px',
+            borderRadius: '999px',
+            border: '1px solid #3a3a3a',
+            backgroundColor: '#171717',
+            color: '#f2f2f2',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
+          Stop
+        </button>
+      )}
     </form>
   );
 };

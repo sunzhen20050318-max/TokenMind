@@ -70,6 +70,12 @@ class WebSocketService {
     }
   }
 
+  stop(): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'stop' }));
+    }
+  }
+
   ping(): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'ping' }));

@@ -70,6 +70,20 @@ async def websocket_handler(
                 )
                 await inbound_queue.put(msg)
 
+            elif msg_type == "stop":
+                from sun_agent.bus.events import InboundMessage
+
+                msg = InboundMessage(
+                    channel="web",
+                    sender_id="web_user",
+                    chat_id=session_key,
+                    content="/stop",
+                    media=[],
+                    metadata={"websocket": True, "control": "stop"},
+                    session_key_override=session_key,
+                )
+                await inbound_queue.put(msg)
+
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
 

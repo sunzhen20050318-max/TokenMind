@@ -38,7 +38,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **SessionManager** (`sun_agent/session/manager.py`): Conversation session persistence
 - **ContextBuilder** (`sun_agent/agent/context.py`): Builds prompts from history, memory, skills
 - **Providers** (`sun_agent/providers/`): LLM provider integrations via LiteLLM, plus custom providers for OpenAI Codex, Azure OpenAI, and direct OpenAI-compatible endpoints
-- **Skills** (`sun_agent/skills/`): Bundled agent skills (github, weather, tmux, cron, memory, summarize, clawhub, skill-creator). Each skill has a `SKILL.md` that defines its prompts and capabilities
+- **Skills** (`sun_agent/skills/`): Bundled agent skills (github, weather, tmux, cron, memory, summarize, clawhub, skill-creator, frontend-webapp-builder). Each skill has a `SKILL.md` that defines its prompts and capabilities
 
 ### Web UI Stack
 

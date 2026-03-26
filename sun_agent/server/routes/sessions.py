@@ -18,6 +18,7 @@ class SessionInfo(BaseModel):
     created_at: str | None = None
     message_count: int = 0
     first_message: str | None = None
+    title: str | None = None
 
 
 class SessionListResponse(BaseModel):
@@ -31,6 +32,19 @@ class ClearHistoryResponse(BaseModel):
 
     session_id: str
     success: bool
+
+
+class RenameSessionRequest(BaseModel):
+    """Request model for renaming a session."""
+
+    title: str | None = None
+
+
+class RenameSessionResponse(BaseModel):
+    """Response model for renaming a session."""
+
+    session_id: str
+    title: str | None = None
 
 
 def get_chat_service():
@@ -77,5 +91,19 @@ async def clear_session_history(
     try:
         success = await service.clear_history(session_id)
         return ClearHistoryResponse(session_id=session_id, success=success)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.put("/{session_id}", response_model=RenameSessionResponse)
+async def rename_session(
+    session_id: str,
+    request: RenameSessionRequest,
+    service=Depends(get_chat_service),
+):
+    """Rename a session."""
+    try:
+        result = await service.rename_session(session_id, request.title)
+        return RenameSessionResponse(**result)
     except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")

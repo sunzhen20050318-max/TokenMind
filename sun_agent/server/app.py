@@ -95,10 +95,13 @@ class ChatService:
                 "tools_used": tools_used or [],
             })
 
-    async def get_history(self, session_id: str) -> list[dict]:
+    async def get_history(self, session_id: str) -> dict:
         """Get chat history for a session."""
         session = self.session_manager.get_or_create(session_id)
-        return session.messages if session else []
+        return {
+            "messages": session.messages if session else [],
+            "timeline_events": session.timeline_events if session else [],
+        }
 
     async def list_sessions(self) -> list[dict]:
         """List all sessions."""
@@ -120,6 +123,7 @@ class ChatService:
                 "created_at": session.created_at.isoformat() if session else None,
                 "message_count": len(session.messages) if session else 0,
                 "first_message": first_message,
+                "title": session.title if session else s.get("title"),
             })
         return result
 
@@ -137,10 +141,20 @@ class ChatService:
         """Clear history for a session."""
         session = self.session_manager.get_or_create(session_id)
         if session:
-            session.messages = []
+            session.clear()
             self.session_manager.save(session)
             return True
         return False
+
+    async def rename_session(self, session_id: str, title: str | None) -> dict:
+        """Rename a session by updating its user-facing title."""
+        session = self.session_manager.get_or_create(session_id)
+        session.set_title(title)
+        self.session_manager.save(session)
+        return {
+            "session_id": session_id,
+            "title": session.title,
+        }
 
 
 @asynccontextmanager

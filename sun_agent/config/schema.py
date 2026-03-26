@@ -53,6 +53,7 @@ class ProviderConfig(Base):
     api_key: str = ""
     api_base: str | None = None
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
+    default_model: str | None = None
 
 
 class ProvidersConfig(Base):

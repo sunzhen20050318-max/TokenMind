@@ -11,6 +11,17 @@ export interface ToolCall {
   turnId: string; // Associates this tool call with a specific user message timestamp
 }
 
+export interface TimelineEvent {
+  id: string;
+  type: 'progress' | 'tool_start' | 'tool_end';
+  content: string;
+  timestamp: string;
+  turnId: string;
+  toolId?: string;
+  toolName?: string;
+  duration?: number;
+}
+
 export interface ModelProvider {
   id: string;
   name: string;
@@ -31,6 +42,7 @@ interface ChatState {
   activeTool: string | null;
   currentTurnId: string | null; // The turnId for the current conversation turn
   toolCalls: ToolCall[];
+  timelineEvents: TimelineEvent[];
   modelProviders: ModelProvider[];
   activeModelId: string | null;
 
@@ -49,10 +61,16 @@ interface ChatState {
   completeAllRunningTools: (duration: number) => void;
   clearToolCalls: () => void;
   clearOldToolCalls: () => void;
+  addTimelineEvent: (event: Omit<TimelineEvent, 'id' | 'timestamp' | 'turnId'>) => void;
+  clearOldTimelineEvents: () => void;
   setCurrentTurnId: (turnId: string | null) => void;
   loadSessions: () => Promise<void>;
   loadHistory: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  renameSession: (sessionId: string, title: string | null) => Promise<void>;
+  startStreamingAssistant: () => void;
+  appendStreamingAssistant: (chunk: string) => void;
+  finishStreamingAssistant: (content?: string) => void;
   fetchModelProviders: () => Promise<void>;
   setActiveModel: (providerId: string, model?: string) => Promise<void>;
   updateProviderConfig: (providerId: string, config: { apiKey: string; apiBase: string }) => Promise<void>;
@@ -67,6 +85,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   activeTool: null,
   toolCalls: [],
+  timelineEvents: [],
   currentTurnId: null,
   modelProviders: [],
   activeModelId: null,
@@ -85,7 +104,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       set({ sessions: [newSession, ...sessions] });
     }
-    set({ currentSession: sessionId, messages: [], error: null, activeTool: null, toolCalls: [], currentTurnId: null });
+    set({
+      currentSession: sessionId,
+      messages: [],
+      error: null,
+      activeTool: null,
+      toolCalls: [],
+      timelineEvents: [],
+      currentTurnId: null,
+    });
     get().loadHistory(sessionId);
   },
 
@@ -202,6 +229,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
+  addTimelineEvent: (event) => {
+    const turnId = get().currentTurnId || '';
+    const newEvent: TimelineEvent = {
+      id: `timeline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: new Date().toISOString(),
+      turnId,
+      ...event,
+    };
+    set((state) => ({ timelineEvents: [...state.timelineEvents, newEvent] }));
+  },
+
+  clearOldTimelineEvents: () => {
+    const state = get();
+    set({
+      timelineEvents: state.timelineEvents.filter(
+        (evt) => evt.turnId === state.currentTurnId || evt.turnId === ''
+      ),
+    });
+  },
+
   loadSessions: async () => {
     try {
       const { sessions } = await api.listSessions();
@@ -214,11 +261,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadHistory: async (sessionId) => {
     try {
       set({ isLoading: true });
-      const { messages } = await api.getHistory(sessionId);
-      set({ messages, isLoading: false });
+      const { messages, timeline_events } = await api.getHistory(sessionId);
+      set({
+        messages,
+        timelineEvents: timeline_events || [],
+        toolCalls: [],
+        currentTurnId: null,
+        isLoading: false,
+      });
     } catch (e) {
       // Session might not exist yet, that's ok
-      set({ messages: [], isLoading: false });
+      set({ messages: [], timelineEvents: [], toolCalls: [], isLoading: false });
     }
   },
 
@@ -232,6 +285,91 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to delete session' });
     }
+  },
+
+  renameSession: async (sessionId, title) => {
+    try {
+      const result = await api.renameSession(sessionId, title);
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.session_id === sessionId
+            ? { ...session, title: result.title || undefined }
+            : session
+        ),
+      }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to rename session' });
+    }
+  },
+
+  startStreamingAssistant: () => {
+    set((state) => ({
+      messages: [
+        ...state.messages,
+        {
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toISOString(),
+          isStreaming: true,
+        },
+      ],
+    }));
+  },
+
+  appendStreamingAssistant: (chunk) => {
+    set((state) => {
+      const messages = [...state.messages];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant' && messages[i].isStreaming) {
+          messages[i] = {
+            ...messages[i],
+            content: `${messages[i].content}${chunk}`,
+          };
+          return { messages };
+        }
+      }
+      return {
+        messages: [
+          ...state.messages,
+          {
+            role: 'assistant',
+            content: chunk,
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          },
+        ],
+      };
+    });
+  },
+
+  finishStreamingAssistant: (content) => {
+    set((state) => {
+      const messages = [...state.messages];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant' && messages[i].isStreaming) {
+          messages[i] = {
+            ...messages[i],
+            content: content ?? messages[i].content,
+            isStreaming: false,
+          };
+          return { messages };
+        }
+      }
+      if (content) {
+        return {
+          messages: [
+            ...state.messages,
+            {
+              role: 'assistant',
+              content,
+              timestamp: new Date().toISOString(),
+              isStreaming: false,
+            },
+          ],
+        };
+      }
+      return state;
+    });
   },
 
   fetchModelProviders: async () => {

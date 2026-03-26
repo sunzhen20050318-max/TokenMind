@@ -4,6 +4,15 @@ import type {
   Session,
   StatusResponse,
 } from '../types';
+import type {
+  AgentSettingsUpdate,
+  AppConfigResponse,
+  McpServerSettingsUpdate,
+  McpToolsResponse,
+  ProviderSettingsUpdate,
+  RuntimeSettingsUpdate,
+  ToolsSettingsUpdate,
+} from '../types/config';
 
 const API_BASE = '/api';
 
@@ -62,6 +71,136 @@ export const api = {
     const res = await fetch(`${API_BASE}/status`);
     if (!res.ok) {
       throw new Error(`Failed to get status: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async renameSession(
+    sessionId: string,
+    title: string | null
+  ): Promise<{ session_id: string; title: string | null }> {
+    const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to rename session: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getConfig(): Promise<AppConfigResponse> {
+    const res = await fetch(`${API_BASE}/config`);
+    if (!res.ok) {
+      throw new Error(`Failed to get config: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getMcpTools(): Promise<McpToolsResponse> {
+    const res = await fetch(`${API_BASE}/config/mcp-tools`);
+    if (res.status === 404) {
+      throw new Error('当前后端还没有加载 MCP 工具探测接口，请重启后端后再试');
+    }
+    if (!res.ok) {
+      throw new Error(`Failed to inspect MCP tools: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateProviderConfig(
+    providerId: string,
+    config: ProviderSettingsUpdate
+  ): Promise<{ success: boolean; provider: string; config: AppConfigResponse['providers'][string] }> {
+    const res = await fetch(`${API_BASE}/config/providers/${encodeURIComponent(providerId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update provider config: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateDefaults(
+    update: Partial<Pick<AppConfigResponse['agent'], 'model' | 'provider'>>
+  ): Promise<{ success: boolean; defaults: { model: string; provider: string } }> {
+    const res = await fetch(`${API_BASE}/config/defaults`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update defaults: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateAgentConfig(
+    update: AgentSettingsUpdate
+  ): Promise<{ success: boolean; agent: AppConfigResponse['agent'] }> {
+    const res = await fetch(`${API_BASE}/config/agent`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update agent config: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateToolsConfig(
+    update: ToolsSettingsUpdate
+  ): Promise<{ success: boolean; tools: AppConfigResponse['tools'] }> {
+    const res = await fetch(`${API_BASE}/config/tools`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update tools config: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateRuntimeConfig(
+    update: RuntimeSettingsUpdate
+  ): Promise<{ success: boolean; runtime: AppConfigResponse['runtime'] }> {
+    const res = await fetch(`${API_BASE}/config/runtime`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update runtime config: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async upsertMcpServer(
+    serverName: string,
+    update: McpServerSettingsUpdate
+  ): Promise<{ success: boolean; server_name: string; server: AppConfigResponse['tools']['mcp_servers'][string] }> {
+    const res = await fetch(`${API_BASE}/config/mcp-servers/${encodeURIComponent(serverName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update MCP server: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async deleteMcpServer(serverName: string): Promise<{ success: boolean; server_name: string }> {
+    const res = await fetch(`${API_BASE}/config/mcp-servers/${encodeURIComponent(serverName)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to delete MCP server: ${res.statusText}`);
     }
     return res.json();
   },

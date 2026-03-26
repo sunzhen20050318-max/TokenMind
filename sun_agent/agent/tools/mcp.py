@@ -11,6 +11,136 @@ from sun_agent.agent.tools.base import Tool
 from sun_agent.agent.tools.registry import ToolRegistry
 
 
+def _resolve_transport_type(cfg: Any) -> str:
+    """Resolve MCP transport type from config."""
+    transport_type = getattr(cfg, "type", None)
+    if transport_type:
+        return transport_type
+
+    if getattr(cfg, "command", ""):
+        return "stdio"
+
+    if getattr(cfg, "url", ""):
+        return "sse" if str(cfg.url).rstrip("/").endswith("/sse") else "streamableHttp"
+
+    raise ValueError("no command or url configured")
+
+
+async def _open_mcp_transport(cfg: Any, transport_type: str, stack: AsyncExitStack):
+    """Open an MCP transport and return the reader/writer pair."""
+    from mcp import StdioServerParameters
+    from mcp.client.sse import sse_client
+    from mcp.client.stdio import stdio_client
+    from mcp.client.streamable_http import streamable_http_client
+
+    if transport_type == "stdio":
+        params = StdioServerParameters(
+            command=cfg.command,
+            args=cfg.args,
+            env=cfg.env or None,
+        )
+        return await stack.enter_async_context(stdio_client(params))
+
+    if transport_type == "sse":
+
+        def httpx_client_factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx.Timeout | None = None,
+            auth: httpx.Auth | None = None,
+        ) -> httpx.AsyncClient:
+            merged_headers = {**(cfg.headers or {}), **(headers or {})}
+            return httpx.AsyncClient(
+                headers=merged_headers or None,
+                follow_redirects=True,
+                timeout=timeout,
+                auth=auth,
+            )
+
+        return await stack.enter_async_context(
+            sse_client(cfg.url, httpx_client_factory=httpx_client_factory)
+        )
+
+    if transport_type == "streamableHttp":
+        # Always provide an explicit httpx client so MCP HTTP transport does not
+        # inherit httpx's default 5s timeout and preempt the higher-level tool timeout.
+        http_client = await stack.enter_async_context(
+            httpx.AsyncClient(
+                headers=cfg.headers or None,
+                follow_redirects=True,
+                timeout=None,
+            )
+        )
+        read, write, _ = await stack.enter_async_context(
+            streamable_http_client(cfg.url, http_client=http_client)
+        )
+        return read, write
+
+    raise ValueError(f"unknown transport type '{transport_type}'")
+
+
+async def inspect_mcp_servers(mcp_servers: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Inspect configured MCP servers and return their discovered tool catalogs."""
+    from mcp import ClientSession
+
+    discovered: dict[str, dict[str, Any]] = {}
+
+    for server_name, cfg in mcp_servers.items():
+        result: dict[str, Any] = {
+            "status": "error",
+            "transport_type": None,
+            "tool_count": 0,
+            "enabled_count": 0,
+            "tools": [],
+            "error": None,
+        }
+
+        try:
+            transport_type = _resolve_transport_type(cfg)
+            result["transport_type"] = transport_type
+
+            async with AsyncExitStack() as stack:
+                read, write = await _open_mcp_transport(cfg, transport_type, stack)
+                session = await stack.enter_async_context(ClientSession(read, write))
+                await session.initialize()
+                tools = await session.list_tools()
+
+            enabled_tools = set(getattr(cfg, "enabled_tools", []) or [])
+            allow_all_tools = "*" in enabled_tools
+            discovered_tools = []
+            for tool_def in tools.tools:
+                wrapped_name = f"mcp_{server_name}_{tool_def.name}"
+                enabled = (
+                    allow_all_tools
+                    or tool_def.name in enabled_tools
+                    or wrapped_name in enabled_tools
+                )
+                discovered_tools.append(
+                    {
+                        "name": tool_def.name,
+                        "wrapped_name": wrapped_name,
+                        "description": tool_def.description or "",
+                        "enabled": enabled,
+                    }
+                )
+
+            discovered_tools.sort(key=lambda item: (not item["enabled"], item["name"]))
+            result.update(
+                {
+                    "status": "connected",
+                    "tool_count": len(discovered_tools),
+                    "enabled_count": sum(1 for tool in discovered_tools if tool["enabled"]),
+                    "tools": discovered_tools,
+                }
+            )
+        except Exception as exc:
+            logger.error("MCP server '{}': failed to inspect tools: {}", server_name, exc)
+            result["error"] = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+
+        discovered[server_name] = result
+
+    return discovered
+
+
 class MCPToolWrapper(Tool):
     """Wraps a single MCP server tool as a sun_agent Tool."""
 
@@ -75,64 +205,17 @@ async def connect_mcp_servers(
     mcp_servers: dict, registry: ToolRegistry, stack: AsyncExitStack
 ) -> None:
     """Connect to configured MCP servers and register their tools."""
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.sse import sse_client
-    from mcp.client.stdio import stdio_client
-    from mcp.client.streamable_http import streamable_http_client
+    from mcp import ClientSession
 
     for name, cfg in mcp_servers.items():
         try:
-            transport_type = cfg.type
-            if not transport_type:
-                if cfg.command:
-                    transport_type = "stdio"
-                elif cfg.url:
-                    # Convention: URLs ending with /sse use SSE transport; others use streamableHttp
-                    transport_type = (
-                        "sse" if cfg.url.rstrip("/").endswith("/sse") else "streamableHttp"
-                    )
-                else:
-                    logger.warning("MCP server '{}': no command or url configured, skipping", name)
-                    continue
-
-            if transport_type == "stdio":
-                params = StdioServerParameters(
-                    command=cfg.command, args=cfg.args, env=cfg.env or None
-                )
-                read, write = await stack.enter_async_context(stdio_client(params))
-            elif transport_type == "sse":
-                def httpx_client_factory(
-                    headers: dict[str, str] | None = None,
-                    timeout: httpx.Timeout | None = None,
-                    auth: httpx.Auth | None = None,
-                ) -> httpx.AsyncClient:
-                    merged_headers = {**(cfg.headers or {}), **(headers or {})}
-                    return httpx.AsyncClient(
-                        headers=merged_headers or None,
-                        follow_redirects=True,
-                        timeout=timeout,
-                        auth=auth,
-                    )
-
-                read, write = await stack.enter_async_context(
-                    sse_client(cfg.url, httpx_client_factory=httpx_client_factory)
-                )
-            elif transport_type == "streamableHttp":
-                # Always provide an explicit httpx client so MCP HTTP transport does not
-                # inherit httpx's default 5s timeout and preempt the higher-level tool timeout.
-                http_client = await stack.enter_async_context(
-                    httpx.AsyncClient(
-                        headers=cfg.headers or None,
-                        follow_redirects=True,
-                        timeout=None,
-                    )
-                )
-                read, write, _ = await stack.enter_async_context(
-                    streamable_http_client(cfg.url, http_client=http_client)
-                )
-            else:
-                logger.warning("MCP server '{}': unknown transport type '{}'", name, transport_type)
+            try:
+                transport_type = _resolve_transport_type(cfg)
+            except ValueError:
+                logger.warning("MCP server '{}': no command or url configured, skipping", name)
                 continue
+
+            read, write = await _open_mcp_transport(cfg, transport_type, stack)
 
             session = await stack.enter_async_context(ClientSession(read, write))
             await session.initialize()

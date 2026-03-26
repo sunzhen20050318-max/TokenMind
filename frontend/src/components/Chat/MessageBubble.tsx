@@ -62,55 +62,71 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           border: isUser ? 'none' : '1px solid #2a2a2a',
         }}
       >
-        <ReactMarkdown
-          components={{
-            p: ({ children }) => <p style={{ margin: '0' }}>{children}</p>,
-            ul: ({ children }) => (
-              <ul style={{ margin: '4px 0', paddingLeft: '18px' }}>{children}</ul>
-            ),
-            ol: ({ children }) => (
-              <ol style={{ margin: '4px 0', paddingLeft: '18px' }}>{children}</ol>
-            ),
-            li: ({ children }) => (
-              <li style={{ margin: '2px 0' }}>{children}</li>
-            ),
-            code: ({ children, ...props }) => {
-              const inline = !(props as any).node?.properties?.directive;
-              return inline ? (
-                <code
+        <div style={{ display: 'inline' }}>
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => <p style={{ margin: '0' }}>{children}</p>,
+              ul: ({ children }) => (
+                <ul style={{ margin: '4px 0', paddingLeft: '18px' }}>{children}</ul>
+              ),
+              ol: ({ children }) => (
+                <ol style={{ margin: '4px 0', paddingLeft: '18px' }}>{children}</ol>
+              ),
+              li: ({ children }) => (
+                <li style={{ margin: '2px 0' }}>{children}</li>
+              ),
+              code: ({ children, ...props }) => {
+                const inline = !(props as any).node?.properties?.directive;
+                return inline ? (
+                  <code
+                    style={{
+                      backgroundColor: isUser ? '#f0f0f0' : '#0a0a0a',
+                      padding: '2px 5px',
+                      borderRadius: '4px',
+                      fontSize: '12.5px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      color: isUser ? '#0066cc' : '#a0a0a0',
+                    }}
+                  >
+                    {children}
+                  </code>
+                ) : (
+                  <code>{children}</code>
+                );
+              },
+              pre: ({ children }) => (
+                <pre
                   style={{
-                    backgroundColor: isUser ? '#f0f0f0' : '#0a0a0a',
-                    padding: '2px 5px',
-                    borderRadius: '4px',
-                    fontSize: '12.5px',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                    color: isUser ? '#0066cc' : '#a0a0a0',
+                    backgroundColor: '#0a0a0a',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    overflow: 'auto',
+                    margin: '6px 0',
+                    border: '1px solid #2a2a2a',
                   }}
                 >
                   {children}
-                </code>
-              ) : (
-                <code>{children}</code>
-              );
-            },
-            pre: ({ children }) => (
-              <pre
-                style={{
-                  backgroundColor: '#0a0a0a',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  overflow: 'auto',
-                  margin: '6px 0',
-                  border: '1px solid #2a2a2a',
-                }}
-              >
-                {children}
-              </pre>
-            ),
-          }}
-        >
-          {message.content}
-        </ReactMarkdown>
+                </pre>
+              ),
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+          {message.isStreaming && (
+            <span
+              style={{
+                display: 'inline-block',
+                width: '8px',
+                height: '1em',
+                marginLeft: '3px',
+                verticalAlign: 'text-bottom',
+                backgroundColor: isUser ? '#111' : '#7f7f7f',
+                opacity: 0.9,
+                animation: 'blink 1s steps(1) infinite',
+              }}
+            />
+          )}
+        </div>
       </div>
       {isUser && (
         <div
@@ -134,6 +150,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes blink {
+          50% { opacity: 0; }
         }
       `}</style>
     </div>

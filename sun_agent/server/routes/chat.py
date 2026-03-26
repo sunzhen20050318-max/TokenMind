@@ -30,6 +30,7 @@ class ChatHistoryResponse(BaseModel):
 
     session_id: str
     messages: list[dict[str, Any]]
+    timeline_events: list[dict[str, Any]] = []
 
 
 def get_chat_service():
@@ -77,7 +78,8 @@ async def get_chat_history(
         history = await service.get_history(session_id)
         return ChatHistoryResponse(
             session_id=session_id,
-            messages=history,
+            messages=history.get("messages", []),
+            timeline_events=history.get("timeline_events", []),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

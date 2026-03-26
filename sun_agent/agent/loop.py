@@ -489,6 +489,7 @@ class AgentLoop:
             media=msg.media if msg.media else None,
             channel=msg.channel, chat_id=msg.chat_id,
         )
+        raw_timeline_events: list[dict[str, Any]] = []
 
         async def _bus_progress(
             content: str,
@@ -509,6 +510,15 @@ class AgentLoop:
             meta["_tool_end"] = tool_end
             if duration is not None:
                 meta["_tool_duration"] = duration
+            from datetime import datetime
+            raw_timeline_events.append({
+                "type": "tool_start" if tool_start else "tool_end" if tool_end else "progress",
+                "content": content,
+                "timestamp": datetime.now().isoformat(),
+                "tool_id": tool_id,
+                "tool_name": tool_name,
+                "duration": duration,
+            })
             await self.bus.publish_outbound(OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))
@@ -520,7 +530,8 @@ class AgentLoop:
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
 
-        self._save_turn(session, all_msgs, 1 + len(history))
+        saved_entries = self._save_turn(session, all_msgs, 1 + len(history))
+        self._save_timeline_events(session, saved_entries, raw_timeline_events)
         self.sessions.save(session)
         self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
 
@@ -534,9 +545,10 @@ class AgentLoop:
             metadata=msg.metadata or {},
         )
 
-    def _save_turn(self, session: Session, messages: list[dict], skip: int) -> None:
+    def _save_turn(self, session: Session, messages: list[dict], skip: int) -> list[dict]:
         """Save new-turn messages into session, truncating large tool results."""
         from datetime import datetime
+        saved_entries: list[dict] = []
         for m in messages[skip:]:
             entry = dict(m)
             role, content = entry.get("role"), entry.get("content")
@@ -569,7 +581,58 @@ class AgentLoop:
                     entry["content"] = filtered
             entry.setdefault("timestamp", datetime.now().isoformat())
             session.messages.append(entry)
+            saved_entries.append(entry)
         session.updated_at = datetime.now()
+        return saved_entries
+
+    def _save_timeline_events(
+        self,
+        session: Session,
+        saved_entries: list[dict],
+        raw_timeline_events: list[dict[str, Any]],
+    ) -> None:
+        """Persist execution timeline events separately from chat history."""
+        if not raw_timeline_events:
+            return
+
+        turn_id = next(
+            (
+                entry.get("timestamp")
+                for entry in saved_entries
+                if entry.get("role") == "user" and entry.get("timestamp")
+            ),
+            None,
+        )
+        if not turn_id:
+            return
+
+        start_content_by_tool_id: dict[str, str] = {}
+        for idx, event in enumerate(raw_timeline_events):
+            event_type = event.get("type") or "progress"
+            tool_id = event.get("tool_id")
+            if event_type == "tool_start" and tool_id:
+                event_id = f"{tool_id}-start"
+                if isinstance(event.get("content"), str) and event.get("content"):
+                    start_content_by_tool_id[tool_id] = event["content"]
+            elif event_type == "tool_end" and tool_id:
+                event_id = f"{tool_id}-end"
+            else:
+                event_id = f"{turn_id}-progress-{idx}"
+
+            display_content = event.get("content", "")
+            if event_type == "tool_end" and tool_id and start_content_by_tool_id.get(tool_id):
+                display_content = start_content_by_tool_id[tool_id]
+
+            session.timeline_events.append({
+                "id": event_id,
+                "type": event_type,
+                "content": display_content,
+                "timestamp": event.get("timestamp"),
+                "turnId": turn_id,
+                "toolId": tool_id,
+                "toolName": event.get("tool_name"),
+                "duration": event.get("duration"),
+            })
 
     async def process_direct(
         self,

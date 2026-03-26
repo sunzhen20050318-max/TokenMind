@@ -30,7 +30,22 @@ class Session:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
+    timeline_events: list[dict[str, Any]] = field(default_factory=list)
     last_consolidated: int = 0  # Number of messages already consolidated to files
+
+    @property
+    def title(self) -> str | None:
+        """User-defined session title, if any."""
+        title = self.metadata.get("title")
+        return title.strip() if isinstance(title, str) and title.strip() else None
+
+    def set_title(self, title: str | None) -> None:
+        """Set or clear the session title."""
+        if title and title.strip():
+            self.metadata["title"] = title.strip()
+        else:
+            self.metadata.pop("title", None)
+        self.updated_at = datetime.now()
 
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
@@ -95,6 +110,7 @@ class Session:
     def clear(self) -> None:
         """Clear all messages and reset session to initial state."""
         self.messages = []
+        self.timeline_events = []
         self.last_consolidated = 0
         self.updated_at = datetime.now()
 
@@ -159,6 +175,7 @@ class SessionManager:
 
         try:
             messages = []
+            timeline_events = []
             metadata = {}
             created_at = None
             last_consolidated = 0
@@ -175,6 +192,10 @@ class SessionManager:
                         metadata = data.get("metadata", {})
                         created_at = datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None
                         last_consolidated = data.get("last_consolidated", 0)
+                    elif data.get("_type") == "timeline_event":
+                        event = data.get("event")
+                        if isinstance(event, dict):
+                            timeline_events.append(event)
                     else:
                         messages.append(data)
 
@@ -183,6 +204,7 @@ class SessionManager:
                 messages=messages,
                 created_at=created_at or datetime.now(),
                 metadata=metadata,
+                timeline_events=timeline_events,
                 last_consolidated=last_consolidated
             )
         except Exception as e:
@@ -203,6 +225,11 @@ class SessionManager:
                 "last_consolidated": session.last_consolidated
             }
             f.write(json.dumps(metadata_line, ensure_ascii=False) + "\n")
+            for event in session.timeline_events:
+                f.write(json.dumps({
+                    "_type": "timeline_event",
+                    "event": event,
+                }, ensure_ascii=False) + "\n")
             for msg in session.messages:
                 f.write(json.dumps(msg, ensure_ascii=False) + "\n")
 
@@ -234,7 +261,8 @@ class SessionManager:
                                 "key": key,
                                 "created_at": data.get("created_at"),
                                 "updated_at": data.get("updated_at"),
-                                "path": str(path)
+                                "path": str(path),
+                                "title": (data.get("metadata") or {}).get("title"),
                             })
             except Exception:
                 continue

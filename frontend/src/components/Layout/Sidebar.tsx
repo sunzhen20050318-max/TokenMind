@@ -1,12 +1,37 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
 import { SettingsModal } from '../../pages/Settings';
 
 export const Sidebar: React.FC = () => {
   const { sessions, createNewSession } = useSessions();
-  const { currentSession, setCurrentSession, deleteSession, modelProviders, activeModelId } = useChatStore();
+  const { currentSession, setCurrentSession, deleteSession, renameSession } = useChatStore();
   const [showSettings, setShowSettings] = useState(false);
+  const [query, setQuery] = useState('');
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+
+  const filteredSessions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return sessions;
+    }
+    return sessions.filter((session) => {
+      const haystack = `${session.title || ''} ${session.first_message || ''}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [query, sessions]);
+
+  const beginRename = (sessionId: string, currentTitle?: string, firstMessage?: string) => {
+    setEditingSessionId(sessionId);
+    setEditingTitle(currentTitle || firstMessage || '');
+  };
+
+  const submitRename = async (sessionId: string) => {
+    await renameSession(sessionId, editingTitle.trim() || null);
+    setEditingSessionId(null);
+    setEditingTitle('');
+  };
 
   return (
     <div
@@ -19,7 +44,6 @@ export const Sidebar: React.FC = () => {
         borderRight: '1px solid #1a1a1a',
       }}
     >
-      {/* Model selector + settings */}
       <div
         style={{
           padding: '12px 16px',
@@ -45,34 +69,48 @@ export const Sidebar: React.FC = () => {
             justifyContent: 'space-between',
             transition: 'all 0.15s',
           }}
-          onMouseOver={(e) => {
-            e.currentTarget.style.backgroundColor = '#1a1a1a';
-            e.currentTarget.style.color = '#e5e5e5';
+          onMouseOver={(event) => {
+            event.currentTarget.style.backgroundColor = '#1a1a1a';
+            event.currentTarget.style.color = '#e5e5e5';
           }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.color = '#a0a0a0';
+          onMouseOut={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+            event.currentTarget.style.color = '#a0a0a0';
           }}
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {activeModelId
-              ? (modelProviders.find(p => p.id === activeModelId)?.name || activeModelId)
-              : '选择模型'}
+            设置中心
           </span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
       </div>
 
-      {/* New Chat button */}
       <div
         style={{
           padding: '12px 16px',
           borderBottom: '1px solid #1a1a1a',
         }}
       >
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search conversations"
+          style={{
+            width: '100%',
+            marginBottom: '10px',
+            padding: '9px 12px',
+            borderRadius: '8px',
+            border: '1px solid #242424',
+            backgroundColor: '#141414',
+            color: '#f3f3f3',
+            fontSize: '13px',
+            outline: 'none',
+          }}
+        />
         <button
           onClick={createNewSession}
           style={{
@@ -91,26 +129,25 @@ export const Sidebar: React.FC = () => {
             gap: '8px',
             transition: 'all 0.2s ease',
           }}
-          onMouseOver={(e) => {
-            e.currentTarget.style.backgroundColor = '#1a1a1a';
-            e.currentTarget.style.borderColor = '#3a3a3a';
+          onMouseOver={(event) => {
+            event.currentTarget.style.backgroundColor = '#1a1a1a';
+            event.currentTarget.style.borderColor = '#3a3a3a';
           }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.borderColor = '#2a2a2a';
+          onMouseOut={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+            event.currentTarget.style.borderColor = '#2a2a2a';
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           New Chat
         </button>
       </div>
 
-      {/* Session list */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {sessions.length === 0 ? (
+        {filteredSessions.length === 0 ? (
           <div
             style={{
               padding: '24px 16px',
@@ -119,51 +156,79 @@ export const Sidebar: React.FC = () => {
               textAlign: 'center',
             }}
           >
-            No conversations yet
+            {query ? 'No matching conversations' : 'No conversations yet'}
           </div>
         ) : (
-          sessions.map((session) => (
+          filteredSessions.map((session) => (
             <div
               key={session.session_id}
               onClick={() => setCurrentSession(session.session_id)}
               style={{
                 padding: '12px 16px',
                 cursor: 'pointer',
-                backgroundColor:
-                  currentSession === session.session_id ? '#1c1c1e' : 'transparent',
+                backgroundColor: currentSession === session.session_id ? '#1c1c1e' : 'transparent',
                 borderLeft:
-                  currentSession === session.session_id
-                    ? '2px solid #fff'
-                    : '2px solid transparent',
+                  currentSession === session.session_id ? '2px solid #fff' : '2px solid transparent',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 transition: 'background-color 0.15s ease',
               }}
-              onMouseOver={(e) => {
+              onMouseOver={(event) => {
                 if (currentSession !== session.session_id) {
-                  e.currentTarget.style.backgroundColor = '#161616';
+                  event.currentTarget.style.backgroundColor = '#161616';
                 }
               }}
-              onMouseOut={(e) => {
+              onMouseOut={(event) => {
                 if (currentSession !== session.session_id) {
-                  e.currentTarget.style.backgroundColor = 'transparent';
+                  event.currentTarget.style.backgroundColor = 'transparent';
                 }
               }}
             >
               <div style={{ overflow: 'hidden', flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: 400,
-                    color: '#e5e5e5',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {session.first_message || 'New conversation'}
-                </div>
+                {editingSessionId === session.session_id ? (
+                  <input
+                    autoFocus
+                    value={editingTitle}
+                    onChange={(event) => setEditingTitle(event.target.value)}
+                    onClick={(event) => event.stopPropagation()}
+                    onBlur={() => {
+                      void submitRename(session.session_id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        void submitRename(session.session_id);
+                      }
+                      if (event.key === 'Escape') {
+                        setEditingSessionId(null);
+                        setEditingTitle('');
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '6px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #3a3a3a',
+                      backgroundColor: '#111',
+                      color: '#fff',
+                      fontSize: '13px',
+                      outline: 'none',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      color: '#e5e5e5',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {session.title || session.first_message || 'New conversation'}
+                  </div>
+                )}
                 <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
                   {session.created_at
                     ? new Date(session.created_at).toLocaleString('zh-CN', {
@@ -175,44 +240,60 @@ export const Sidebar: React.FC = () => {
                     : ''}
                 </div>
               </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteSession(session.session_id);
-                }}
-                style={{
-                  padding: '6px',
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  color: '#6e6e73',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  borderRadius: '4px',
-                  opacity: 0,
-                  transition: 'opacity 0.15s ease',
-                }}
-                className="delete-btn"
-                onMouseOver={(e) => {
-                  e.currentTarget.style.color = '#ff453a';
-                  e.currentTarget.style.backgroundColor = '#3d3d40';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.color = '#6e6e73';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
+
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0 }}
+                className="session-actions"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    beginRename(session.session_id, session.title, session.first_message);
+                  }}
+                  style={{
+                    padding: '6px',
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    color: '#9a9a9a',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                  }}
+                  title="Rename"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteSession(session.session_id);
+                  }}
+                  style={{
+                    padding: '6px',
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    color: '#6e6e73',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                  }}
+                  title="Delete"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
+              </div>
             </div>
           ))
         )}
       </div>
 
       <style>{`
-        div:hover > button.delete-btn {
+        div:hover > .session-actions {
           opacity: 1 !important;
         }
       `}</style>
