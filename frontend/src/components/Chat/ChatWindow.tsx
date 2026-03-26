@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
 import { InputArea } from './InputArea';
@@ -6,6 +6,7 @@ import { ToolChain } from './ToolIndicator';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import type { Message } from '../../types';
+import './chatWindow.css';
 
 interface ChatWindowProps {
   sessionId: string;
@@ -20,6 +21,59 @@ interface TurnArtifacts {
   timelineEvents: TimelineEvent[];
   toolCalls: ToolCall[];
 }
+
+interface StarterCard {
+  id: string;
+  tag: string;
+  title: string;
+  description: string;
+  prompt: string;
+}
+
+const STARTER_CARDS: StarterCard[] = [
+  {
+    id: 'channel-setup',
+    tag: '渠道接入',
+    title: '配置聊天渠道',
+    description: '帮我配置 Telegram、飞书、Slack、WhatsApp 或其他聊天渠道的接入方式。',
+    prompt: '请帮我检查当前项目支持哪些聊天渠道，并告诉我如何配置其中一个渠道接入。',
+  },
+  {
+    id: 'search-summary',
+    tag: '搜索总结',
+    title: '搜索并整理信息',
+    description: '搜索网页、提炼重点、输出结构化结论，适合做信息收集和快速总结。',
+    prompt: '请帮我搜索一个主题，并把结果整理成清晰的要点总结。',
+  },
+  {
+    id: 'file-image',
+    tag: '文件理解',
+    title: '读取文件或图片',
+    description: '帮我处理文档、图片、截图或本地文件，提取内容并解释重点。',
+    prompt: '请帮我读取一个文件或图片，并提取其中的关键信息给我。',
+  },
+  {
+    id: 'mcp-workflow',
+    tag: 'MCP',
+    title: '使用 MCP 工具',
+    description: '检查当前已连接的 MCP 服务和工具，让它们直接参与具体任务执行。',
+    prompt: '请检查当前可用的 MCP 服务和工具，并告诉我它们可以帮我完成什么任务。',
+  },
+  {
+    id: 'automation',
+    tag: '自动化',
+    title: '创建定时任务',
+    description: '把常见动作做成定时执行的任务，例如日报、提醒、巡检或信息汇总。',
+    prompt: '请帮我设计一个适合当前项目的自动化或定时任务方案。',
+  },
+  {
+    id: 'assistant-task',
+    tag: '个人助理',
+    title: '处理日常任务',
+    description: '把 SUN-AGENT 当成你的个人 AI 助手，让它帮你安排、分析、整理或执行任务。',
+    prompt: '我想把 SUN-AGENT 当成个人 AI 助手使用，请先告诉我它最适合帮我做哪些事情。',
+  },
+];
 
 function getTurnKey(message: Message, rawIndex: number): string {
   return message.timestamp || `turn-${rawIndex}`;
@@ -203,6 +257,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { sendMessage, stopMessage, isConnected } = useWebSocket(sessionId);
   const prevMessagesLenRef = useRef<number>(0);
+  const [draftMessage, setDraftMessage] = useState('');
+  const [inputFocusSignal, setInputFocusSignal] = useState(0);
+
+  useEffect(() => {
+    setDraftMessage('');
+  }, [sessionId]);
 
   const visibleMessages = useMemo<VisibleMessageEntry[]>(
     () =>
@@ -261,6 +321,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     sendMessage(content);
   };
 
+  const handleStarterCardSelect = (prompt: string) => {
+    setDraftMessage(prompt);
+    setInputFocusSignal((signal) => signal + 1);
+  };
+
   return (
     <div
       style={{
@@ -281,33 +346,37 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         }}
       >
         {visibleMessages.length === 0 ? (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: '#6e6e73',
-            }}
-          >
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1" style={{ marginBottom: '16px' }}>
-              <circle cx="12" cy="12" r="4" fill="#666" stroke="#666" />
-              <line x1="12" y1="2" x2="12" y2="5" />
-              <line x1="12" y1="19" x2="12" y2="22" />
-              <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
-              <line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
-              <line x1="2" y1="12" x2="5" y2="12" />
-              <line x1="19" y1="12" x2="22" y2="12" />
-              <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
-              <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
-            </svg>
-            <p style={{ fontSize: '16px', marginBottom: '8px', color: '#8e8e93' }}>
-              Start a conversation with sun-agent
-            </p>
-            <p style={{ fontSize: '13px' }}>
-              Ask questions, get help with tasks, and more
-            </p>
+          <div className="chat-empty-state">
+            <div className="chat-empty-shell">
+              <div className="chat-empty-badge">SUN-AGENT workspace</div>
+              <h2 className="chat-empty-title">把 SUN-AGENT 变成你的个人 AI 助手</h2>
+              <p className="chat-empty-copy">
+                这里更像一个可连接渠道、调用工具、处理文件、执行 MCP 和承接自动化任务的助手入口。选择一个场景后，提示词会自动填入下方输入框。
+              </p>
+
+              <div className="chat-starter-grid">
+                {STARTER_CARDS.map((card) => (
+                  <button
+                    key={card.id}
+                    type="button"
+                    className="chat-starter-card"
+                    onClick={() => handleStarterCardSelect(card.prompt)}
+                  >
+                    <div className="chat-starter-top">
+                      <span className="chat-starter-tag">{card.tag}</span>
+                      <span className="chat-starter-action">点击填入</span>
+                    </div>
+                    <div className="chat-starter-title">{card.title}</div>
+                    <div className="chat-starter-description">{card.description}</div>
+                    <div className="chat-starter-prompt">{card.prompt}</div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="chat-empty-note">
+                这些只是常见起点，你也可以直接描述自己的真实任务。
+              </div>
+            </div>
           </div>
         ) : (
           <>
@@ -355,6 +424,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         onStop={stopMessage}
         disabled={!isConnected}
         isStreaming={isLoading}
+        value={draftMessage}
+        onChange={setDraftMessage}
+        focusSignal={inputFocusSignal}
       />
     </div>
   );

@@ -735,8 +735,8 @@ def web(
     # Set cron callback
     async def on_cron_job(job: CronJob) -> str | None:
         from sun_agent.agent.tools.cron import CronTool
+        from sun_agent.cron.delivery import persist_task_result
         from sun_agent.agent.tools.message import MessageTool
-        from sun_agent.utils.evaluator import evaluate_response
 
         reminder_note = (
             "[Scheduled Task] Timer finished.\n\n"
@@ -764,16 +764,19 @@ def web(
             return response
 
         if job.payload.deliver and job.payload.to and response:
-            should_notify = await evaluate_response(
-                response, job.payload.message, provider, agent.model,
+            persist_task_result(
+                session_manager=session_manager,
+                session_id=job.payload.to,
+                job_name=job.name,
+                instruction=job.payload.message,
+                response=response,
             )
-            if should_notify:
-                from sun_agent.bus.events import OutboundMessage
-                await bus.publish_outbound(OutboundMessage(
-                    channel=job.payload.channel or "web",
-                    chat_id=job.payload.to,
-                    content=response,
-                ))
+            from sun_agent.bus.events import OutboundMessage
+            await bus.publish_outbound(OutboundMessage(
+                channel=job.payload.channel or "web",
+                chat_id=job.payload.to,
+                content=response,
+            ))
         return response
 
     cron.on_job = on_cron_job

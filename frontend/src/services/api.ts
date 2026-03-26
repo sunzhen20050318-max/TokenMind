@@ -4,6 +4,7 @@ import type {
   Session,
   StatusResponse,
 } from '../types';
+import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
 import type {
   AgentSettingsUpdate,
   AppConfigResponse,
@@ -63,6 +64,70 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Failed to clear session: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getCronStatus(): Promise<CronStatus> {
+    const res = await fetch(`${API_BASE}/cron/status`);
+    if (!res.ok) {
+      throw new Error(`Failed to get cron status: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listCronJobs(includeDisabled = true): Promise<CronJob[]> {
+    const res = await fetch(`${API_BASE}/cron/jobs?include_disabled=${includeDisabled ? 'true' : 'false'}`);
+    if (!res.ok) {
+      throw new Error(`Failed to list cron jobs: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async createCronJob(payload: CreateCronJobPayload): Promise<CronJob> {
+    const res = await fetch(`${API_BASE}/cron/jobs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to create cron job: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async toggleCronJob(jobId: string, enabled: boolean): Promise<CronJob> {
+    const res = await fetch(`${API_BASE}/cron/jobs/${encodeURIComponent(jobId)}/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to update cron job: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async runCronJob(jobId: string): Promise<{ success: boolean; job_id: string }> {
+    const res = await fetch(`${API_BASE}/cron/jobs/${encodeURIComponent(jobId)}/run`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to run cron job: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async deleteCronJob(jobId: string): Promise<{ success: boolean; job_id: string }> {
+    const res = await fetch(`${API_BASE}/cron/jobs/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to delete cron job: ${res.statusText}`);
     }
     return res.json();
   },

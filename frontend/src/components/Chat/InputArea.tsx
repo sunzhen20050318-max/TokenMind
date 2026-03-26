@@ -1,21 +1,31 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 
 interface InputAreaProps {
   onSend: (message: string) => void;
   onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  focusSignal?: number;
 }
 
-export const InputArea: React.FC<InputAreaProps> = ({ onSend, onStop, disabled, isStreaming }) => {
-  const [input, setInput] = useState('');
+export const InputArea: React.FC<InputAreaProps> = ({
+  onSend,
+  onStop,
+  disabled,
+  isStreaming,
+  value,
+  onChange,
+  focusSignal,
+}) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim() && !disabled) {
-      onSend(input.trim());
-      setInput('');
+    if (value.trim() && !disabled) {
+      onSend(value.trim());
+      onChange('');
     }
   };
 
@@ -31,7 +41,16 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSend, onStop, disabled, 
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
     }
-  }, [input]);
+  }, [value]);
+
+  useEffect(() => {
+    if (!textareaRef.current || focusSignal === undefined) {
+      return;
+    }
+    textareaRef.current.focus();
+    const length = textareaRef.current.value.length;
+    textareaRef.current.setSelectionRange(length, length);
+  }, [focusSignal]);
 
   return (
     <form
@@ -47,10 +66,10 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSend, onStop, disabled, 
     >
       <textarea
         ref={textareaRef}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Message sun-agent..."
+        placeholder="给 SUN-AGENT 发送消息..."
         disabled={disabled}
         rows={1}
         style={{
@@ -76,29 +95,29 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSend, onStop, disabled, 
       />
       <button
         type="submit"
-        disabled={!input.trim() || disabled}
+        disabled={!value.trim() || disabled}
         style={{
           width: '36px',
           height: '36px',
           borderRadius: '50%',
           border: 'none',
-          backgroundColor: input.trim() && !disabled ? '#fff' : '#2a2a2a',
-          color: input.trim() && !disabled ? '#000' : '#666',
+          backgroundColor: value.trim() && !disabled ? '#fff' : '#2a2a2a',
+          color: value.trim() && !disabled ? '#000' : '#666',
           fontSize: '18px',
-          cursor: input.trim() && !disabled ? 'pointer' : 'not-allowed',
+          cursor: value.trim() && !disabled ? 'pointer' : 'not-allowed',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           transition: 'all 0.2s ease',
-          transform: input.trim() && !disabled ? 'scale(1)' : 'scale(0.95)',
+          transform: value.trim() && !disabled ? 'scale(1)' : 'scale(0.95)',
         }}
         onMouseOver={(e) => {
-          if (input.trim() && !disabled) {
+          if (value.trim() && !disabled) {
             e.currentTarget.style.backgroundColor = '#e5e5e5';
           }
         }}
         onMouseOut={(e) => {
-          if (input.trim() && !disabled) {
+          if (value.trim() && !disabled) {
             e.currentTarget.style.backgroundColor = '#fff';
           }
         }}
@@ -123,7 +142,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSend, onStop, disabled, 
             cursor: 'pointer',
           }}
         >
-          Stop
+          停止
         </button>
       )}
     </form>

@@ -2,14 +2,18 @@ import React, { useMemo, useState } from 'react';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
 import { SettingsModal } from '../../pages/Settings';
+import { TasksModal } from '../../pages/Tasks';
 
 export const Sidebar: React.FC = () => {
   const { sessions, createNewSession } = useSessions();
   const { currentSession, setCurrentSession, deleteSession, renameSession } = useChatStore();
   const [showSettings, setShowSettings] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
   const [query, setQuery] = useState('');
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+
+  const currentSessionMeta = sessions.find((session) => session.session_id === currentSession);
 
   const filteredSessions = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -48,15 +52,14 @@ export const Sidebar: React.FC = () => {
         style={{
           padding: '12px 16px',
           borderBottom: '1px solid #1a1a1a',
-          display: 'flex',
-          alignItems: 'center',
+          display: 'grid',
           gap: '8px',
         }}
       >
         <button
           onClick={() => setShowSettings(true)}
           style={{
-            flex: 1,
+            width: '100%',
             padding: '8px 12px',
             borderRadius: '6px',
             border: '1px solid #2a2a2a',
@@ -86,6 +89,44 @@ export const Sidebar: React.FC = () => {
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
+
+        <button
+          onClick={() => setShowTasks(true)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid #2a2a2a',
+            backgroundColor: 'transparent',
+            color: '#a0a0a0',
+            fontSize: '13px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            transition: 'all 0.15s',
+          }}
+          onMouseOver={(event) => {
+            event.currentTarget.style.backgroundColor = '#1a1a1a';
+            event.currentTarget.style.color = '#e5e5e5';
+          }}
+          onMouseOut={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+            event.currentTarget.style.color = '#a0a0a0';
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            定时任务
+          </span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M8 6h13" />
+            <path d="M8 12h13" />
+            <path d="M8 18h13" />
+            <path d="M3 6h.01" />
+            <path d="M3 12h.01" />
+            <path d="M3 18h.01" />
+          </svg>
+        </button>
       </div>
 
       <div
@@ -98,7 +139,7 @@ export const Sidebar: React.FC = () => {
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search conversations"
+          placeholder="搜索会话"
           style={{
             width: '100%',
             marginBottom: '10px',
@@ -142,7 +183,7 @@ export const Sidebar: React.FC = () => {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          New Chat
+          新建对话
         </button>
       </div>
 
@@ -156,7 +197,7 @@ export const Sidebar: React.FC = () => {
               textAlign: 'center',
             }}
           >
-            {query ? 'No matching conversations' : 'No conversations yet'}
+            {query ? '没有匹配的会话' : '还没有会话'}
           </div>
         ) : (
           filteredSessions.map((session) => (
@@ -226,7 +267,7 @@ export const Sidebar: React.FC = () => {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {session.title || session.first_message || 'New conversation'}
+                    {session.title || session.first_message || '新会话'}
                   </div>
                 )}
                 <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
@@ -258,7 +299,7 @@ export const Sidebar: React.FC = () => {
                     cursor: 'pointer',
                     borderRadius: '4px',
                   }}
-                  title="Rename"
+                  title="重命名"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 20h9" />
@@ -279,7 +320,7 @@ export const Sidebar: React.FC = () => {
                     cursor: 'pointer',
                     borderRadius: '4px',
                   }}
-                  title="Delete"
+                  title="删除"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="3 6 5 6 21 6" />
@@ -297,7 +338,18 @@ export const Sidebar: React.FC = () => {
           opacity: 1 !important;
         }
       `}</style>
+
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showTasks && (
+      <TasksModal
+        onClose={() => setShowTasks(false)}
+        currentSessionId={currentSession}
+        currentSessionLabel={
+          currentSessionMeta?.title || currentSessionMeta?.first_message || currentSession || undefined
+        }
+        sessions={sessions}
+      />
+      )}
     </div>
   );
 };

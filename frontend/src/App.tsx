@@ -1,51 +1,74 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
+import { EntryGate } from './components/EntryGate/EntryGate';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
+import './app.css';
 
 const App: React.FC = () => {
-  const { currentSession } = useChatStore();
+  const { currentSession, fetchModelProviders } = useChatStore();
   const { createNewSession } = useSessions();
+  const [gateDismissed, setGateDismissed] = useState(false);
+  const [gateExiting, setGateExiting] = useState(false);
+  const enterTimerRef = useRef<number | null>(null);
+  const appReady = gateDismissed || gateExiting;
+
+  const handleEnter = useCallback(() => {
+    if (gateDismissed || gateExiting) {
+      return;
+    }
+
+    setGateExiting(true);
+    enterTimerRef.current = window.setTimeout(() => {
+      setGateDismissed(true);
+      setGateExiting(false);
+    }, 720);
+  }, [gateDismissed, gateExiting]);
 
   useEffect(() => {
-    if (!currentSession) {
+    void fetchModelProviders();
+  }, [fetchModelProviders]);
+
+  useEffect(() => {
+    if (appReady && !currentSession) {
       createNewSession();
     }
-  }, [currentSession, createNewSession]);
+  }, [appReady, currentSession, createNewSession]);
+
+  useEffect(
+    () => () => {
+      if (enterTimerRef.current) {
+        window.clearTimeout(enterTimerRef.current);
+      }
+    },
+    []
+  );
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        width: '100vw',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="app-root">
+      {!gateDismissed ? <EntryGate isExiting={gateExiting} onEnter={handleEnter} /> : null}
+
+      <div
+        className={[
+          'app-shell',
+          gateDismissed ? 'app-shell--visible' : gateExiting ? 'app-shell--revealing' : 'app-shell--hidden',
+        ].join(' ')}
+      >
       <Header />
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div className="app-main">
         <Sidebar />
-        <main style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
+        <main className="app-main__content">
           {currentSession ? (
             <ChatWindow sessionId={currentSession} />
           ) : (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#6e6e73',
-                fontSize: '14px',
-              }}
-            >
+            <div className="app-main__empty">
               Select a conversation or start a new one
             </div>
           )}
         </main>
+      </div>
       </div>
     </div>
   );

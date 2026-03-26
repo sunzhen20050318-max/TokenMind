@@ -780,7 +780,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                         extraHeadersText: event.target.value,
                       }))
                     }
-                    placeholder='{"X-App":"sun-agent"}'
+                    placeholder='{"X-App":"SUN-AGENT"}'
                     value={providerForm.extraHeadersText}
                   />
                 </Field>
@@ -1762,7 +1762,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     >
       <div className="settings-modal" onClick={(event) => event.stopPropagation()}>
         <aside className="settings-sidebar">
-          <div className="settings-kicker">sun-agent</div>
+          <div className="settings-kicker">SUN-AGENT</div>
           <h2>设置中心</h2>
           <p>按模块管理模型、智能体、工具和运行时配置，每个分组都可以单独保存。</p>
 
@@ -1781,7 +1781,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           </nav>
 
           <div className="settings-sidebar-note">
-            Cron 目前还不是统一配置项，这一版先把真正能保存的设置中心做完整。
+            这里集中管理真正可保存、可复用的系统设置，按模块维护会更清晰。
           </div>
         </aside>
 

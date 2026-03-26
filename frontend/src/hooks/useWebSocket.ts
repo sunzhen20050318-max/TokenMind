@@ -1,5 +1,10 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { wsService } from '../services/websocket';
+import {
+  installNotificationSoundUnlock,
+  playReplyNotification,
+  primeNotificationSound,
+} from '../services/notificationSound';
 import { useChatStore } from '../stores/chatStore';
 import type { WSMessageType } from '../types';
 
@@ -23,6 +28,8 @@ export function useWebSocket(sessionId: string) {
   const startTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
+    installNotificationSoundUnlock();
+
     if (!sessionId) return;
 
     wsService.connect(sessionId).then(() => {
@@ -55,6 +62,7 @@ export function useWebSocket(sessionId: string) {
           // Reset current turn after response
           finishStreamingAssistant(msg.type === 'response_end' ? msg.content : msg.content);
           setCurrentTurnId(null);
+          void playReplyNotification();
           break;
         }
         case 'tool':
@@ -121,6 +129,7 @@ export function useWebSocket(sessionId: string) {
     // They'll be cleared when a new assistant response arrives
     startTimeRef.current = null;
     setActiveTool(null);
+    void primeNotificationSound();
     wsService.send(content);
   }, [setActiveTool]);
 

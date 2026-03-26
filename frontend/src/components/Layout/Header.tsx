@@ -1,12 +1,23 @@
 import React from 'react';
 import { useChatStore } from '../../stores/chatStore';
+import { BrandMark } from '../BrandMark';
 
 export const Header: React.FC = () => {
-  const { isConnected, currentSession, sessions, activeModelId, modelProviders } = useChatStore();
+  const { isConnected, currentSession, sessions, activeModelId, modelProviders, modelProvidersStatus } =
+    useChatStore();
   const currentSessionMeta = sessions.find((session) => session.session_id === currentSession);
-  const currentModel = activeModelId
-    ? modelProviders.find((provider) => provider.id === activeModelId)?.name || activeModelId
-    : 'No model selected';
+  const currentModel = (() => {
+    if (modelProvidersStatus === 'idle' || modelProvidersStatus === 'loading') {
+      return '正在读取模型...';
+    }
+    if (activeModelId) {
+      return modelProviders.find((provider) => provider.id === activeModelId)?.name || activeModelId;
+    }
+    if (modelProvidersStatus === 'error') {
+      return '模型状态不可用';
+    }
+    return '未设置默认模型';
+  })();
 
   return (
     <div
@@ -20,20 +31,10 @@ export const Header: React.FC = () => {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-          <circle cx="12" cy="12" r="4" fill="white" stroke="white"/>
-          <line x1="12" y1="2" x2="12" y2="4"/>
-          <line x1="12" y1="20" x2="12" y2="22"/>
-          <line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/>
-          <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
-          <line x1="2" y1="12" x2="4" y2="12"/>
-          <line x1="20" y1="12" x2="22" y2="12"/>
-          <line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/>
-          <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
-        </svg>
-        <span style={{ fontSize: '16px', fontWeight: 600, color: '#fff' }}>sun-agent</span>
+        <BrandMark size={26} alt="SUN-AGENT 标志" />
+        <span style={{ fontSize: '16px', fontWeight: 600, color: '#fff' }}>SUN-AGENT</span>
         <div style={{ fontSize: '12px', color: '#707070' }}>
-          {currentSessionMeta?.title || currentSessionMeta?.first_message || 'Ready for a new conversation'}
+          {currentSessionMeta?.title || currentSessionMeta?.first_message || '准备开始新的对话'}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -56,7 +57,7 @@ export const Header: React.FC = () => {
             boxShadow: isConnected ? '0 0 6px #34c759' : 'none',
           }}
         />
-        {isConnected ? 'Connected' : 'Disconnected'}
+        {isConnected ? '已连接' : '未连接'}
         </div>
       </div>
     </div>

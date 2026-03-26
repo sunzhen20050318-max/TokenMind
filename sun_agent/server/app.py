@@ -15,12 +15,13 @@ from sun_agent.bus.queue import MessageBus
 from sun_agent.server.channel.web import WebChannel, WebChannelConfig
 from sun_agent.server.dependencies import (
     get_connection_manager,
+    set_cron_service,
     get_inbound_queue,
     set_chat_service,
     set_connection_manager,
     set_inbound_queue,
 )
-from sun_agent.server.routes import chat_router, config_router, sessions_router, status_router
+from sun_agent.server.routes import chat_router, config_router, cron_router, sessions_router, status_router
 from sun_agent.server.websocket.handler import websocket_handler
 from sun_agent.server.websocket.manager import ConnectionManager
 
@@ -156,6 +157,17 @@ class ChatService:
             "title": session.title,
         }
 
+    def ensure_session(self, session_id: str, title: str | None = None) -> dict:
+        """Create a session if needed and optionally assign a title."""
+        session = self.session_manager.get_or_create(session_id)
+        if title:
+            session.set_title(title)
+        self.session_manager.save(session)
+        return {
+            "session_id": session_id,
+            "title": session.title,
+        }
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -182,6 +194,7 @@ def create_app(
     set_chat_service(chat_service)
     set_connection_manager(connection_manager)
     set_inbound_queue(bus.inbound)
+    set_cron_service(getattr(agent_loop, "cron_service", None))
 
     # Create FastAPI app
     app = FastAPI(
@@ -203,6 +216,7 @@ def create_app(
     # Include routers
     app.include_router(chat_router)
     app.include_router(config_router)
+    app.include_router(cron_router)
     app.include_router(sessions_router)
     app.include_router(status_router)
 

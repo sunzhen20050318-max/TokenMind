@@ -8,6 +8,7 @@ from typing import Any
 _chat_service: Any = None
 _connection_manager: Any = None
 _inbound_queue: Any = None
+_cron_service: Any = None
 
 
 def set_chat_service(service: Any) -> None:
@@ -41,3 +42,14 @@ def set_inbound_queue(queue: Any) -> None:
 def get_inbound_queue() -> Any:
     """Get the global inbound queue reference."""
     return _inbound_queue
+
+
+def set_cron_service(service: Any) -> None:
+    """Set the global cron service instance."""
+    global _cron_service
+    _cron_service = service
+
+
+def get_cron_service() -> Any:
+    """Get the global cron service instance."""
+    return _cron_service

@@ -45,6 +45,7 @@ interface ChatState {
   timelineEvents: TimelineEvent[];
   modelProviders: ModelProvider[];
   activeModelId: string | null;
+  modelProvidersStatus: 'idle' | 'loading' | 'ready' | 'error';
 
   // Actions
   setCurrentSession: (sessionId: string) => void;
@@ -89,6 +90,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentTurnId: null,
   modelProviders: [],
   activeModelId: null,
+  modelProvidersStatus: 'idle',
 
   setCurrentTurnId: (turnId) => {
     set({ currentTurnId: turnId });
@@ -374,6 +376,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchModelProviders: async () => {
     try {
+      set({ modelProvidersStatus: 'loading' });
       const res = await fetch('/api/config');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -422,9 +425,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({
         modelProviders,
         activeModelId: defaultProvider || null,
+        modelProvidersStatus: 'ready',
       });
     } catch (e) {
       console.error('fetchModelProviders failed:', e);
+      set({ modelProvidersStatus: 'error' });
     }
   },
 
