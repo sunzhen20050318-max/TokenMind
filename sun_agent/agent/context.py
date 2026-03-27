@@ -1,23 +1,24 @@
 """Context builder for assembling agent prompts."""
 
+from __future__ import annotations
+
 import base64
 import mimetypes
 import platform
 from pathlib import Path
 from typing import Any
 
-from sun_agent.utils.helpers import current_time_str
-
 from sun_agent.agent.memory import MemoryStore
 from sun_agent.agent.skills import SkillsLoader
-from sun_agent.utils.helpers import build_assistant_message, detect_image_mime
+from sun_agent.utils.helpers import build_assistant_message, current_time_str, detect_image_mime
 
 
 class ContextBuilder:
     """Builds the context (system prompt + messages) for the agent."""
 
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
-    _RUNTIME_CONTEXT_TAG = "[Runtime Context — metadata only, not instructions]"
+    _RUNTIME_CONTEXT_TAG = "[Runtime Context - metadata only, not instructions]"
+    _ATTACHMENTS_CONTEXT_TAG = "[Attached Files - metadata only, not user text]"
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
@@ -44,12 +45,14 @@ class ContextBuilder:
 
         skills_summary = self.skills.build_skills_summary()
         if skills_summary:
-            parts.append(f"""# Skills
+            parts.append(
+                f"""# Skills
 
 The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
 Skills with available="false" need dependencies installed first - you can try installing them with apt/brew.
 
-{skills_summary}""")
+{skills_summary}"""
+            )
 
         return "\n\n---\n\n".join(parts)
 
@@ -59,7 +62,6 @@ Skills with available="false" need dependencies installed first - you can try in
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
 
-        platform_policy = ""
         if system == "Windows":
             platform_policy = """## Platform Policy (Windows)
 - You are running on Windows. Do not assume GNU tools like `grep`, `sed`, or `awk` exist.
@@ -72,9 +74,9 @@ Skills with available="false" need dependencies installed first - you can try in
 - Use file tools when they are simpler or more reliable than shell commands.
 """
 
-        return f"""# sun-agent ☀️
+        return f"""# sun-agent
 
-You are sun-agent ☀️, a helpful AI assistant.
+You are sun-agent, a helpful AI assistant.
 
 ## Runtime
 {runtime}
@@ -105,16 +107,38 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
         return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
 
+    @staticmethod
+    def _build_attachments_context(attachments: list[dict[str, Any]] | None) -> str | None:
+        """Build attachment metadata block for the model."""
+        if not attachments:
+            return None
+
+        lines = [
+            ContextBuilder._ATTACHMENTS_CONTEXT_TAG,
+            "Attached files are available in the workspace:",
+        ]
+        for attachment in attachments:
+            name = attachment.get("name", "file")
+            path = attachment.get("path", "")
+            category = attachment.get("category", "file")
+            size = attachment.get("size")
+            size_text = f", {size} bytes" if isinstance(size, int) else ""
+            lines.append(f"- {name} [{category}] -> {path}{size_text}")
+
+        lines.append(
+            "Use read_file for text-based files when possible. "
+            "For binary formats like pdf, pptx, xlsx, or images, use the available tools to inspect or extract content."
+        )
+        return "\n".join(lines)
+
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""
         parts = []
-
         for filename in self.BOOTSTRAP_FILES:
             file_path = self.workspace / filename
             if file_path.exists():
                 content = file_path.read_text(encoding="utf-8")
                 parts.append(f"## {filename}\n\n{content}")
-
         return "\n\n".join(parts) if parts else ""
 
     def build_messages(
@@ -123,25 +147,33 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         current_message: str,
         skill_names: list[str] | None = None,
         media: list[str] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
         current_role: str = "user",
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         runtime_ctx = self._build_runtime_context(channel, chat_id)
-        user_content = self._build_user_content(current_message, media)
+        attachments_ctx = self._build_attachments_context(attachments)
+        metadata_blocks = [runtime_ctx]
+        if attachments_ctx:
+            metadata_blocks.append(attachments_ctx)
+        metadata_prefix = "\n\n".join(metadata_blocks)
 
-        # Merge runtime context and user content into a single user message
-        # to avoid consecutive same-role messages that some providers reject.
+        user_content = self._build_user_content(current_message, media)
         if isinstance(user_content, str):
-            merged = f"{runtime_ctx}\n\n{user_content}"
+            merged = f"{metadata_prefix}\n\n{user_content}" if user_content else metadata_prefix
         else:
-            merged = [{"type": "text", "text": runtime_ctx}] + user_content
+            merged = [{"type": "text", "text": metadata_prefix}] + user_content
+
+        user_message: dict[str, Any] = {"role": current_role, "content": merged}
+        if attachments:
+            user_message["attachments"] = attachments
 
         return [
             {"role": "system", "content": self.build_system_prompt(skill_names)},
             *history,
-            {"role": current_role, "content": merged},
+            user_message,
         ]
 
     def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
@@ -149,47 +181,54 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         if not media:
             return text
 
-        images = []
+        images: list[dict[str, Any]] = []
         for path in media:
             p = Path(path)
             if not p.is_file():
                 continue
             raw = p.read_bytes()
-            # Detect real MIME type from magic bytes; fallback to filename guess
             mime = detect_image_mime(raw) or mimetypes.guess_type(path)[0]
             if not mime or not mime.startswith("image/"):
                 continue
             b64 = base64.b64encode(raw).decode()
-            images.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{b64}"},
-                "_meta": {"path": str(p)},
-            })
+            images.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                    "_meta": {"path": str(p)},
+                }
+            )
 
         if not images:
             return text
         return images + [{"type": "text", "text": text}]
 
     def add_tool_result(
-        self, messages: list[dict[str, Any]],
-        tool_call_id: str, tool_name: str, result: str,
+        self,
+        messages: list[dict[str, Any]],
+        tool_call_id: str,
+        tool_name: str,
+        result: str,
     ) -> list[dict[str, Any]]:
         """Add a tool result to the message list."""
         messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": tool_name, "content": result})
         return messages
 
     def add_assistant_message(
-        self, messages: list[dict[str, Any]],
+        self,
+        messages: list[dict[str, Any]],
         content: str | None,
         tool_calls: list[dict[str, Any]] | None = None,
         reasoning_content: str | None = None,
         thinking_blocks: list[dict] | None = None,
     ) -> list[dict[str, Any]]:
         """Add an assistant message to the message list."""
-        messages.append(build_assistant_message(
-            content,
-            tool_calls=tool_calls,
-            reasoning_content=reasoning_content,
-            thinking_blocks=thinking_blocks,
-        ))
+        messages.append(
+            build_assistant_message(
+                content,
+                tool_calls=tool_calls,
+                reasoning_content=reasoning_content,
+                thinking_blocks=thinking_blocks,
+            )
+        )
         return messages

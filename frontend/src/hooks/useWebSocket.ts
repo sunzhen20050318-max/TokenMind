@@ -6,7 +6,7 @@ import {
   primeNotificationSound,
 } from '../services/notificationSound';
 import { useChatStore } from '../stores/chatStore';
-import type { WSMessageType } from '../types';
+import type { Attachment, WSMessageType } from '../types';
 
 export function useWebSocket(sessionId: string) {
   const {
@@ -124,13 +124,13 @@ export function useWebSocket(sessionId: string) {
     };
   }, [sessionId, addMessage, setConnected, setError, setLoading, setActiveTool, addToolCall, completeToolCall, completeAllRunningTools, addTimelineEvent, setCurrentTurnId, startStreamingAssistant, appendStreamingAssistant, finishStreamingAssistant]);
 
-  const sendMessage = useCallback((content: string) => {
+  const sendMessage = useCallback((content: string, attachments: Attachment[] = []) => {
     // Don't clear old tool calls here - they're associated with previous messages
     // They'll be cleared when a new assistant response arrives
     startTimeRef.current = null;
     setActiveTool(null);
     void primeNotificationSound();
-    wsService.send(content);
+    wsService.send(content, attachments);
   }, [setActiveTool]);
 
   const stopMessage = useCallback(() => {

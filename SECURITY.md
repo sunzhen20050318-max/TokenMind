@@ -120,7 +120,7 @@ npm audit fix
 ```
 
 **Important Notes:**
-- Keep `litellm` updated to the latest version for security fixes
+- Keep LLM SDK dependencies updated to the latest safe versions
 - We've updated `ws` to `>=8.17.1` to fix DoS vulnerability
 - Run `pip-audit` or `npm audit` regularly
 - Subscribe to security advisories for sun_agent and its dependencies

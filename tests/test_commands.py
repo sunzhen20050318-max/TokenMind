@@ -8,9 +8,8 @@ from typer.testing import CliRunner
 
 from sun_agent.cli.commands import _make_provider, app
 from sun_agent.config.schema import Config
-from sun_agent.providers.litellm_provider import LiteLLMProvider
 from sun_agent.providers.openai_codex_provider import _strip_model_prefix
-from sun_agent.providers.registry import find_by_model
+from sun_agent.providers.registry import find_by_name
 
 runner = CliRunner()
 
@@ -218,7 +217,7 @@ def test_config_matches_explicit_ollama_prefix_without_api_key():
     config.agents.defaults.model = "ollama/llama3.2"
 
     assert config.get_provider_name() == "ollama"
-    assert config.get_api_base() == "http://localhost:11434"
+    assert config.get_api_base() == "http://localhost:11434/v1"
 
 
 def test_config_explicit_ollama_provider_uses_default_localhost_api_base():
@@ -227,7 +226,7 @@ def test_config_explicit_ollama_provider_uses_default_localhost_api_base():
     config.agents.defaults.model = "llama3.2"
 
     assert config.get_provider_name() == "ollama"
-    assert config.get_api_base() == "http://localhost:11434"
+    assert config.get_api_base() == "http://localhost:11434/v1"
 
 
 def test_config_auto_detects_ollama_from_local_api_base():
@@ -271,27 +270,14 @@ def test_config_falls_back_to_vllm_when_ollama_not_configured():
     assert config.get_api_base() == "http://localhost:8000"
 
 
-def test_find_by_model_prefers_explicit_prefix_over_generic_codex_keyword():
-    spec = find_by_model("github-copilot/gpt-5.3-codex")
+def test_registry_can_find_github_copilot_by_name():
+    spec = find_by_name("github_copilot")
 
     assert spec is not None
     assert spec.name == "github_copilot"
 
 
-def test_litellm_provider_canonicalizes_github_copilot_hyphen_prefix():
-    provider = LiteLLMProvider(default_model="github-copilot/gpt-5.3-codex")
-
-    resolved = provider._resolve_model("github-copilot/gpt-5.3-codex")
-
-    assert resolved == "github_copilot/gpt-5.3-codex"
-
-
-def test_openai_codex_strip_prefix_supports_hyphen_and_underscore():
-    assert _strip_model_prefix("openai-codex/gpt-5.1-codex") == "gpt-5.1-codex"
-    assert _strip_model_prefix("openai_codex/gpt-5.1-codex") == "gpt-5.1-codex"
-
-
-def test_make_provider_passes_extra_headers_to_custom_provider():
+def test_make_provider_uses_openai_compat_for_custom_provider():
     config = Config.model_validate(
         {
             "agents": {"defaults": {"provider": "custom", "model": "gpt-4o-mini"}},
@@ -308,14 +294,20 @@ def test_make_provider_passes_extra_headers_to_custom_provider():
         }
     )
 
-    with patch("sun_agent.providers.custom_provider.AsyncOpenAI") as mock_async_openai:
-        _make_provider(config)
+    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_async_openai:
+        provider = _make_provider(config)
 
     kwargs = mock_async_openai.call_args.kwargs
+    assert provider.__class__.__name__ == "OpenAICompatProvider"
     assert kwargs["api_key"] == "test-key"
     assert kwargs["base_url"] == "https://example.com/v1"
     assert kwargs["default_headers"]["APP-Code"] == "demo-app"
     assert kwargs["default_headers"]["x-session-affinity"] == "sticky-session"
+
+
+def test_openai_codex_strip_prefix_supports_hyphen_and_underscore():
+    assert _strip_model_prefix("openai-codex/gpt-5.1-codex") == "gpt-5.1-codex"
+    assert _strip_model_prefix("openai_codex/gpt-5.1-codex") == "gpt-5.1-codex"
 
 
 @pytest.fixture

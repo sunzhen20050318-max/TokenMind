@@ -53,7 +53,13 @@ async def websocket_handler(
 
             if msg_type == "message":
                 content = msg_data.get("content", "").strip()
-                if not content:
+                attachments = msg_data.get("attachments") or []
+                media = [
+                    item.get("path")
+                    for item in attachments
+                    if isinstance(item, dict) and item.get("is_image") and item.get("path")
+                ]
+                if not content and not attachments:
                     continue
 
                 # Import here to avoid circular imports
@@ -64,8 +70,8 @@ async def websocket_handler(
                     sender_id="web_user",
                     chat_id=session_key,
                     content=content,
-                    media=[],
-                    metadata={"websocket": True},
+                    media=media,
+                    metadata={"websocket": True, "attachments": attachments},
                     session_key_override=session_key,
                 )
                 await inbound_queue.put(msg)

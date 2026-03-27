@@ -1,4 +1,4 @@
-import type { WSMessageType } from '../types';
+import type { Attachment, WSMessageType } from '../types';
 
 type MessageHandler = (msg: WSMessageType) => void;
 
@@ -59,12 +59,13 @@ class WebSocketService {
     this.reconnectAttempts = 0;
   }
 
-  send(content: string): void {
+  send(content: string, attachments: Attachment[] = []): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
           type: 'message',
           content,
+          attachments,
         })
       );
     }

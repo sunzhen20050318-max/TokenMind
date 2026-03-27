@@ -1,13 +1,69 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { Message } from '../../types';
+import type { Attachment, Message } from '../../types';
+import { BrandMark } from '../BrandMark';
 
 interface MessageBubbleProps {
   message: Message;
 }
 
+const ATTACHMENTS_TAG = '[Attached Files';
+
+function extractTextContent(
+  content: Message['content'],
+  attachments: Attachment[] | undefined
+): string {
+  const hidePlaceholderPaths = new Set((attachments || []).map((item) => item.path));
+
+  const filterLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return false;
+    }
+    if (trimmed.startsWith(ATTACHMENTS_TAG)) {
+      return false;
+    }
+    if (trimmed === 'Attached files are available in the workspace:') {
+      return false;
+    }
+    if (trimmed.startsWith('Use read_file for text-based files when possible.')) {
+      return false;
+    }
+    if (trimmed.startsWith('- ') && attachments?.some((item) => trimmed.includes(item.path))) {
+      return false;
+    }
+    if (/^\[(image|file): .+\]$/.test(trimmed)) {
+      const path = trimmed.slice(trimmed.indexOf(':') + 1, -1).trim();
+      if (hidePlaceholderPaths.has(path)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  if (typeof content === 'string') {
+    return content
+      .split('\n')
+      .filter(filterLine)
+      .join('\n')
+      .trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => (item && typeof item === 'object' && typeof item.text === 'string' ? item.text : ''))
+      .flatMap((text) => text.split('\n'))
+      .filter(filterLine)
+      .join('\n')
+      .trim();
+  }
+
+  return '';
+}
+
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const isUser = message.role === 'user';
+  const renderedContent = extractTextContent(message.content, message.attachments);
 
   return (
     <div
@@ -35,19 +91,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             border: '1px solid #333',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-            <circle cx="12" cy="12" r="4" fill="white" stroke="white"/>
-            <line x1="12" y1="2" x2="12" y2="4"/>
-            <line x1="12" y1="20" x2="12" y2="22"/>
-            <line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/>
-            <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
-            <line x1="2" y1="12" x2="4" y2="12"/>
-            <line x1="20" y1="12" x2="22" y2="12"/>
-            <line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/>
-            <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
-          </svg>
+          <BrandMark size={15} alt="" />
         </div>
       )}
+
       <div
         style={{
           maxWidth: '70%',
@@ -56,24 +103,27 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           backgroundColor: isUser ? '#ffffff' : '#1c1c1e',
           color: isUser ? '#000' : '#e5e5e5',
           fontSize: '14px',
-          lineHeight: '1.4',
-          whiteSpace: 'pre-wrap',
+          lineHeight: '1.55',
+          whiteSpace: 'pre-line',
           wordBreak: 'break-word',
+          overflowWrap: 'anywhere',
           border: isUser ? 'none' : '1px solid #2a2a2a',
         }}
       >
-        <div style={{ display: 'inline' }}>
+        <div style={{ display: 'block' }}>
           <ReactMarkdown
             components={{
-              p: ({ children }) => <p style={{ margin: '0' }}>{children}</p>,
+              p: ({ children }) => <p style={{ margin: '0', whiteSpace: 'pre-line' }}>{children}</p>,
               ul: ({ children }) => (
-                <ul style={{ margin: '4px 0', paddingLeft: '18px' }}>{children}</ul>
+                <ul style={{ margin: '6px 0', paddingLeft: '1.15em', whiteSpace: 'normal' }}>{children}</ul>
               ),
               ol: ({ children }) => (
-                <ol style={{ margin: '4px 0', paddingLeft: '18px' }}>{children}</ol>
+                <ol style={{ margin: '6px 0', paddingLeft: '1.2em', whiteSpace: 'normal' }}>{children}</ol>
               ),
               li: ({ children }) => (
-                <li style={{ margin: '2px 0' }}>{children}</li>
+                <li style={{ margin: '2px 0', paddingLeft: '0.12em', lineHeight: '1.55', whiteSpace: 'normal' }}>
+                  {children}
+                </li>
               ),
               code: ({ children, ...props }) => {
                 const inline = !(props as any).node?.properties?.directive;
@@ -103,6 +153,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                     overflow: 'auto',
                     margin: '6px 0',
                     border: '1px solid #2a2a2a',
+                    whiteSpace: 'pre-wrap',
                   }}
                 >
                   {children}
@@ -110,8 +161,44 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
               ),
             }}
           >
-            {message.content}
+            {renderedContent || (message.attachments?.length ? '已附带文件' : '')}
           </ReactMarkdown>
+
+          {message.attachments && message.attachments.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                marginTop: renderedContent ? '10px' : '0',
+              }}
+            >
+              {message.attachments.map((attachment) => (
+                <div
+                  key={`${attachment.path}-${attachment.name}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '7px 10px',
+                    borderRadius: '12px',
+                    backgroundColor: isUser ? '#f3f3f3' : '#111111',
+                    border: isUser ? '1px solid #e1e1e1' : '1px solid #2a2a2a',
+                    color: isUser ? '#111' : '#d5d5d5',
+                    fontSize: '12px',
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{attachment.name}</span>
+                  {attachment.category ? (
+                    <span style={{ color: isUser ? '#666' : '#8d8d8d', textTransform: 'capitalize' }}>
+                      {attachment.category}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+
           {message.isStreaming && (
             <span
               style={{
@@ -128,6 +215,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           )}
         </div>
       </div>
+
       {isUser && (
         <div
           style={{
@@ -142,10 +230,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="#000">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
           </svg>
         </div>
       )}
+
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(4px); }

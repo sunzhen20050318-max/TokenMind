@@ -3,6 +3,9 @@ import type {
   ChatHistoryResponse,
   Session,
   StatusResponse,
+  UploadFilesResponse,
+  Attachment,
+  UploadProgress,
 } from '../types';
 import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
 import type {
@@ -20,12 +23,13 @@ const API_BASE = '/api';
 export const api = {
   async sendMessage(
     message: string,
-    sessionId?: string
+    sessionId?: string,
+    attachments: Attachment[] = []
   ): Promise<SendMessageResponse> {
     const res = await fetch(`${API_BASE}/chat/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, session_id: sessionId }),
+      body: JSON.stringify({ message, session_id: sessionId, attachments }),
     });
     if (!res.ok) {
       throw new Error(`Failed to send message: ${res.statusText}`);
@@ -74,6 +78,67 @@ export const api = {
       throw new Error(`Failed to get cron status: ${res.statusText}`);
     }
     return res.json();
+  },
+
+  async uploadFiles(
+    sessionId: string,
+    files: File[],
+    onProgress?: (progress: UploadProgress) => void
+  ): Promise<UploadFilesResponse> {
+    const formData = new FormData();
+    const fallbackTotal = files.reduce((sum, file) => sum + file.size, 0);
+    formData.append('session_id', sessionId);
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/chat/upload`, true);
+
+      xhr.upload.onprogress = (event) => {
+        const total = event.lengthComputable ? event.total : fallbackTotal;
+        if (!total) {
+          return;
+        }
+        onProgress?.({
+          loaded: event.loaded,
+          total,
+          percent: Math.min(100, Math.round((event.loaded / total) * 100)),
+        });
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('文件上传失败，请检查网络连接后重试'));
+      };
+
+      xhr.onload = () => {
+        let payload: UploadFilesResponse | { detail?: string } | null = null;
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch {
+          payload = null;
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300 && payload) {
+          onProgress?.({
+            loaded: fallbackTotal,
+            total: fallbackTotal,
+            percent: 100,
+          });
+          resolve(payload as UploadFilesResponse);
+          return;
+        }
+
+        const detail =
+          payload && typeof payload === 'object' && 'detail' in payload && typeof payload.detail === 'string'
+            ? payload.detail
+            : `Failed to upload files: ${xhr.statusText}`;
+        reject(new Error(detail));
+      };
+
+      xhr.send(formData);
+    });
   },
 
   async listCronJobs(includeDisabled = true): Promise<CronJob[]> {

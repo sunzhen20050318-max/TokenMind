@@ -7,7 +7,7 @@ def test_custom_provider_parse_handles_empty_choices() -> None:
     provider = CustomProvider()
     response = SimpleNamespace(choices=[])
 
-    result = provider._parse(response)
+    result = provider._parse_response(response)
 
     assert result.finish_reason == "error"
     assert "empty choices" in result.content

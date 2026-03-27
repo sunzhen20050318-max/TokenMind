@@ -487,6 +487,7 @@ class AgentLoop:
             history=history,
             current_message=msg.content,
             media=msg.media if msg.media else None,
+            attachments=msg.metadata.get("attachments") if msg.metadata else None,
             channel=msg.channel, chat_id=msg.chat_id,
         )
         raw_timeline_events: list[dict[str, Any]] = []
@@ -558,17 +559,23 @@ class AgentLoop:
                 entry["content"] = content[:self._TOOL_RESULT_MAX_CHARS] + "\n... (truncated)"
             elif role == "user":
                 if isinstance(content, str) and content.startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
-                    # Strip the runtime-context prefix, keep only the user text.
-                    parts = content.split("\n\n", 1)
-                    if len(parts) > 1 and parts[1].strip():
-                        entry["content"] = parts[1]
-                    else:
+                    while isinstance(content, str) and content.startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
+                        parts = content.split("\n\n", 1)
+                        content = parts[1] if len(parts) > 1 else ""
+                    if not isinstance(content, str) or not content.strip():
                         continue
+                    entry["content"] = content
                 if isinstance(content, list):
                     filtered = []
                     for c in content:
                         if c.get("type") == "text" and isinstance(c.get("text"), str) and c["text"].startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
-                            continue  # Strip runtime context from multimodal messages
+                            text = c["text"]
+                            while text.startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
+                                parts = text.split("\n\n", 1)
+                                text = parts[1] if len(parts) > 1 else ""
+                            if not text.strip():
+                                continue
+                            c = {**c, "text": text}
                         if (c.get("type") == "image_url"
                                 and c.get("image_url", {}).get("url", "").startswith("data:image/")):
                             path = (c.get("_meta") or {}).get("path", "")

@@ -37,7 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **ToolRegistry** (`sun_agent/agent/tools/registry.py`): Manages built-in tools (shell, filesystem, web search, message, cron, spawn, MCP)
 - **SessionManager** (`sun_agent/session/manager.py`): Conversation session persistence
 - **ContextBuilder** (`sun_agent/agent/context.py`): Builds prompts from history, memory, skills
-- **Providers** (`sun_agent/providers/`): LLM provider integrations via LiteLLM, plus custom providers for OpenAI Codex, Azure OpenAI, and direct OpenAI-compatible endpoints
+- **Providers** (`sun_agent/providers/`): native provider integrations plus OpenAI-compatible backends for gateways, local models, Codex, and Azure OpenAI
 - **Skills** (`sun_agent/skills/`): Bundled agent skills (github, weather, tmux, cron, memory, summarize, clawhub, skill-creator, frontend-webapp-builder). Each skill has a `SKILL.md` that defines its prompts and capabilities
 
 ### Web UI Stack
@@ -115,7 +115,7 @@ sun_agent/
 ├── bus/            # Message routing (queue.py, events.py)
 ├── cron/           # Scheduled tasks
 ├── heartbeat/      # Proactive wake-up
-├── providers/     # LLM providers (LiteLLM wrapper, custom, Azure, Codex)
+├── providers/     # LLM providers (Anthropic, OpenAI-compatible, Azure, Codex)
 ├── session/        # Conversation sessions (JSONL persistence)
 ├── config/         # Configuration schema and loading
 ├── server/         # FastAPI web server

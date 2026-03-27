@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
-import { InputArea } from './InputArea';
+import { InputArea, type DraftAttachment } from './InputArea';
 import { ToolChain } from './ToolIndicator';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
-import type { Message } from '../../types';
+import { api } from '../../services/api';
+import type { Attachment, Message, UploadProgress } from '../../types';
 import './chatWindow.css';
 
 interface ChatWindowProps {
@@ -248,6 +249,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     activeTool,
     addMessage,
     setLoading,
+    setError,
     toolCalls,
     timelineEvents,
     currentTurnId,
@@ -259,9 +261,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const prevMessagesLenRef = useRef<number>(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
+  const [pendingFiles, setPendingFiles] = useState<Array<{ id: string; file: File }>>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
 
   useEffect(() => {
     setDraftMessage('');
+    setPendingFiles([]);
+    setUploadProgress(null);
   }, [sessionId]);
 
   const visibleMessages = useMemo<VisibleMessageEntry[]>(
@@ -307,8 +314,39 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     }
   }, [visibleMessages, toolCalls, timelineEvents]);
 
-  const handleSend = (content: string) => {
-    if (!isConnected) return;
+  const handleSend = async (content: string) => {
+    if (!isConnected || (!content.trim() && pendingFiles.length === 0)) return;
+    let attachments: Attachment[] = [];
+    setError(null);
+
+    if (pendingFiles.length > 0) {
+      const fallbackTotal = pendingFiles.reduce((sum, item) => sum + item.file.size, 0);
+      try {
+        setIsUploading(true);
+        setUploadProgress({
+          loaded: 0,
+          total: fallbackTotal,
+          percent: 0,
+        });
+        const uploadResult = await api.uploadFiles(
+          sessionId,
+          pendingFiles.map((item) => item.file),
+          (progress) => {
+            setUploadProgress(progress);
+          }
+        );
+        attachments = uploadResult.attachments;
+      } catch (error) {
+        setError(error instanceof Error ? error.message : '文件上传失败');
+        setLoading(false);
+        setIsUploading(false);
+        setUploadProgress(null);
+        return;
+      } finally {
+        setIsUploading(false);
+      }
+    }
+
     const turnId = new Date().toISOString();
     setCurrentTurnId(turnId);
     setActiveTool(null);
@@ -316,15 +354,38 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       role: 'user',
       content,
       timestamp: turnId,
+      attachments,
     });
     setLoading(true);
-    sendMessage(content);
+    sendMessage(content, attachments);
+    setDraftMessage('');
+    setPendingFiles([]);
+    setUploadProgress(null);
   };
 
   const handleStarterCardSelect = (prompt: string) => {
     setDraftMessage(prompt);
     setInputFocusSignal((signal) => signal + 1);
   };
+
+  const handleSelectFiles = (files: FileList) => {
+    const nextFiles = Array.from(files).map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+    }));
+    setPendingFiles((existing) => [...existing, ...nextFiles]);
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setPendingFiles((existing) => existing.filter((item) => item.id !== id));
+  };
+
+  const draftAttachments: DraftAttachment[] = pendingFiles.map(({ id, file }) => ({
+    id,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+  }));
 
   return (
     <div
@@ -424,9 +485,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         onStop={stopMessage}
         disabled={!isConnected}
         isStreaming={isLoading}
+        isUploading={isUploading}
+        uploadProgress={uploadProgress}
         value={draftMessage}
         onChange={setDraftMessage}
         focusSignal={inputFocusSignal}
+        attachments={draftAttachments}
+        onSelectFiles={handleSelectFiles}
+        onRemoveAttachment={handleRemoveAttachment}
       />
     </div>
   );

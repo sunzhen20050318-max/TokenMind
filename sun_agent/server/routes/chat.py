@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -15,6 +15,7 @@ class SendMessageRequest(BaseModel):
 
     message: str
     session_id: str | None = None
+    attachments: list[dict[str, Any]] = []
 
 
 class SendMessageResponse(BaseModel):
@@ -31,6 +32,13 @@ class ChatHistoryResponse(BaseModel):
     session_id: str
     messages: list[dict[str, Any]]
     timeline_events: list[dict[str, Any]] = []
+
+
+class UploadFilesResponse(BaseModel):
+    """Response model for uploaded files."""
+
+    session_id: str
+    attachments: list[dict[str, Any]]
 
 
 def get_chat_service():
@@ -51,13 +59,14 @@ async def send_message(
     This is a synchronous request-response endpoint.
     For real-time streaming, use the WebSocket endpoint instead.
     """
-    if not request.message.strip():
+    if not request.message.strip() and not request.attachments:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     try:
         result = await service.send_message(
             content=request.message,
             session_id=request.session_id or f"web:auto_{id(request)}",
+            attachments=request.attachments,
         )
         return SendMessageResponse(
             response=result["response"],
@@ -66,6 +75,22 @@ async def send_message(
         )
     except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/upload", response_model=UploadFilesResponse)
+async def upload_files(
+    session_id: str = Form(...),
+    files: list[UploadFile] = File(...),
+    service=Depends(get_chat_service),
+):
+    """Upload files for a chat session and return workspace-backed attachment metadata."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    attachments = await service.save_uploads(session_id, files)
+    if not attachments:
+        raise HTTPException(status_code=400, detail="No valid files uploaded")
+    return UploadFilesResponse(session_id=session_id, attachments=attachments)
 
 
 @router.get("/history/{session_id}", response_model=ChatHistoryResponse)
