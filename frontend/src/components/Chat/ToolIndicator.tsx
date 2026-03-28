@@ -23,6 +23,7 @@ export const ToolChain: React.FC<ToolChainProps> = memo(({ toolCalls, timelineEv
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const hasRunning = toolCalls.some(tc => tc.status === 'running');
+  const hasErrors = toolCalls.some(tc => tc.status === 'error') || timelineEvents.some(event => event.type === 'tool_error');
 
   // Update current time every 100ms when tools are running
   useEffect(() => {
@@ -79,6 +80,9 @@ export const ToolChain: React.FC<ToolChainProps> = memo(({ toolCalls, timelineEv
   const getStatusText = () => {
     if (hasRunning && activeToolName) {
       return `Running ${activeToolName}`;
+    }
+    if (hasErrors) {
+      return 'One or more steps were blocked or failed';
     }
     if (!isDone) {
       return 'Waiting for final response';
@@ -162,6 +166,12 @@ export const ToolChain: React.FC<ToolChainProps> = memo(({ toolCalls, timelineEv
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
               <circle cx="12" cy="12" r="10" strokeDasharray="31.4" strokeDashoffset="10" />
             </svg>
+          ) : hasErrors ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v5" />
+              <circle cx="12" cy="16.5" r="0.75" fill="#ef4444" stroke="none" />
+            </svg>
           ) : (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34c759" strokeWidth="2">
               <polyline points="20 6 9 17 4 12" />
@@ -231,6 +241,7 @@ export const ToolChain: React.FC<ToolChainProps> = memo(({ toolCalls, timelineEv
                           borderRadius: '50%',
                           backgroundColor:
                             event.type === 'tool_end' ? '#34c759' :
+                            event.type === 'tool_error' ? '#ef4444' :
                             event.type === 'tool_start' ? '#f59e0b' :
                             '#5a5a5a',
                         }}
@@ -241,7 +252,15 @@ export const ToolChain: React.FC<ToolChainProps> = memo(({ toolCalls, timelineEv
                         {getEventLabel(event)}
                       </div>
                       <div style={{ fontSize: '11px', color: '#666', marginTop: '3px' }}>
-                        {event.type === 'progress' ? 'Progress update' : event.type === 'tool_start' ? 'Tool started' : 'Tool completed'}
+                        {event.detail
+                          ? event.detail
+                          : event.type === 'progress'
+                            ? 'Progress update'
+                            : event.type === 'tool_start'
+                              ? 'Tool started'
+                              : event.type === 'tool_error'
+                                ? 'Execution blocked'
+                                : 'Tool completed'}
                       </div>
                     </div>
                     <div style={{ fontSize: '11px', color: '#555', whiteSpace: 'nowrap' }}>

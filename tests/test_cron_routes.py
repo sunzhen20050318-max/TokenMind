@@ -6,14 +6,16 @@ import pytest
 
 
 @pytest.fixture
-def temp_cron_service(tmp_path):
+def temp_cron_service(tmp_path, monkeypatch: pytest.MonkeyPatch):
     """Bind route globals to a temporary cron service."""
     from sun_agent.cron.service import CronService
     from sun_agent.server.dependencies import get_cron_service, set_cron_service
+    from sun_agent.server.routes import cron as cron_routes
 
     previous = get_cron_service()
     service = CronService(tmp_path / "cron" / "jobs.json")
     set_cron_service(service)
+    monkeypatch.setattr(cron_routes, "_audit", lambda: type("Audit", (), {"record": staticmethod(lambda *args, **kwargs: None)})())
     try:
         yield service
     finally:

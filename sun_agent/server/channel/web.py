@@ -67,6 +67,34 @@ class WebChannel(BaseChannel):
             logger.warning("{}: WebSocket manager not set", self.name)
             return
 
+        if msg.metadata.get("_approval_required"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "approval_required",
+                    "approval_id": msg.metadata.get("_approval_id"),
+                    "tool_id": msg.metadata.get("_tool_id"),
+                    "tool_name": msg.metadata.get("_tool_name"),
+                    "command": msg.content,
+                    "risk_reason": msg.metadata.get("_risk_reason"),
+                    "working_dir": msg.metadata.get("_working_dir"),
+                    "timeout_s": msg.metadata.get("_approval_timeout_s"),
+                    "channel": msg.channel,
+                },
+            )
+            return
+
+        if msg.metadata.get("_approval_error"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "error",
+                    "content": msg.content,
+                    "channel": msg.channel,
+                },
+            )
+            return
+
         # Handle progress messages - tool events
         if msg.metadata.get("_progress"):
             if msg.metadata.get("_tool_start"):
@@ -99,6 +127,20 @@ class WebChannel(BaseChannel):
                         "tool_id": msg.metadata.get("_tool_id"),
                         "tool_name": msg.metadata.get("_tool_name"),
                         "duration": msg.metadata.get("_tool_duration"),
+                        "channel": msg.channel,
+                    },
+                )
+                return
+            if msg.metadata.get("_tool_error"):
+                logger.info("Sending TOOL_ERROR: {} ({})", msg.content[:80], msg.metadata.get("_tool_id"))
+                await self._ws_manager.send_to_session(
+                    session_key=msg.chat_id,
+                    message={
+                        "type": "tool_error",
+                        "content": msg.content,
+                        "tool_id": msg.metadata.get("_tool_id"),
+                        "tool_name": msg.metadata.get("_tool_name"),
+                        "detail": msg.metadata.get("_tool_detail"),
                         "channel": msg.channel,
                     },
                 )

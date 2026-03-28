@@ -515,6 +515,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     setNotice(null);
     try {
       const response = await api.updateToolsConfig({
+        audit_enabled: toolsDraft.audit_enabled,
         restrict_to_workspace: toolsDraft.restrict_to_workspace,
         web: {
           proxy: toolsDraft.web.proxy || '',
@@ -530,6 +531,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         exec: {
           timeout: toolsDraft.exec.timeout,
           path_append: toolsDraft.exec.path_append,
+          confirm_high_risk: toolsDraft.exec.confirm_high_risk,
+          approval_timeout_s: toolsDraft.exec.approval_timeout_s,
+        },
+        uploads: {
+          max_file_mb: toolsDraft.uploads.max_file_mb,
+          max_total_mb: toolsDraft.uploads.max_total_mb,
+          retention_days: toolsDraft.uploads.retention_days,
+          cleanup_interval_hours: toolsDraft.uploads.cleanup_interval_hours,
         },
       });
 
@@ -975,7 +984,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         <div className="settings-metrics">
           <Metric label="搜索提供商" value={toolsDraft.web.search.provider} />
           <Metric label="命令超时" value={`${toolsDraft.exec.timeout} 秒`} />
-          <Metric label="工作目录限制" value={toolsDraft.restrict_to_workspace ? '开启' : '关闭'} />
+          <Metric label="上传总配额" value={`${toolsDraft.uploads.max_total_mb} MB`} />
         </div>
 
         <div className="settings-panel">
@@ -1185,6 +1194,99 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                 />
               </Field>
             </div>
+          </div>
+        </div>
+
+        <div className="settings-panel">
+          <div className="settings-panel-header">
+            <h3>上传与存储</h3>
+            <p>控制单文件上限、总配额和自动清理周期，文件中心会直接使用这里的策略。</p>
+          </div>
+          <div className="settings-grid">
+            <Field label="单文件上限 (MB)" copy="超过后会直接拒绝上传。">
+              <input
+                className="settings-input"
+                min={1}
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          uploads: {
+                            ...current.uploads,
+                            max_file_mb: Number(event.target.value) || 1,
+                          },
+                        }
+                      : current
+                  )
+                }
+                type="number"
+                value={toolsDraft.uploads.max_file_mb}
+              />
+            </Field>
+            <Field label="总配额 (MB)" copy="所有上传文件共享的上限。">
+              <input
+                className="settings-input"
+                min={1}
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          uploads: {
+                            ...current.uploads,
+                            max_total_mb: Number(event.target.value) || 1,
+                          },
+                        }
+                      : current
+                  )
+                }
+                type="number"
+                value={toolsDraft.uploads.max_total_mb}
+              />
+            </Field>
+            <Field label="保留天数" copy="未被任何会话引用的文件超过这个天数后可被清理。">
+              <input
+                className="settings-input"
+                min={1}
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          uploads: {
+                            ...current.uploads,
+                            retention_days: Number(event.target.value) || 1,
+                          },
+                        }
+                      : current
+                  )
+                }
+                type="number"
+                value={toolsDraft.uploads.retention_days}
+              />
+            </Field>
+            <Field label="清理检查间隔 (小时)" copy="后台清理器会按这个周期重新检查旧文件。">
+              <input
+                className="settings-input"
+                min={1}
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          uploads: {
+                            ...current.uploads,
+                            cleanup_interval_hours: Number(event.target.value) || 1,
+                          },
+                        }
+                      : current
+                  )
+                }
+                type="number"
+                value={toolsDraft.uploads.cleanup_interval_hours}
+              />
+            </Field>
           </div>
         </div>
 

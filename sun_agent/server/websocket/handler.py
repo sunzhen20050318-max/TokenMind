@@ -90,6 +90,34 @@ async def websocket_handler(
                 )
                 await inbound_queue.put(msg)
 
+            elif msg_type == "tool_approval":
+                from sun_agent.bus.events import InboundMessage
+
+                approval_id = str(msg_data.get("approval_id") or "").strip()
+                approved = bool(msg_data.get("approved"))
+                if not approval_id:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": "Missing approval_id",
+                    })
+                    continue
+
+                msg = InboundMessage(
+                    channel="web",
+                    sender_id="web_user",
+                    chat_id=session_key,
+                    content="/tool-approval",
+                    media=[],
+                    metadata={
+                        "websocket": True,
+                        "control": "tool_approval",
+                        "approval_id": approval_id,
+                        "approved": approved,
+                    },
+                    session_key_override=session_key,
+                )
+                await inbound_queue.put(msg)
+
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
 

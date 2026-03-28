@@ -77,6 +77,18 @@ class WebSocketService {
     }
   }
 
+  respondToToolApproval(approvalId: string, approved: boolean): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: 'tool_approval',
+          approval_id: approvalId,
+          approved,
+        })
+      );
+    }
+  }
+
   ping(): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'ping' }));

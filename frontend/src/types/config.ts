@@ -31,6 +31,15 @@ export interface WebToolSettings {
 export interface ExecToolSettings {
   timeout: number;
   path_append: string;
+  confirm_high_risk: boolean;
+  approval_timeout_s: number;
+}
+
+export interface UploadsSettings {
+  max_file_mb: number;
+  max_total_mb: number;
+  retention_days: number;
+  cleanup_interval_hours: number;
 }
 
 export interface McpServerSettings {
@@ -63,6 +72,8 @@ export interface McpServerToolsState {
 export interface ToolsSettings {
   web: WebToolSettings;
   exec: ExecToolSettings;
+  uploads: UploadsSettings;
+  audit_enabled: boolean;
   restrict_to_workspace: boolean;
   mcp_servers: Record<string, McpServerSettings>;
 }
@@ -125,7 +136,16 @@ export interface ToolsSettingsUpdate {
   exec?: {
     timeout?: number;
     path_append?: string;
+    confirm_high_risk?: boolean;
+    approval_timeout_s?: number;
   };
+  uploads?: {
+    max_file_mb?: number;
+    max_total_mb?: number;
+    retention_days?: number;
+    cleanup_interval_hours?: number;
+  };
+  audit_enabled?: boolean;
   restrict_to_workspace?: boolean;
 }
 

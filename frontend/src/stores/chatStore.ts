@@ -13,13 +13,14 @@ export interface ToolCall {
 
 export interface TimelineEvent {
   id: string;
-  type: 'progress' | 'tool_start' | 'tool_end';
+  type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error';
   content: string;
   timestamp: string;
   turnId: string;
   toolId?: string;
   toolName?: string;
   duration?: number;
+  detail?: string;
 }
 
 export interface ModelProvider {
@@ -59,6 +60,7 @@ interface ChatState {
   setActiveTool: (tool: string | null) => void;
   addToolCall: (tool: string, toolId?: string) => string;
   completeToolCall: (id: string, duration: number) => void;
+  failToolCall: (id: string) => void;
   completeAllRunningTools: (duration: number) => void;
   clearToolCalls: () => void;
   clearOldToolCalls: () => void;
@@ -204,6 +206,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       toolCalls: state.toolCalls.map((tc) =>
         tc.id === id ? { ...tc, status: 'completed' as const, duration } : tc
+      ),
+    }));
+  },
+
+  failToolCall: (id) => {
+    set((state) => ({
+      toolCalls: state.toolCalls.map((tc) =>
+        tc.id === id ? { ...tc, status: 'error' as const } : tc
       ),
     }));
   },

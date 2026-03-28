@@ -3,12 +3,14 @@ import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
 import { SettingsModal } from '../../pages/Settings';
 import { TasksModal } from '../../pages/Tasks';
+import { StorageModal } from '../../pages/Storage';
 
 export const Sidebar: React.FC = () => {
   const { sessions, createNewSession } = useSessions();
   const { currentSession, setCurrentSession, deleteSession, renameSession } = useChatStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
+  const [showStorage, setShowStorage] = useState(false);
   const [query, setQuery] = useState('');
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -125,6 +127,39 @@ export const Sidebar: React.FC = () => {
             <path d="M3 6h.01" />
             <path d="M3 12h.01" />
             <path d="M3 18h.01" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => setShowStorage(true)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid #2a2a2a',
+            backgroundColor: 'transparent',
+            color: '#a0a0a0',
+            fontSize: '13px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            transition: 'all 0.15s',
+          }}
+          onMouseOver={(event) => {
+            event.currentTarget.style.backgroundColor = '#1a1a1a';
+            event.currentTarget.style.color = '#e5e5e5';
+          }}
+          onMouseOut={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+            event.currentTarget.style.color = '#a0a0a0';
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            文件中心
+          </span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44l1.121 1.12a1.5 1.5 0 0 0 1.06.44H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z" />
           </svg>
         </button>
       </div>
@@ -350,6 +385,7 @@ export const Sidebar: React.FC = () => {
         sessions={sessions}
       />
       )}
+      {showStorage && <StorageModal onClose={() => setShowStorage(false)} />}
     </div>
   );
 };

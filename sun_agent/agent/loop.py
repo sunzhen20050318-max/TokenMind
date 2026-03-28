@@ -9,6 +9,7 @@ import re
 import sys
 import time
 from contextlib import AsyncExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
@@ -25,6 +26,7 @@ from sun_agent.agent.tools.registry import ToolRegistry
 from sun_agent.agent.tools.shell import ExecTool
 from sun_agent.agent.tools.spawn import SpawnTool
 from sun_agent.agent.tools.web import WebFetchTool, WebSearchTool
+from sun_agent.audit import AuditLogger
 from sun_agent.bus.events import InboundMessage, OutboundMessage
 from sun_agent.bus.queue import MessageBus
 from sun_agent.providers.base import LLMProvider
@@ -33,6 +35,23 @@ from sun_agent.session.manager import Session, SessionManager
 if TYPE_CHECKING:
     from sun_agent.config.schema import ChannelsConfig, ExecToolConfig, WebSearchConfig
     from sun_agent.cron.service import CronService
+
+
+@dataclass
+class PendingApproval:
+    """One high-risk tool execution waiting for user approval."""
+
+    approval_id: str
+    session_key: str
+    chat_id: str
+    channel: str
+    tool_id: str
+    tool_name: str
+    command: str
+    reason: str
+    working_dir: str
+    requested_at: float
+    future: asyncio.Future[bool]
 
 
 class AgentLoop:
@@ -106,6 +125,8 @@ class AgentLoop:
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._background_tasks: list[asyncio.Task] = []
         self._processing_lock = asyncio.Lock()
+        self._pending_approvals: dict[str, PendingApproval] = {}
+        self.audit = AuditLogger(workspace)
         self.memory_consolidator = MemoryConsolidator(
             workspace=workspace,
             provider=provider,
@@ -213,9 +234,166 @@ class AgentLoop:
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
+    def _should_confirm_high_risk_exec(
+        self,
+        msg: InboundMessage | None,
+        tool_name: str,
+        args: dict[str, Any],
+    ) -> tuple[bool, str | None, str]:
+        """Determine whether a tool call should pause for user confirmation."""
+        if msg is None:
+            return False, None, ""
+        if tool_name != "exec" or not self.exec_config.confirm_high_risk:
+            return False, None, ""
+        if msg.channel != "web":
+            return False, None, ""
+
+        command = str(args.get("command") or "").strip()
+        if not command:
+            return False, None, ""
+
+        working_dir = str(args.get("working_dir") or self.workspace)
+        reason = ExecTool.get_high_risk_reason(command) or (
+            "Shell commands can modify files, install software, access the network, or change the local environment."
+        )
+        return True, reason, working_dir
+
+    async def _request_tool_approval(
+        self,
+        *,
+        msg: InboundMessage,
+        tool_id: str,
+        tool_name: str,
+        command: str,
+        reason: str,
+        working_dir: str,
+    ) -> bool:
+        """Ask the current web session to approve a high-risk tool call."""
+        approval_id = f"{msg.session_key}:{tool_id}"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        pending = PendingApproval(
+            approval_id=approval_id,
+            session_key=msg.session_key,
+            chat_id=msg.chat_id,
+            channel=msg.channel,
+            tool_id=tool_id,
+            tool_name=tool_name,
+            command=command,
+            reason=reason,
+            working_dir=working_dir,
+            requested_at=time.monotonic(),
+            future=future,
+        )
+        self._pending_approvals[approval_id] = pending
+
+        self.audit.record(
+            "tool.exec.approval_requested",
+            "pending",
+            session_key=msg.session_key,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            actor=msg.sender_id,
+            details={
+                "approval_id": approval_id,
+                "tool_id": tool_id,
+                "command": command,
+                "working_dir": working_dir,
+                "reason": reason,
+            },
+        )
+        await self.bus.publish_outbound(OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content=command,
+            metadata={
+                "_approval_required": True,
+                "_approval_id": approval_id,
+                "_tool_id": tool_id,
+                "_tool_name": tool_name,
+                "_risk_reason": reason,
+                "_working_dir": working_dir,
+                "_approval_timeout_s": self.exec_config.approval_timeout_s,
+            },
+        ))
+        try:
+            approved = await asyncio.wait_for(
+                future,
+                timeout=max(1, self.exec_config.approval_timeout_s),
+            )
+            self.audit.record(
+                "tool.exec.approval_resolved",
+                "approved" if approved else "rejected",
+                session_key=msg.session_key,
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                actor=msg.sender_id,
+                details={
+                    "approval_id": approval_id,
+                    "tool_id": tool_id,
+                    "command": command,
+                },
+            )
+            return approved
+        except asyncio.TimeoutError:
+            self.audit.record(
+                "tool.exec.approval_resolved",
+                "timeout",
+                session_key=msg.session_key,
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                actor=msg.sender_id,
+                details={
+                    "approval_id": approval_id,
+                    "tool_id": tool_id,
+                    "command": command,
+                },
+            )
+            return False
+        finally:
+            self._pending_approvals.pop(approval_id, None)
+
+    async def _handle_tool_approval(self, msg: InboundMessage) -> None:
+        """Resolve a pending high-risk tool approval from the frontend."""
+        approval_id = str((msg.metadata or {}).get("approval_id") or "").strip()
+        approved = bool((msg.metadata or {}).get("approved"))
+        pending = self._pending_approvals.get(approval_id)
+        if not approval_id or not pending:
+            await self.bus.publish_outbound(OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content="This approval request has expired.",
+                metadata={"_approval_error": True},
+            ))
+            return
+        if pending.session_key != msg.session_key:
+            await self.bus.publish_outbound(OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content="This approval request does not belong to the current session.",
+                metadata={"_approval_error": True},
+            ))
+            return
+        if not pending.future.done():
+            pending.future.set_result(approved)
+
+    def _cancel_pending_approvals(self, session_key: str) -> int:
+        """Reject and clear any pending approvals for a session."""
+        cancelled = 0
+        for approval_id, pending in list(self._pending_approvals.items()):
+            if pending.session_key != session_key:
+                continue
+            if not pending.future.done():
+                pending.future.set_result(False)
+                cancelled += 1
+            self._pending_approvals.pop(approval_id, None)
+        return cancelled
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],
+        *,
+        msg: InboundMessage | None = None,
         on_progress: Callable[..., Awaitable[None]] | None = None,
     ) -> tuple[str | None, list[str], list[dict]]:
         """Run the agent iteration loop."""
@@ -259,6 +437,18 @@ class AgentLoop:
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
                     # Build full command string for display
                     full_command = f'{tool_call.name}({args_str})'
+                    self.audit.record(
+                        f"tool.{tool_call.name}.requested",
+                        "pending",
+                        session_key=msg.session_key if msg else None,
+                        channel=msg.channel if msg else None,
+                        chat_id=msg.chat_id if msg else None,
+                        actor=msg.sender_id if msg else None,
+                        details={
+                            "tool_id": tool_call.id,
+                            "arguments": tool_call.arguments,
+                        },
+                    )
                     # Send tool_start event with full command
                     if on_progress:
                         await on_progress(
@@ -267,11 +457,71 @@ class AgentLoop:
                             tool_id=tool_call.id,
                             tool_name=tool_call.name,
                         )
+                    should_confirm, risk_reason, working_dir = self._should_confirm_high_risk_exec(
+                        msg, tool_call.name, tool_call.arguments or {}
+                    )
+                    if should_confirm:
+                        if on_progress:
+                            await on_progress(
+                                f"Waiting for approval: {risk_reason}",
+                                tool_id=tool_call.id,
+                                tool_name=tool_call.name,
+                            )
+                        approved = await self._request_tool_approval(
+                            msg=msg,
+                            tool_id=tool_call.id,
+                            tool_name=tool_call.name,
+                            command=str((tool_call.arguments or {}).get("command") or full_command),
+                            reason=risk_reason or "This command needs confirmation.",
+                            working_dir=working_dir,
+                        )
+                        if not approved:
+                            result = "Error: Command execution was not approved by the user."
+                            if on_progress:
+                                await on_progress(
+                                    full_command,
+                                    tool_error=True,
+                                    tool_id=tool_call.id,
+                                    tool_name=tool_call.name,
+                                    detail="Execution cancelled because approval was rejected or timed out.",
+                                )
+                            messages = self.context.add_tool_result(
+                                messages, tool_call.id, tool_call.name, result
+                            )
+                            self.audit.record(
+                                "tool.exec.executed",
+                                "rejected",
+                                session_key=msg.session_key if msg else None,
+                                channel=msg.channel if msg else None,
+                                chat_id=msg.chat_id if msg else None,
+                                actor=msg.sender_id if msg else None,
+                                details={
+                                    "tool_id": tool_call.id,
+                                    "command": (tool_call.arguments or {}).get("command"),
+                                    "working_dir": working_dir,
+                                    "reason": risk_reason,
+                                },
+                            )
+                            continue
                     logger.info(f"[TOOL] {tool_call.name} START (id={tool_call.id})")
                     start_time = time.monotonic()
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     duration = time.monotonic() - start_time
                     logger.info(f"[TOOL] {tool_call.name} END (id={tool_call.id}, duration={duration:.2f}s)")
+                    outcome = "error" if isinstance(result, str) and result.startswith("Error") else "success"
+                    self.audit.record(
+                        f"tool.{tool_call.name}.executed",
+                        outcome,
+                        session_key=msg.session_key if msg else None,
+                        channel=msg.channel if msg else None,
+                        chat_id=msg.chat_id if msg else None,
+                        actor=msg.sender_id if msg else None,
+                        details={
+                            "tool_id": tool_call.id,
+                            "arguments": tool_call.arguments,
+                            "duration_s": round(duration, 3),
+                        },
+                    )
                     # Send tool_end event
                     if on_progress:
                         await on_progress(
@@ -334,6 +584,8 @@ class AgentLoop:
                 await self._handle_stop(msg)
             elif cmd == "/restart":
                 await self._handle_restart(msg)
+            elif (msg.metadata or {}).get("control") == "tool_approval":
+                await self._handle_tool_approval(msg)
             else:
                 task = asyncio.create_task(self._dispatch(msg))
                 self._active_tasks.setdefault(msg.session_key, []).append(task)
@@ -342,6 +594,7 @@ class AgentLoop:
     async def _handle_stop(self, msg: InboundMessage) -> None:
         """Cancel all active tasks and subagents for the session."""
         tasks = self._active_tasks.pop(msg.session_key, [])
+        approval_cancelled = self._cancel_pending_approvals(msg.session_key)
         cancelled = sum(1 for t in tasks if not t.done() and t.cancel())
         for t in tasks:
             try:
@@ -349,7 +602,7 @@ class AgentLoop:
             except (asyncio.CancelledError, Exception):
                 pass
         sub_cancelled = await self.subagents.cancel_by_session(msg.session_key)
-        total = cancelled + sub_cancelled
+        total = cancelled + sub_cancelled + approval_cancelled
         content = f"Stopped {total} task(s)." if total else "No active task to stop."
         await self.bus.publish_outbound(OutboundMessage(
             channel=msg.channel, chat_id=msg.chat_id, content=content,
@@ -438,7 +691,7 @@ class AgentLoop:
                 current_message=msg.content, channel=channel, chat_id=chat_id,
                 current_role=current_role,
             )
-            final_content, _, all_msgs = await self._run_agent_loop(messages)
+            final_content, _, all_msgs = await self._run_agent_loop(messages, msg=msg)
             self._save_turn(session, all_msgs, 1 + len(history))
             self.sessions.save(session)
             self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
@@ -500,7 +753,9 @@ class AgentLoop:
             tool_name: str | None = None,
             tool_start: bool = False,
             tool_end: bool = False,
+            tool_error: bool = False,
             duration: float | None = None,
+            detail: str | None = None,
         ) -> None:
             meta = dict(msg.metadata or {})
             meta["_progress"] = True
@@ -509,23 +764,27 @@ class AgentLoop:
             meta["_tool_name"] = tool_name
             meta["_tool_start"] = tool_start
             meta["_tool_end"] = tool_end
+            meta["_tool_error"] = tool_error
             if duration is not None:
                 meta["_tool_duration"] = duration
+            if detail:
+                meta["_tool_detail"] = detail
             from datetime import datetime
             raw_timeline_events.append({
-                "type": "tool_start" if tool_start else "tool_end" if tool_end else "progress",
+                "type": "tool_start" if tool_start else "tool_end" if tool_end else "tool_error" if tool_error else "progress",
                 "content": content,
                 "timestamp": datetime.now().isoformat(),
                 "tool_id": tool_id,
                 "tool_name": tool_name,
                 "duration": duration,
+                "detail": detail,
             })
             await self.bus.publish_outbound(OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))
 
         final_content, _, all_msgs = await self._run_agent_loop(
-            initial_messages, on_progress=on_progress or _bus_progress,
+            initial_messages, msg=msg, on_progress=on_progress or _bus_progress,
         )
 
         if final_content is None:
@@ -623,11 +882,13 @@ class AgentLoop:
                     start_content_by_tool_id[tool_id] = event["content"]
             elif event_type == "tool_end" and tool_id:
                 event_id = f"{tool_id}-end"
+            elif event_type == "tool_error" and tool_id:
+                event_id = f"{tool_id}-error"
             else:
                 event_id = f"{turn_id}-progress-{idx}"
 
             display_content = event.get("content", "")
-            if event_type == "tool_end" and tool_id and start_content_by_tool_id.get(tool_id):
+            if event_type in {"tool_end", "tool_error"} and tool_id and start_content_by_tool_id.get(tool_id):
                 display_content = start_content_by_tool_id[tool_id]
 
             session.timeline_events.append({
@@ -639,6 +900,7 @@ class AgentLoop:
                 "toolId": tool_id,
                 "toolName": event.get("tool_name"),
                 "duration": event.get("duration"),
+                "detail": event.get("detail"),
             })
 
     async def process_direct(

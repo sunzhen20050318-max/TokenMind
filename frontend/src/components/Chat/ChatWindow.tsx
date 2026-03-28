@@ -3,6 +3,7 @@ import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
 import { InputArea, type DraftAttachment } from './InputArea';
 import { ToolChain } from './ToolIndicator';
+import { ToolApprovalModal } from './ToolApprovalModal';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { api } from '../../services/api';
@@ -257,7 +258,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setCurrentTurnId,
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { sendMessage, stopMessage, isConnected } = useWebSocket(sessionId);
+  const {
+    sendMessage,
+    stopMessage,
+    isConnected,
+    pendingApproval,
+    sessionExecTrusted,
+    enableExecForSession,
+    disableExecForSession,
+    approvePendingTool,
+    rejectPendingTool,
+    trustAndApprovePendingTool,
+  } = useWebSocket(sessionId);
   const prevMessagesLenRef = useRef<number>(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
@@ -398,6 +410,35 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     >
       <div
         style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          padding: '12px 16px 0',
+        }}
+      >
+        <button
+          type="button"
+          onClick={sessionExecTrusted ? disableExecForSession : enableExecForSession}
+          style={{
+            borderRadius: '999px',
+            border: sessionExecTrusted ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.14)',
+            background: sessionExecTrusted ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+            color: sessionExecTrusted ? '#f4f4f4' : '#c6c6c6',
+            padding: '8px 12px',
+            fontSize: '12px',
+            cursor: 'pointer',
+            transition: 'all 0.18s ease',
+          }}
+          title={
+            sessionExecTrusted
+              ? '当前会话中的 exec 将自动允许，点击可恢复逐次确认。'
+              : '点击后，当前会话中的 exec 将不再每次弹确认。'
+          }
+        >
+          {sessionExecTrusted ? '当前会话 Exec 已允许' : '允许当前会话执行 Exec'}
+        </button>
+      </div>
+      <div
+        style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -493,6 +534,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         attachments={draftAttachments}
         onSelectFiles={handleSelectFiles}
         onRemoveAttachment={handleRemoveAttachment}
+      />
+      <ToolApprovalModal
+        approval={pendingApproval}
+        onApprove={approvePendingTool}
+        onReject={rejectPendingTool}
+        onTrustAndApprove={trustAndApprovePendingTool}
       />
     </div>
   );

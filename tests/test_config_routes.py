@@ -44,6 +44,10 @@ async def test_get_config_returns_extended_sections(temp_config_path):
     assert response.providers["openai"]["api_key"] == "****5678"
     assert response.providers["openai"]["default_model"] == "gpt-4.1"
     assert response.tools["web"]["search"]["api_key"] == "****9876"
+    assert response.tools["exec"]["confirm_high_risk"] is True
+    assert response.tools["exec"]["approval_timeout_s"] == 300
+    assert response.tools["uploads"]["max_file_mb"] == 50
+    assert response.tools["audit_enabled"] is True
     assert response.tools["mcp_servers"]["docs"]["command"] == "npx"
     assert response.runtime["gateway"]["heartbeat"]["enabled"] is True
 
@@ -113,6 +117,7 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
         ProviderConfigUpdate,
         RuntimeConfigUpdate,
         ToolsConfigUpdate,
+        UploadsConfigUpdate,
         WebSearchConfigUpdate,
         WebToolsConfigUpdate,
         delete_mcp_server,
@@ -156,7 +161,19 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
                     max_results=8,
                 ),
             ),
-            exec=ExecToolConfigUpdate(timeout=90, path_append="C:\\tools"),
+            exec=ExecToolConfigUpdate(
+                timeout=90,
+                path_append="C:\\tools",
+                confirm_high_risk=False,
+                approval_timeout_s=180,
+            ),
+            uploads=UploadsConfigUpdate(
+                max_file_mb=80,
+                max_total_mb=2048,
+                retention_days=21,
+                cleanup_interval_hours=6,
+            ),
+            audit_enabled=False,
         )
     )
     await update_runtime_config(
@@ -190,6 +207,13 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
     assert config.tools.restrict_to_workspace is True
     assert config.tools.web.search.provider == "tavily"
     assert config.tools.exec.timeout == 90
+    assert config.tools.exec.confirm_high_risk is False
+    assert config.tools.exec.approval_timeout_s == 180
+    assert config.tools.uploads.max_file_mb == 80
+    assert config.tools.uploads.max_total_mb == 2048
+    assert config.tools.uploads.retention_days == 21
+    assert config.tools.uploads.cleanup_interval_hours == 6
+    assert config.tools.audit_enabled is False
     assert config.channels.send_progress is False
     assert config.gateway.heartbeat.interval_s == 120
     assert config.tools.mcp_servers["filesystem"].env["ROOT"] == "D:/project"

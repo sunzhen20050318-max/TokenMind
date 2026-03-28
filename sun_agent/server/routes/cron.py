@@ -8,6 +8,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from sun_agent.audit import AuditLogger
+from sun_agent.config.loader import load_config
 from sun_agent.cron.constants import TASK_RESULTS_SESSION_ID, TASK_RESULTS_SESSION_TITLE
 from sun_agent.cron.types import CronJob, CronSchedule
 from sun_agent.server.dependencies import get_chat_service, get_cron_service
@@ -72,6 +74,10 @@ def _require_cron_service(service=Depends(get_cron_service)):
     if service is None:
         raise HTTPException(status_code=503, detail="Cron service is not available")
     return service
+
+
+def _audit() -> AuditLogger:
+    return AuditLogger(load_config().workspace_path)
 
 
 def _format_schedule(schedule: CronSchedule) -> str:
@@ -222,6 +228,18 @@ async def create_cron_job(payload: CronJobCreateRequest, service=Depends(_requir
         if chat_service is not None:
             chat_service.ensure_session(TASK_RESULTS_SESSION_ID, TASK_RESULTS_SESSION_TITLE)
 
+    _audit().record(
+        "cron.job.created",
+        "success",
+        actor="web_user",
+        details={
+            "job_id": job.id,
+            "name": job.name,
+            "schedule_kind": job.schedule.kind,
+            "deliver": job.payload.deliver,
+            "target_session": job.payload.to,
+        },
+    )
     return _serialize_job(job)
 
 
@@ -235,6 +253,12 @@ async def toggle_cron_job(
     job = service.enable_job(job_id, enabled=payload.enabled)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    _audit().record(
+        "cron.job.toggled",
+        "success",
+        actor="web_user",
+        details={"job_id": job_id, "enabled": payload.enabled},
+    )
     return _serialize_job(job)
 
 
@@ -244,6 +268,12 @@ async def run_cron_job(job_id: str, service=Depends(_require_cron_service)):
     ok = await service.run_job(job_id, force=True)
     if not ok:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    _audit().record(
+        "cron.job.run",
+        "success",
+        actor="web_user",
+        details={"job_id": job_id, "forced": True},
+    )
     return {"success": True, "job_id": job_id}
 
 
@@ -253,4 +283,10 @@ async def delete_cron_job(job_id: str, service=Depends(_require_cron_service)):
     removed = service.remove_job(job_id)
     if not removed:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    _audit().record(
+        "cron.job.deleted",
+        "success",
+        actor="web_user",
+        details={"job_id": job_id},
+    )
     return {"success": True, "job_id": job_id}

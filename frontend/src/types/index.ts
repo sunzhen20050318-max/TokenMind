@@ -39,13 +39,14 @@ export interface ChatHistoryResponse {
   messages: Message[];
   timeline_events: Array<{
     id: string;
-    type: 'progress' | 'tool_start' | 'tool_end';
+    type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error';
     content: string;
     timestamp: string;
     turnId: string;
     toolId?: string;
     toolName?: string;
     duration?: number;
+    detail?: string;
   }>;
 }
 
@@ -66,6 +67,17 @@ export interface UploadProgress {
   percent: number;
 }
 
+export interface PendingToolApproval {
+  approval_id: string;
+  tool_id: string;
+  tool_name: string;
+  command: string;
+  risk_reason: string;
+  working_dir: string;
+  timeout_s?: number;
+  received_at_ms?: number;
+}
+
 export interface StatusResponse {
   status: string;
   version: string;
@@ -83,6 +95,8 @@ export type WSMessageType =
   | { type: 'tool'; content: string; channel: string }
   | { type: 'tool_start'; content: string; tool_id: string; tool_name: string; channel: string }
   | { type: 'tool_end'; content: string; tool_id: string; tool_name: string; duration: number; channel: string }
+  | { type: 'tool_error'; content: string; tool_id: string; tool_name: string; detail?: string; channel: string }
   | { type: 'progress'; content: string }
+  | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
   | { type: 'error'; content: string }
   | { type: 'pong' };

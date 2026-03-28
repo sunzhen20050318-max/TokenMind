@@ -9,6 +9,11 @@ import type {
 } from '../types';
 import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
 import type {
+  DeleteStorageFileResponse,
+  StorageCleanupResponse,
+  StorageOverviewResponse,
+} from '../types/storage';
+import type {
   AgentSettingsUpdate,
   AppConfigResponse,
   McpServerSettingsUpdate,
@@ -201,6 +206,39 @@ export const api = {
     const res = await fetch(`${API_BASE}/status`);
     if (!res.ok) {
       throw new Error(`Failed to get status: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getStorageOverview(): Promise<StorageOverviewResponse> {
+    const res = await fetch(`${API_BASE}/storage`);
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to load storage overview: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async cleanupStorage(): Promise<StorageCleanupResponse> {
+    const res = await fetch(`${API_BASE}/storage/cleanup`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to cleanup storage: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async deleteStoredFile(path: string): Promise<DeleteStorageFileResponse> {
+    const res = await fetch(`${API_BASE}/storage/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to delete stored file: ${res.statusText}`);
     }
     return res.json();
   },

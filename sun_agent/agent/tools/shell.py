@@ -12,6 +12,14 @@ from sun_agent.agent.tools.base import Tool
 class ExecTool(Tool):
     """Tool to execute shell commands."""
 
+    _HIGH_RISK_RULES: tuple[tuple[str, str], ...] = (
+        (r"\b(?:git\s+(?:commit|push|merge|rebase|reset|checkout|switch|tag)|gh\s+pr\s+merge)\b", "This command will change Git history or push code."),
+        (r"\b(?:pip|pip3|uv|poetry|npm|pnpm|yarn|bun|apt|apt-get|brew|choco|winget)\s+(?:install|add|remove|uninstall|upgrade|update)\b", "This command will install, remove, or update software."),
+        (r"\b(?:curl|wget|Invoke-WebRequest|Invoke-RestMethod|Start-BitsTransfer|scp|ssh)\b", "This command will reach out to a remote system or download data."),
+        (r"(?:^|[;&|])\s*(?:copy|xcopy|move|ren|mv|cp|mkdir|touch)\b", "This command will modify files or directories via the shell."),
+        (r"(?:>>?|Out-File|Set-Content|Add-Content)\b", "This command will write shell output into files."),
+    )
+
     def __init__(
         self,
         timeout: int = 60,
@@ -173,6 +181,15 @@ class ExecTool(Tool):
                 if p.is_absolute() and cwd_path not in p.parents and p != cwd_path:
                     return "Error: Command blocked by safety guard (path outside working dir)"
 
+        return None
+
+    @classmethod
+    def get_high_risk_reason(cls, command: str) -> str | None:
+        """Return a human-readable reason when a command should require approval."""
+        lower = command.strip().lower()
+        for pattern, reason in cls._HIGH_RISK_RULES:
+            if re.search(pattern, lower):
+                return reason
         return None
 
     @staticmethod

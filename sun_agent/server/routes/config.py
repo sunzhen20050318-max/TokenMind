@@ -64,6 +64,17 @@ class ExecToolConfigUpdate(BaseModel):
 
     timeout: int | None = None
     path_append: str | None = None
+    confirm_high_risk: bool | None = None
+    approval_timeout_s: int | None = None
+
+
+class UploadsConfigUpdate(BaseModel):
+    """Partial update for upload storage policy."""
+
+    max_file_mb: int | None = None
+    max_total_mb: int | None = None
+    retention_days: int | None = None
+    cleanup_interval_hours: int | None = None
 
 
 class ToolsConfigUpdate(BaseModel):
@@ -71,6 +82,8 @@ class ToolsConfigUpdate(BaseModel):
 
     web: WebToolsConfigUpdate | None = None
     exec: ExecToolConfigUpdate | None = None
+    uploads: UploadsConfigUpdate | None = None
+    audit_enabled: bool | None = None
     restrict_to_workspace: bool | None = None
 
 
@@ -212,6 +225,8 @@ def _build_config_response() -> ConfigResponse:
             "search": _web_search_to_dict(config.tools.web.search),
         },
         "exec": config.tools.exec.model_dump(),
+        "uploads": config.tools.uploads.model_dump(),
+        "audit_enabled": config.tools.audit_enabled,
         "restrict_to_workspace": config.tools.restrict_to_workspace,
         "mcp_servers": {
             name: _mcp_server_to_dict(server)
@@ -357,6 +372,9 @@ async def update_tools_config(update: ToolsConfigUpdate):
     try:
         config = load_config()
 
+        if "audit_enabled" in update.model_fields_set:
+            config.tools.audit_enabled = bool(update.audit_enabled)
+
         if "restrict_to_workspace" in update.model_fields_set:
             config.tools.restrict_to_workspace = update.restrict_to_workspace
 
@@ -379,6 +397,21 @@ async def update_tools_config(update: ToolsConfigUpdate):
                 config.tools.exec.timeout = update.exec.timeout
             if "path_append" in update.exec.model_fields_set:
                 config.tools.exec.path_append = update.exec.path_append
+            if "confirm_high_risk" in update.exec.model_fields_set:
+                config.tools.exec.confirm_high_risk = bool(update.exec.confirm_high_risk)
+            if "approval_timeout_s" in update.exec.model_fields_set:
+                config.tools.exec.approval_timeout_s = update.exec.approval_timeout_s
+
+        if update.uploads is not None:
+            uploads = config.tools.uploads
+            if "max_file_mb" in update.uploads.model_fields_set:
+                uploads.max_file_mb = update.uploads.max_file_mb
+            if "max_total_mb" in update.uploads.model_fields_set:
+                uploads.max_total_mb = update.uploads.max_total_mb
+            if "retention_days" in update.uploads.model_fields_set:
+                uploads.retention_days = update.uploads.retention_days
+            if "cleanup_interval_hours" in update.uploads.model_fields_set:
+                uploads.cleanup_interval_hours = update.uploads.cleanup_interval_hours
 
         save_config(config)
 

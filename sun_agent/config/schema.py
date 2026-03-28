@@ -121,6 +121,17 @@ class ExecToolConfig(Base):
 
     timeout: int = 60
     path_append: str = ""
+    confirm_high_risk: bool = True
+    approval_timeout_s: int = 300
+
+
+class UploadsConfig(Base):
+    """Upload storage policy configuration."""
+
+    max_file_mb: int = 50
+    max_total_mb: int = 1024
+    retention_days: int = 30
+    cleanup_interval_hours: int = 12
 
 
 class MCPServerConfig(Base):
@@ -140,6 +151,8 @@ class ToolsConfig(Base):
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
+    uploads: UploadsConfig = Field(default_factory=UploadsConfig)
+    audit_enabled: bool = True
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
