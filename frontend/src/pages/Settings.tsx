@@ -1195,6 +1195,69 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
               </Field>
             </div>
           </div>
+
+          <div className="settings-panel">
+            <div className="settings-panel-header">
+              <h3>审批与审计</h3>
+              <p>控制 exec 的确认策略，以及是否记录关键操作审计日志。</p>
+            </div>
+            <div className="settings-grid one">
+              <ToggleRow
+                title="高风险 exec 需要确认"
+                copy="Web 会话里执行命令前，先弹出确认层；如果你在会话里手动设为允许，后续会自动放行。"
+                value={toolsDraft.exec.confirm_high_risk}
+                onToggle={() =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          exec: {
+                            ...current.exec,
+                            confirm_high_risk: !current.exec.confirm_high_risk,
+                          },
+                        }
+                      : current
+                  )
+                }
+              />
+              <ToggleRow
+                title="启用审计日志"
+                copy="把 exec 审批、文件删除、会话删除和定时任务操作写入 workspace/logs/audit.jsonl。"
+                value={toolsDraft.audit_enabled}
+                onToggle={() =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          audit_enabled: !current.audit_enabled,
+                        }
+                      : current
+                  )
+                }
+              />
+              <Field label="审批等待时间（秒）" copy="超过这个时间还没确认，高风险命令会自动取消。">
+                <input
+                  className="settings-input"
+                  min={15}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            exec: {
+                              ...current.exec,
+                              approval_timeout_s: Number(event.target.value) || 15,
+                            },
+                          }
+                        : current
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.exec.approval_timeout_s}
+                />
+              </Field>
+            </div>
+          </div>
         </div>
 
         <div className="settings-panel">
