@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrandMark } from '../BrandMark';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
@@ -258,6 +258,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     loadKnowledgeBases,
     loadLinkedKnowledgeBases,
     setLinkedKnowledgeBases,
+    pendingSessionStarter,
+    clearPendingSessionStarter,
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const {
@@ -355,7 +357,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     }
   }, [visibleMessages, toolCalls, timelineEvents]);
 
-  const handleSend = async (content: string) => {
+  const handleSend = useCallback(async (content: string) => {
     if (!isConnected || (!content.trim() && pendingFiles.length === 0)) {
       return;
     }
@@ -405,7 +407,26 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setDraftMessage('');
     setPendingFiles([]);
     setUploadProgress(null);
-  };
+  }, [
+    addMessage,
+    isConnected,
+    pendingFiles,
+    sendMessage,
+    setActiveTool,
+    setCurrentTurnId,
+    setError,
+    setLoading,
+  ]);
+
+  useEffect(() => {
+    if (!isConnected || !pendingSessionStarter || pendingSessionStarter.sessionId !== sessionId) {
+      return;
+    }
+
+    const starterMessage = pendingSessionStarter.message;
+    clearPendingSessionStarter(sessionId);
+    void handleSend(starterMessage);
+  }, [clearPendingSessionStarter, handleSend, isConnected, pendingSessionStarter, sessionId]);
 
   const handleStarterCardSelect = (prompt: string) => {
     setDraftMessage(prompt);

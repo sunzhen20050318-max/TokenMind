@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Message, MessageCitation, Session } from '../types';
+import type { Message, MessageCitation, Project, Session } from '../types';
 import { api } from '../services/api';
 import type { KnowledgeBase } from '../types/knowledge';
 
@@ -38,6 +38,10 @@ interface ChatState {
   currentSession: string | null;
   messages: Message[];
   sessions: Session[];
+  projects: Project[];
+  activeProjectId: string | null;
+  activeProject: Project | null;
+  projectSessions: Session[];
   isLoading: boolean;
   isConnected: boolean;
   error: string | null;
@@ -50,13 +54,19 @@ interface ChatState {
   modelProvidersStatus: 'idle' | 'loading' | 'ready' | 'error';
   availableKnowledgeBases: KnowledgeBase[];
   linkedKnowledgeBaseIds: string[];
+  pendingSessionStarter: { sessionId: string; message: string } | null;
 
   // Actions
   setCurrentSession: (sessionId: string) => void;
   addMessage: (message: Message) => void;
   clearMessages: () => void;
   setSessions: (sessions: Session[]) => void;
+  setProjectSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
+  loadProjects: () => Promise<void>;
+  openProject: (projectId: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
+  leaveProject: () => void;
   setLoading: (loading: boolean) => void;
   setConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
@@ -83,12 +93,18 @@ interface ChatState {
   loadKnowledgeBases: () => Promise<void>;
   loadLinkedKnowledgeBases: (sessionId: string) => Promise<void>;
   setLinkedKnowledgeBases: (knowledgeBaseIds: string[]) => Promise<void>;
+  queuePendingSessionStarter: (sessionId: string, message: string) => void;
+  clearPendingSessionStarter: (sessionId?: string) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
   currentSession: null,
   messages: [],
   sessions: [],
+  projects: [],
+  activeProjectId: null,
+  activeProject: null,
+  projectSessions: [],
   isLoading: false,
   isConnected: false,
   error: null,
@@ -101,20 +117,56 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelProvidersStatus: 'idle',
   availableKnowledgeBases: [],
   linkedKnowledgeBaseIds: [],
+  pendingSessionStarter: null,
 
   setCurrentTurnId: (turnId) => {
     set({ currentTurnId: turnId });
   },
 
+  queuePendingSessionStarter: (sessionId, message) => {
+    set({
+      pendingSessionStarter: {
+        sessionId,
+        message,
+      },
+    });
+  },
+
+  clearPendingSessionStarter: (sessionId) => {
+    set((state) => {
+      if (!state.pendingSessionStarter) {
+        return state;
+      }
+
+      if (sessionId && state.pendingSessionStarter.sessionId !== sessionId) {
+        return state;
+      }
+
+      return { pendingSessionStarter: null };
+    });
+  },
+
   setCurrentSession: (sessionId) => {
-    // Add to sessions list if not exists
-    const { sessions } = get();
-    if (!sessions.find(s => s.session_id === sessionId)) {
+    const { sessions, projectSessions, activeProjectId, activeProject, projects } = get();
+    const existingGlobal = sessions.find((session) => session.session_id === sessionId);
+    const existingProject = projectSessions.find((session) => session.session_id === sessionId);
+    const resolvedProjectId = existingProject?.project_id || activeProjectId || null;
+    const resolvedProject =
+      (resolvedProjectId ? projects.find((project) => project.id === resolvedProjectId) : null) ||
+      activeProject;
+    const shouldTreatAsProject = !!existingProject || (!!resolvedProjectId && !existingGlobal);
+
+    if (!existingGlobal && !existingProject) {
       const newSession: Session = {
         session_id: sessionId,
         message_count: 0,
+        project_id: shouldTreatAsProject ? resolvedProjectId || undefined : undefined,
       };
-      set({ sessions: [newSession, ...sessions] });
+      if (shouldTreatAsProject) {
+        set((state) => ({ projectSessions: [newSession, ...state.projectSessions] }));
+      } else {
+        set((state) => ({ sessions: [newSession, ...state.sessions] }));
+      }
     }
     set({
       currentSession: sessionId,
@@ -125,21 +177,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timelineEvents: [],
       currentTurnId: null,
       linkedKnowledgeBaseIds: [],
+      activeProjectId: shouldTreatAsProject ? resolvedProjectId : null,
+      activeProject: shouldTreatAsProject ? resolvedProject : null,
     });
     get().loadHistory(sessionId);
   },
 
   addMessage: (message) => {
     set((state) => {
-      // Update message count for current session
-      const updatedSessions = state.sessions.map(s =>
-        s.session_id === state.currentSession
-          ? { ...s, message_count: s.message_count + 1 }
-          : s
+      const firstMessage =
+        message.role === 'user' && typeof message.content === 'string' ? message.content : undefined;
+      const updatedSessions = state.sessions.map((session) =>
+        session.session_id === state.currentSession
+          ? {
+              ...session,
+              message_count: session.message_count + 1,
+              first_message: session.first_message || firstMessage,
+            }
+          : session
+      );
+      const updatedProjectSessions = state.projectSessions.map((session) =>
+        session.session_id === state.currentSession
+          ? {
+              ...session,
+              message_count: session.message_count + 1,
+              first_message: session.first_message || firstMessage,
+            }
+          : session
       );
       return {
         messages: [...state.messages, message],
         sessions: updatedSessions,
+        projectSessions: updatedProjectSessions,
       };
     });
   },
@@ -147,10 +216,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   clearMessages: () => {
     set((state) => ({
       messages: [],
-      sessions: state.sessions.map(s =>
-        s.session_id === state.currentSession
-          ? { ...s, message_count: 0 }
-          : s
+      sessions: state.sessions.map((session) =>
+        session.session_id === state.currentSession
+          ? { ...session, message_count: 0 }
+          : session
+      ),
+      projectSessions: state.projectSessions.map((session) =>
+        session.session_id === state.currentSession
+          ? { ...session, message_count: 0 }
+          : session
       ),
     }));
   },
@@ -159,10 +233,79 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ sessions });
   },
 
+  setProjectSessions: (projectSessions) => {
+    set({ projectSessions });
+  },
+
   addSession: (session) => {
     set((state) => ({
       sessions: [session, ...state.sessions],
     }));
+  },
+
+  loadProjects: async () => {
+    try {
+      const payload = await api.listProjects();
+      set((state) => ({
+        projects: payload.items,
+        activeProject:
+          state.activeProjectId != null
+            ? payload.items.find((project) => project.id === state.activeProjectId) || state.activeProject
+            : null,
+      }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load projects' });
+    }
+  },
+
+  openProject: async (projectId) => {
+    try {
+      const payload = await api.getProject(projectId);
+      set({
+        activeProjectId: payload.project.id,
+        activeProject: payload.project,
+        projectSessions: payload.sessions,
+        currentSession: null,
+        messages: [],
+        toolCalls: [],
+        timelineEvents: [],
+        currentTurnId: null,
+        linkedKnowledgeBaseIds: [],
+      });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to open project' });
+    }
+  },
+
+  deleteProject: async (projectId) => {
+    try {
+      await api.deleteProject(projectId);
+      set((state) => {
+        const deletingActiveProject = state.activeProjectId === projectId;
+        return {
+          projects: state.projects.filter((project) => project.id !== projectId),
+          activeProjectId: deletingActiveProject ? null : state.activeProjectId,
+          activeProject: deletingActiveProject ? null : state.activeProject,
+          projectSessions: deletingActiveProject ? [] : state.projectSessions,
+          currentSession: deletingActiveProject ? null : state.currentSession,
+          messages: deletingActiveProject ? [] : state.messages,
+          toolCalls: deletingActiveProject ? [] : state.toolCalls,
+          timelineEvents: deletingActiveProject ? [] : state.timelineEvents,
+          currentTurnId: deletingActiveProject ? null : state.currentTurnId,
+          linkedKnowledgeBaseIds: deletingActiveProject ? [] : state.linkedKnowledgeBaseIds,
+        };
+      });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to delete project' });
+    }
+  },
+
+  leaveProject: () => {
+    set({
+      activeProjectId: null,
+      activeProject: null,
+      projectSessions: [],
+    });
   },
 
   setLoading: (isLoading) => {
@@ -301,6 +444,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await api.deleteSession(sessionId);
       set((state) => ({
         sessions: state.sessions.filter((s) => s.session_id !== sessionId),
+        projectSessions: state.projectSessions.filter((s) => s.session_id !== sessionId),
         currentSession: state.currentSession === sessionId ? null : state.currentSession,
       }));
     } catch (e) {
@@ -313,6 +457,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const result = await api.renameSession(sessionId, title);
       set((state) => ({
         sessions: state.sessions.map((session) =>
+          session.session_id === sessionId
+            ? { ...session, title: result.title || undefined }
+            : session
+        ),
+        projectSessions: state.projectSessions.map((session) =>
           session.session_id === sessionId
             ? { ...session, title: result.title || undefined }
             : session

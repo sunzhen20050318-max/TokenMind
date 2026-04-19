@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { api } from '../services/api';
 import { useChatStore } from '../stores/chatStore';
 
 export function useSessions() {
@@ -8,8 +9,13 @@ export function useSessions() {
     loadSessions();
   }, [loadSessions]);
 
-  const createNewSession = () => {
+  const createNewSession = async () => {
     const newSessionId = `web:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const { activeProjectId, activeProject } = useChatStore.getState();
+    const projectId = activeProjectId || activeProject?.id;
+    if (projectId) {
+      await api.createProjectSession(projectId, newSessionId);
+    }
     setCurrentSession(newSessionId);
     return newSessionId;
   };

@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { shouldRestoreLastSession } from './app/sessionRestoreState';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
+import { createProjectConversation } from './components/Projects/projectEntryFlow';
 import { EntryGate } from './components/EntryGate/EntryGate';
 import { KnowledgePage } from './pages/Knowledge';
+import { ProjectHome } from './pages/ProjectHome';
+import { api } from './services/api';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
 import './app.css';
@@ -12,12 +16,19 @@ const LAST_SESSION_KEY = 'tokenmind:last-session';
 const SIDEBAR_COLLAPSED_KEY = 'tokenmind:sidebar-collapsed';
 
 const App: React.FC = () => {
-  const { currentSession, fetchModelProviders, setCurrentSession } = useChatStore();
+  const {
+    currentSession,
+    fetchModelProviders,
+    setCurrentSession,
+    activeProjectId,
+    activeProject,
+    queuePendingSessionStarter,
+  } = useChatStore();
   const { sessions } = useSessions();
   const [gateDismissed, setGateDismissed] = useState(false);
   const [gateExiting, setGateExiting] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mainView, setMainView] = useState<'chat' | 'knowledge'>('chat');
+  const [mainView, setMainView] = useState<'chat' | 'knowledge' | 'project-home' | 'project-chat'>('chat');
   const enterTimerRef = useRef<number | null>(null);
   const appReady = gateDismissed || gateExiting;
 
@@ -56,14 +67,22 @@ const App: React.FC = () => {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
-    if (!appReady || currentSession || sessions.length === 0) {
+    if (
+      !shouldRestoreLastSession({
+        appReady,
+        currentSession,
+        sessionCount: sessions.length,
+        mainView,
+        activeProjectId,
+      })
+    ) {
       return;
     }
 
     const rememberedSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
     const restoredSession = sessions.find((session) => session.session_id === rememberedSessionId);
     setCurrentSession(restoredSession?.session_id || sessions[0].session_id);
-  }, [appReady, currentSession, sessions, setCurrentSession]);
+  }, [appReady, currentSession, sessions, setCurrentSession, mainView, activeProjectId]);
 
   useEffect(
     () => () => {
@@ -96,6 +115,34 @@ const App: React.FC = () => {
             <Header />
             {mainView === 'knowledge' ? (
               <KnowledgePage isActive />
+            ) : mainView === 'project-home' ? (
+              <ProjectHome
+                onStartConversation={async (message) => {
+                  const projectId = activeProjectId || activeProject?.id;
+                  if (!projectId) {
+                    return;
+                  }
+
+                  const sessionId = await createProjectConversation({
+                    projectId,
+                    message,
+                    generateSessionId: () => `web:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    createProjectSession: async (projectId, nextSessionId) => {
+                      await api.createProjectSession(projectId, nextSessionId);
+                    },
+                    queueSessionStarter: (content, nextSessionId) => {
+                      queuePendingSessionStarter(nextSessionId, content);
+                    },
+                  });
+
+                  setCurrentSession(sessionId);
+                  setMainView('project-chat');
+                }}
+                onOpenSession={(sessionId) => {
+                  setCurrentSession(sessionId);
+                  setMainView('project-chat');
+                }}
+              />
             ) : currentSession ? (
               <ChatWindow sessionId={currentSession} />
             ) : (

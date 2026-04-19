@@ -20,6 +20,7 @@ from tokenmind.audit import AuditLogger
 from tokenmind.bus.events import InboundMessage, OutboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.knowledge import KnowledgeService
+from tokenmind.projects import ProjectStore
 from tokenmind.config.loader import load_config
 from tokenmind.config.schema import KnowledgeConfig, UploadsConfig
 from tokenmind.agent.memory import split_history_entries
@@ -39,6 +40,7 @@ from tokenmind.server.routes import (
     cron_router,
     knowledge_router,
     memory_router,
+    projects_router,
     sessions_router,
     status_router,
     storage_router,
@@ -83,6 +85,7 @@ class ChatService:
             rerank_api_base=knowledge.rerank_api_base,
             rerank_top_n=knowledge.rerank_top_n,
         )
+        self.projects = ProjectStore(session_manager.workspace)
         self.audit = AuditLogger(session_manager.workspace)
         self._response_futures: dict[str, asyncio.Future] = {}
         self._last_upload_cleanup_at: datetime | None = None
@@ -277,6 +280,17 @@ class ChatService:
             return title
         preview = self._extract_first_message_preview(session)
         return preview or session_key
+
+    def _serialize_session_summary(self, session_id: str, session: Any, summary: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "session_id": session_id,
+            "updated_at": self._session_last_activity_iso(session, summary.get("updated_at")),
+            "created_at": session.created_at.isoformat() if session else None,
+            "message_count": len(session.messages) if session else 0,
+            "first_message": self._extract_first_message_preview(session),
+            "title": session.title if session else summary.get("title"),
+            "project_id": getattr(session, "project_id", None) or summary.get("project_id"),
+        }
 
     def _build_upload_reference_map(self) -> dict[str, list[dict[str, str]]]:
         references: dict[str, list[dict[str, str]]] = {}
@@ -850,61 +864,90 @@ class ChatService:
 
     async def list_sessions(self) -> list[dict]:
         """List all sessions."""
-        sessions = self.session_manager.list_sessions()
         result = []
-        for s in sessions:
-            session_id = s.get("key", "")
-            # Load full session to get first message
+        for summary in self.session_manager.list_sessions():
+            if summary.get("project_id"):
+                continue
+            session_id = summary.get("key", "")
             session = self.session_manager.get_or_create(session_id)
-            first_message = None
-            if session and session.messages:
-                for msg in session.messages:
-                    if msg.get("role") == "user":
-                        content = msg.get("content", "")
-                        if isinstance(content, str):
-                            lines = [
-                                line.strip()
-                                for line in content.splitlines()
-                                if line.strip()
-                                and not line.startswith("[Attached Files")
-                                and line != "Attached files are available in the workspace:"
-                                and not line.startswith("- ")
-                                and not line.startswith("Use read_file for text-based files when possible.")
-                            ]
-                            first_message = "\n".join(lines)[:50] if lines else None
-                        elif isinstance(content, list):
-                            text_blocks = [
-                                block.get("text", "")
-                                for block in content
-                                if isinstance(block, dict) and isinstance(block.get("text"), str)
-                            ]
-                            visible_lines = [
-                                line.strip()
-                                for text in text_blocks
-                                for line in text.splitlines()
-                                if line.strip()
-                                and not line.startswith("[Attached Files")
-                                and line != "Attached files are available in the workspace:"
-                                and not line.startswith("- ")
-                                and not line.startswith("Use read_file for text-based files when possible.")
-                            ]
-                            first_message = "\n".join(visible_lines)[:50] if visible_lines else None
-                        break
-            result.append({
-                "session_id": session_id,
-                "updated_at": self._session_last_activity_iso(session, s.get("updated_at")),
-                "created_at": session.created_at.isoformat() if session else None,
-                "message_count": len(session.messages) if session else 0,
-                "first_message": first_message,
-                "title": session.title if session else s.get("title"),
-            })
+            if getattr(session, "project_id", None):
+                continue
+            result.append(self._serialize_session_summary(session_id, session, summary))
         return sorted(result, key=lambda item: item.get("updated_at") or "", reverse=True)
 
-    async def delete_session(self, session_id: str) -> bool:
-        """Delete a session."""
-        # Remove from cache
+    def list_project_sessions(self, project_id: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for summary in self.session_manager.list_sessions():
+            session_id = summary.get("key", "")
+            session = self.session_manager.get_or_create(session_id)
+            if getattr(session, "project_id", None) != project_id:
+                continue
+            items.append(self._serialize_session_summary(session_id, session, summary))
+        return sorted(items, key=lambda item: item.get("updated_at") or "", reverse=True)
+
+    def list_projects(self) -> dict[str, Any]:
+        items = []
+        for project in self.projects.list_projects():
+            items.append({**project.model_dump(), "session_count": len(self.list_project_sessions(project.id))})
+        return {"items": items}
+
+    def create_project(self, name: str) -> dict[str, Any]:
+        try:
+            project = self.projects.create_project(name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {**project.model_dump(), "session_count": 0}
+
+    def get_project_detail(self, project_id: str) -> dict[str, Any]:
+        project = self.projects.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {
+            "project": project.model_dump(),
+            "sessions": self.list_project_sessions(project_id),
+        }
+
+    def rename_project(self, project_id: str, name: str) -> dict[str, Any]:
+        try:
+            project = self.projects.rename_project(project_id, name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Project not found") from exc
+        return {"project": project.model_dump()}
+
+    def create_project_session(self, project_id: str, session_id: str, title: str | None = None) -> dict[str, Any]:
+        if self.projects.get_project(project_id) is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        session = self.session_manager.get_or_create(session_id)
+        session.set_project_id(project_id)
+        if title:
+            session.set_title(title)
+        self.session_manager.save(session)
+        return self._serialize_session_summary(
+            session_id,
+            session,
+            {"updated_at": session.updated_at.isoformat()},
+        )
+
+    def move_session_to_project(self, project_id: str, session_id: str) -> dict[str, Any]:
+        if self.projects.get_project(project_id) is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        session = self.session_manager.get_or_create(session_id)
+        if session.project_id:
+            raise HTTPException(status_code=409, detail="Session already belongs to a project")
+        session.set_project_id(project_id)
+        self.session_manager.save(session)
+        return {
+            "session": self._serialize_session_summary(
+                session_id,
+                session,
+                {"updated_at": session.updated_at.isoformat()},
+            )
+        }
+
+    def _delete_session_now(self, session_id: str, *, audit_event: str = "session.deleted") -> bool:
         self.session_manager.invalidate(session_id)
-        # Also delete the session file from disk
         session_path = self.session_manager._get_session_path(session_id)
         if session_path.exists():
             session_path.unlink()
@@ -914,7 +957,7 @@ class ChatService:
             shutil.rmtree(upload_dir, ignore_errors=True)
         channel, chat_id = (session_id.split(":", 1) if ":" in session_id else ("web", session_id))
         self.audit.record(
-            "session.deleted",
+            audit_event,
             "success",
             session_key=session_id,
             channel=channel,
@@ -923,6 +966,40 @@ class ChatService:
             details={"uploads_removed": uploads_removed},
         )
         return True
+
+    def delete_project(self, project_id: str) -> dict[str, Any]:
+        project = self.projects.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        session_ids = [item["session_id"] for item in self.list_project_sessions(project_id)]
+        for session_id in session_ids:
+            self._delete_session_now(session_id, audit_event="project.session.deleted")
+
+        try:
+            self.projects.delete_project(project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Project not found") from exc
+
+        self.audit.record(
+            "project.deleted",
+            "success",
+            actor="web_user",
+            details={
+                "project_id": project_id,
+                "project_name": project.name,
+                "deleted_session_count": len(session_ids),
+            },
+        )
+        return {
+            "success": True,
+            "project_id": project_id,
+            "deleted_session_count": len(session_ids),
+        }
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete a session."""
+        return self._delete_session_now(session_id)
 
     async def clear_history(self, session_id: str) -> bool:
         """Clear history for a session."""
@@ -1027,6 +1104,7 @@ def create_app(
     app.include_router(cron_router)
     app.include_router(knowledge_router)
     app.include_router(memory_router)
+    app.include_router(projects_router)
     app.include_router(sessions_router)
     app.include_router(status_router)
     app.include_router(storage_router)

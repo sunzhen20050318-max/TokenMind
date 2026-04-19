@@ -493,3 +493,71 @@
     max-width: 160px;
   }
 }
+
+@media (max-width: 680px) {
+  .composer__surface {
+    gap: 12px;
+    padding: 12px 12px 10px;
+    border-radius: 20px;
+  }
+
+  .composer__footer-left,
+  .composer__footer-right {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .composer__footer-right {
+    justify-content: flex-end;
+  }
+
+  .composer__controls,
+  .composer__knowledge {
+    width: 100%;
+  }
+
+  .composer__controls {
+    justify-content: space-between;
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .composer__inline-select {
+    min-width: 0;
+  }
+
+  .composer__inline-trigger {
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .composer__inline-trigger span {
+    max-width: 84px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .composer__knowledge-trigger {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .composer__textarea {
+    font-size: 15px;
+  }
+
+  .composer__icon-button,
+  .composer__submit {
+    width: 36px;
+    height: 36px;
+  }
+
+  .composer__inline-menu {
+    min-width: min(180px, calc(100vw - 32px));
+  }
+}

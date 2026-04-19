@@ -1,6 +1,8 @@
 import type {
   SendMessageResponse,
   ChatHistoryResponse,
+  Project,
+  ProjectDetailResponse,
   Session,
   StatusResponse,
   UploadFilesResponse,
@@ -56,6 +58,75 @@ export const api = {
     const res = await fetch(`${API_BASE}/sessions`);
     if (!res.ok) {
       throw new Error(`Failed to list sessions: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listProjects(): Promise<{ items: Project[] }> {
+    const res = await fetch(`${API_BASE}/projects`);
+    if (!res.ok) {
+      throw new Error(`Failed to list projects: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async createProject(name: string): Promise<Project> {
+    const res = await fetch(`${API_BASE}/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to create project: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getProject(projectId: string): Promise<ProjectDetailResponse> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`);
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to load project: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async deleteProject(
+    projectId: string
+  ): Promise<{ success: boolean; project_id: string; deleted_session_count: number }> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to delete project: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async createProjectSession(projectId: string, sessionId: string, title?: string): Promise<Session> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, title }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to create project session: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async moveSessionToProject(projectId: string, sessionId: string): Promise<{ session: Session }> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/sessions/link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to move session to project: ${res.statusText}`);
     }
     return res.json();
   },

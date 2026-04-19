@@ -215,3 +215,22 @@
     justify-content: flex-start;
   }
 }
+
+@media (max-width: 620px) {
+  .chat-shell__topbar {
+    padding: 4px 8px 0;
+  }
+
+  .chat-shell__trust {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .chat-shell__scroll.is-active {
+    padding-bottom: 206px;
+  }
+
+  .chat-composer-dock.is-active {
+    bottom: 14px;
+  }
+}

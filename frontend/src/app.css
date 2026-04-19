@@ -90,3 +90,23 @@
     grid-template-columns: 76px minmax(0, 1fr);
   }
 }
+
+@media (max-width: 760px) {
+  .app-main {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .app-shell--sidebar-collapsed .app-main {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .app-main {
+    grid-template-columns: 204px minmax(0, 1fr);
+  }
+
+  .app-shell--sidebar-collapsed .app-main {
+    grid-template-columns: 66px minmax(0, 1fr);
+  }
+}

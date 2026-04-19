@@ -119,13 +119,16 @@
 .shell-sidebar__collapsed-actions {
   position: relative;
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   width: 100%;
-  justify-content: stretch;
   margin-top: 10px;
 }
 
 .shell-sidebar__collapsed-button {
   width: 100%;
+  height: 48px;
   min-height: 48px;
   display: flex;
   align-items: center;
@@ -241,6 +244,307 @@
   flex-direction: column;
   gap: 2px;
   margin-top: 14px;
+}
+
+.shell-sidebar__group {
+  margin-top: 6px;
+  padding-top: 4px;
+}
+
+.shell-sidebar__project-shell {
+  margin-top: 6px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: transparent;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.shell-sidebar__project-shell.is-open,
+.shell-sidebar__project-shell.is-active {
+  border-color: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.026);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+}
+
+.shell-sidebar__group-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #cfd1d8;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.shell-sidebar__group-toggle:hover,
+.shell-sidebar__group-toggle.is-open,
+.shell-sidebar__group-toggle.is-active {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.03);
+  color: #f4f5f7;
+}
+
+.shell-sidebar__group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shell-sidebar__group-caret {
+  color: #797c85;
+  transition: transform 0.18s ease;
+}
+
+.shell-sidebar__group-caret.is-open {
+  transform: rotate(180deg);
+}
+
+.shell-sidebar__project-directory {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 0 8px 8px;
+}
+
+.shell-sidebar__project-directory-head {
+  margin: 0 -8px;
+  padding: 0 0 2px;
+}
+
+.shell-sidebar__project-create {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.022);
+  color: #cdd1d9;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.shell-sidebar__project-create:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f5f7;
+}
+
+.shell-sidebar__project-create.is-quiet {
+  margin-bottom: 4px;
+}
+
+.shell-sidebar__project-node {
+  display: grid;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.shell-sidebar__project-node.is-open {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.015);
+}
+
+.shell-sidebar__project-head {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.shell-sidebar__project-row {
+  position: relative;
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #d2d5dd;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.shell-sidebar__project-row:hover {
+  background: rgba(255, 255, 255, 0.028);
+  border-color: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+}
+
+.shell-sidebar__project-row.is-active {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+}
+
+.shell-sidebar__project-node.is-open .shell-sidebar__project-row {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.shell-sidebar__project-node.is-open .shell-sidebar__project-row:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.shell-sidebar__project-row.is-active::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 999px;
+  background: #f3f4f6;
+}
+
+.shell-sidebar__project-row-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #8d93a0;
+  flex: 0 0 auto;
+}
+
+.shell-sidebar__project-row-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.shell-sidebar__project-row-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-sidebar__project-row-caret {
+  color: #777c86;
+  font-size: 11px;
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+
+.shell-sidebar__project-row-caret.is-open {
+  transform: rotate(180deg);
+  color: #e9ebf0;
+}
+
+.shell-sidebar__project-actions,
+.shell-sidebar__project-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.shell-sidebar__project-node:hover .shell-sidebar__project-actions,
+.shell-sidebar__project-node:focus-within .shell-sidebar__project-actions,
+.shell-sidebar__project-session-item:hover .shell-sidebar__project-session-actions,
+.shell-sidebar__project-session-item:focus-within .shell-sidebar__project-session-actions,
+.shell-sidebar__project-session-item.is-active .shell-sidebar__project-session-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.shell-sidebar__project-action {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #848893;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.shell-sidebar__project-action:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f5f7;
+}
+
+.shell-sidebar__project-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.shell-sidebar__project-session-list {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 2px;
+  padding: 0;
+  border-left: none;
+}
+
+.shell-sidebar__project-node.is-open .shell-sidebar__project-session-list {
+  margin-top: 2px;
+}
+
+.shell-sidebar__project-session-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.shell-sidebar__project-session {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  padding: 8px 12px 8px 14px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #9ea4b0;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.shell-sidebar__project-session:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: #eceef2;
+}
+
+.shell-sidebar__project-session.is-active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.shell-sidebar__project-empty {
+  padding: 8px 12px 4px;
+  color: #717580;
+  font-size: 12px;
 }
 
 .shell-sidebar__nav-item,

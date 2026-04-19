@@ -48,6 +48,19 @@ class Session:
             self.metadata.pop("title", None)
         self.updated_at = datetime.now()
 
+    @property
+    def project_id(self) -> str | None:
+        value = self.metadata.get("project_id")
+        return value if isinstance(value, str) and value else None
+
+    def set_project_id(self, project_id: str | None) -> None:
+        """Assign or clear the project membership for this session."""
+        if project_id:
+            self.metadata["project_id"] = project_id
+        else:
+            self.metadata.pop("project_id", None)
+        self.updated_at = datetime.now()
+
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
         msg = {
@@ -305,6 +318,7 @@ class SessionManager:
                                 "updated_at": data.get("updated_at"),
                                 "path": str(path),
                                 "title": (data.get("metadata") or {}).get("title"),
+                                "project_id": (data.get("metadata") or {}).get("project_id"),
                             })
             except Exception:
                 continue

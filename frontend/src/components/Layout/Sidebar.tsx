@@ -3,13 +3,18 @@ import { BrandMark } from '../BrandMark';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
 import { SettingsModal } from '../../pages/Settings';
+import { CreateProjectModal } from '../Projects/CreateProjectModal';
+import { MoveSessionToProjectModal } from '../Projects/MoveSessionToProjectModal';
+import { ProjectConfirmModal } from '../Projects/ProjectConfirmModal';
+import { buildProjectConfirmContent } from '../Projects/projectConfirmState';
+import { buildProjectSidebarTree } from '../Projects/projectSidebarState';
 import './sidebar.css';
 
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
-  mainView: 'chat' | 'knowledge';
-  onSelectMainView: (view: 'chat' | 'knowledge') => void;
+  mainView: 'chat' | 'knowledge' | 'project-home' | 'project-chat';
+  onSelectMainView: (view: 'chat' | 'knowledge' | 'project-home' | 'project-chat') => void;
 }
 
 function formatSessionTime(value?: string): string {
@@ -25,7 +30,11 @@ function formatSessionTime(value?: string): string {
   });
 }
 
-function SidebarIcon({ id }: { id: 'settings' | 'search' | 'plus' | 'collapse' | 'chats' | 'knowledge' }) {
+function SidebarIcon({
+  id,
+}: {
+  id: 'settings' | 'search' | 'plus' | 'collapse' | 'chats' | 'knowledge' | 'project';
+}) {
   if (id === 'settings') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -71,6 +80,14 @@ function SidebarIcon({ id }: { id: 'settings' | 'search' | 'plus' | 'collapse' |
     );
   }
 
+  if (id === 'project') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M12 5v14" />
@@ -79,12 +96,22 @@ function SidebarIcon({ id }: { id: 'settings' | 'search' | 'plus' | 'collapse' |
   );
 }
 
-function SessionActionIcon({ kind }: { kind: 'rename' | 'delete' }) {
+function SessionActionIcon({ kind }: { kind: 'rename' | 'delete' | 'move' }) {
   if (kind === 'rename') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path d="M12 20h9" />
         <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+      </svg>
+    );
+  }
+
+  if (kind === 'move') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+        <path d="M9 12h6" />
+        <path d="m12 9 3 3-3 3" />
       </svg>
     );
   }
@@ -104,19 +131,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectMainView,
 }) => {
   const { sessions, createNewSession } = useSessions();
-  const { currentSession, setCurrentSession, deleteSession, renameSession } = useChatStore();
+  const {
+    currentSession,
+    setCurrentSession,
+    deleteSession,
+    renameSession,
+    projects,
+    activeProjectId,
+    projectSessions,
+    loadProjects,
+    openProject,
+    deleteProject,
+    leaveProject,
+  } = useChatStore();
   const [showSettings, setShowSettings] = useState(false);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [moveTargetSessionId, setMoveTargetSessionId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
+  const [confirmState, setConfirmState] = useState<{
+    kind: 'delete-project' | 'delete-project-session';
+    targetId: string;
+    targetName?: string;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   useEffect(() => {
     if (!collapsed) {
       setSessionMenuOpen(false);
     }
   }, [collapsed]);
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      return;
+    }
+    setExpandedProjectIds((current) => (current.includes(activeProjectId) ? current : [...current, activeProjectId]));
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (!sessionMenuOpen) {
@@ -145,6 +205,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     });
   }, [query, sessions]);
 
+  const projectTree = useMemo(
+    () =>
+      buildProjectSidebarTree({
+        projects,
+        activeProjectId,
+        expandedProjectIds,
+        projectSessions,
+      }),
+    [projects, activeProjectId, expandedProjectIds, projectSessions]
+  );
+  const isProjectViewActive = mainView === 'project-home' || mainView === 'project-chat';
+
   const beginRename = (sessionId: string, currentTitle?: string, firstMessage?: string) => {
     setEditingSessionId(sessionId);
     setEditingTitle(currentTitle || firstMessage || '');
@@ -157,15 +229,92 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const selectSession = (sessionId: string) => {
+    leaveProject();
     onSelectMainView('chat');
     setCurrentSession(sessionId);
     setSessionMenuOpen(false);
   };
 
-  const handleCreateSession = () => {
-    onSelectMainView('chat');
-    createNewSession();
+  const handleCreateSession = async () => {
+    const createInProject = !!activeProjectId && (mainView === 'project-home' || mainView === 'project-chat');
+    if (!createInProject) {
+      leaveProject();
+    }
+    onSelectMainView(createInProject ? 'project-chat' : 'chat');
+    await createNewSession();
     setSessionMenuOpen(false);
+  };
+
+  const toggleProjectNode = (projectId: string) => {
+    setExpandedProjectIds((current) =>
+      current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId]
+    );
+  };
+
+  const handleOpenProject = async (projectId: string) => {
+    const isCurrentProject = activeProjectId === projectId && isProjectViewActive;
+    if (isCurrentProject) {
+      toggleProjectNode(projectId);
+      setSessionMenuOpen(false);
+      return;
+    }
+    setExpandedProjectIds((current) => (current.includes(projectId) ? current : [...current, projectId]));
+    await openProject(projectId);
+    onSelectMainView('project-home');
+    setSessionMenuOpen(false);
+  };
+
+  const handleSelectProjectSession = (projectId: string, sessionId: string) => {
+    setExpandedProjectIds((current) => (current.includes(projectId) ? current : [...current, projectId]));
+    setCurrentSession(sessionId);
+    onSelectMainView('project-chat');
+    setSessionMenuOpen(false);
+  };
+
+  const handleDeleteProject = async (projectId: string, projectName: string) => {
+    setConfirmState({
+      kind: 'delete-project',
+      targetId: projectId,
+      targetName: projectName,
+    });
+  };
+
+  const handleDeleteProjectSession = async (sessionId: string, sessionTitle?: string) => {
+    setConfirmState({
+      kind: 'delete-project-session',
+      targetId: sessionId,
+      targetName: sessionTitle,
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmState) {
+      return;
+    }
+
+    setConfirmBusy(true);
+    try {
+      if (confirmState.kind === 'delete-project') {
+        const { targetId } = confirmState;
+        const deletingActiveProject = activeProjectId === targetId && isProjectViewActive;
+        await deleteProject(targetId);
+        setExpandedProjectIds((current) => current.filter((id) => id !== targetId));
+        if (deletingActiveProject) {
+          onSelectMainView('chat');
+        }
+        setConfirmState(null);
+        return;
+      }
+
+      const deletingActiveSession = currentSession === confirmState.targetId && mainView === 'project-chat';
+      await deleteSession(confirmState.targetId);
+      if (deletingActiveSession) {
+        onSelectMainView('project-home');
+      }
+      setConfirmState(null);
+    } finally {
+      setConfirmBusy(false);
+    }
   };
 
   const renderSessionList = (compact = false) => {
@@ -235,6 +384,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="shell-sidebar__session-action"
                 onClick={(event) => {
                   event.stopPropagation();
+                  setMoveTargetSessionId(session.session_id);
+                }}
+                title="移入项目"
+                type="button"
+              >
+                <SessionActionIcon kind="move" />
+              </button>
+              <button
+                className="shell-sidebar__session-action"
+                onClick={(event) => {
+                  event.stopPropagation();
                   beginRename(session.session_id, session.title, session.first_message);
                 }}
                 title="重命名"
@@ -280,7 +440,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <button className="shell-sidebar__primary" onClick={handleCreateSession} title="新建对话" type="button">
+        <button
+          className="shell-sidebar__primary"
+          onClick={() => {
+            void handleCreateSession();
+          }}
+          title="新建对话"
+          type="button"
+        >
           <span className="shell-sidebar__icon">
             <SidebarIcon id="plus" />
           </span>
@@ -299,6 +466,131 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
               <span>知识库</span>
             </button>
+
+            <div className={`shell-sidebar__project-shell ${projectsExpanded ? 'is-open' : ''} ${isProjectViewActive ? 'is-active' : ''}`}>
+              <button
+                className={`shell-sidebar__group-toggle ${projectsExpanded ? 'is-open' : ''} ${
+                  isProjectViewActive ? 'is-active' : ''
+                }`}
+                type="button"
+                onClick={() => setProjectsExpanded((value) => !value)}
+              >
+                <span className="shell-sidebar__group-label">
+                  <span className="shell-sidebar__icon">
+                    <SidebarIcon id="project" />
+                  </span>
+                  <span>项目</span>
+                </span>
+                <span className={`shell-sidebar__group-caret ${projectsExpanded ? 'is-open' : ''}`}>▾</span>
+              </button>
+
+              {projectsExpanded ? (
+                <div className="shell-sidebar__project-directory">
+                  <div className="shell-sidebar__project-directory-head">
+                    <button
+                      type="button"
+                      className="shell-sidebar__project-create"
+                      onClick={() => setShowCreateProject(true)}
+                    >
+                      {'\u65b0\u9879\u76ee'}
+                    </button>
+                  </div>
+
+                  {projectTree.length === 0 ? (
+                    <div className="shell-sidebar__project-empty">{'\u8fd8\u6ca1\u6709\u9879\u76ee'}</div>
+                  ) : (
+                    projectTree.map((node) => (
+                      <div
+                        key={node.project.id}
+                        className={`shell-sidebar__project-node ${
+                          node.isExpanded ? 'is-open' : ''
+                        }`}
+                      >
+                        <div className="shell-sidebar__project-head">
+                          <button
+                            type="button"
+                            className={`shell-sidebar__project-row ${
+                              activeProjectId === node.project.id &&
+                              isProjectViewActive ? 'is-active' : ''
+                            }`}
+                            onClick={() => {
+                              void handleOpenProject(node.project.id);
+                            }}
+                          >
+                            <span className="shell-sidebar__project-row-icon">
+                              <SidebarIcon id="project" />
+                            </span>
+                            <span className="shell-sidebar__project-row-label">{node.project.name}</span>
+                            <span className={`shell-sidebar__project-row-caret ${node.isExpanded ? 'is-open' : ''}`}>▾</span>
+                          </button>
+
+                          <div className="shell-sidebar__project-actions">
+                            <button
+                              type="button"
+                              className="shell-sidebar__project-action"
+                              title={'\u5220\u9664\u9879\u76ee'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleDeleteProject(node.project.id, node.project.name);
+                              }}
+                            >
+                              <SessionActionIcon kind="delete" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {node.sessions.length > 0 ? (
+                          <div className="shell-sidebar__project-session-list">
+                            {node.sessions.map((session) => (
+                              <div
+                                key={session.session_id}
+                                className={`shell-sidebar__project-session-item ${
+                                  currentSession === session.session_id && mainView === 'project-chat'
+                                    ? 'is-active'
+                                    : ''
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  className={`shell-sidebar__project-session ${
+                                    currentSession === session.session_id && mainView === 'project-chat'
+                                      ? 'is-active'
+                                      : ''
+                                  }`}
+                                  onClick={() => {
+                                    handleSelectProjectSession(node.project.id, session.session_id);
+                                  }}
+                                  title={session.title || session.first_message || '\u65b0\u5bf9\u8bdd'}
+                                >
+                                  {session.title || session.first_message || '\u65b0\u5bf9\u8bdd'}
+                                </button>
+
+                                <div className="shell-sidebar__project-session-actions">
+                                  <button
+                                    type="button"
+                                    className="shell-sidebar__project-action"
+                                    title={'\u5220\u9664\u4f1a\u8bdd'}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleDeleteProjectSession(
+                                        session.session_id,
+                                        session.title || session.first_message || '\u65b0\u5bf9\u8bdd'
+                                      );
+                                    }}
+                                  >
+                                    <SessionActionIcon kind="delete" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : (
           <div className="shell-sidebar__collapsed-actions" ref={sessionMenuRef}>
@@ -313,6 +605,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="shell-sidebar__icon">
                 <SidebarIcon id="knowledge" />
+              </span>
+            </button>
+
+            <button
+              className={`shell-sidebar__collapsed-button ${
+                mainView === 'project-home' || mainView === 'project-chat' ? 'is-active' : ''
+              }`}
+              type="button"
+              title="项目"
+              onClick={onToggleCollapse}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="project" />
               </span>
             </button>
 
@@ -393,6 +698,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} /> : null}
+      {showCreateProject ? (
+        <CreateProjectModal
+          onClose={() => setShowCreateProject(false)}
+          onCreated={() => onSelectMainView('project-home')}
+        />
+      ) : null}
+      {moveTargetSessionId ? (
+        <MoveSessionToProjectModal
+          sessionId={moveTargetSessionId}
+          onClose={() => setMoveTargetSessionId(null)}
+          onMoved={() => onSelectMainView('project-home')}
+        />
+      ) : null}
+      {confirmState ? (
+        <ProjectConfirmModal
+          {...buildProjectConfirmContent(confirmState.kind, confirmState.targetName)}
+          busy={confirmBusy}
+          onClose={() => {
+            if (!confirmBusy) {
+              setConfirmState(null);
+            }
+          }}
+          onConfirm={handleConfirmDelete}
+        />
+      ) : null}
     </aside>
   );
 };

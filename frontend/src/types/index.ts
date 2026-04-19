@@ -43,6 +43,20 @@ export interface Session {
   message_count: number;
   first_message?: string;
   title?: string;
+  project_id?: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  session_count: number;
+}
+
+export interface ProjectDetailResponse {
+  project: Project;
+  sessions: Session[];
 }
 
 export interface ChatHistoryResponse {
