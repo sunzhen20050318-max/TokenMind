@@ -2,10 +2,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sun_agent.agent.loop import AgentLoop
-import sun_agent.agent.memory as memory_module
-from sun_agent.bus.queue import MessageBus
-from sun_agent.providers.base import LLMResponse
+from tokenmind.agent.loop import AgentLoop
+import tokenmind.agent.memory as memory_module
+from tokenmind.bus.queue import MessageBus
+from tokenmind.providers.base import LLMResponse
 
 
 def _make_loop(tmp_path, *, estimated_tokens: int, context_window_tokens: int) -> AgentLoop:

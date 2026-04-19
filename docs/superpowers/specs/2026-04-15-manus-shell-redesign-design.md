@@ -2,7 +2,7 @@
 
 ## Summary
 
-This spec redesigns the frontend shell of `SUN-AGENT` to feel closer to the Manus interface style shown in the user-provided references, while preserving the product's existing capabilities and local-first workflow.
+This spec redesigns the frontend shell of `TokenMind` to feel closer to the Manus interface style shown in the user-provided references, while preserving the product's existing capabilities and local-first workflow.
 
 The redesign covers three connected surfaces:
 
@@ -19,11 +19,11 @@ The goal is not a pixel-copy of Manus. The goal is to adopt the same interaction
 - a natural transition from "launch state" into "chat state"
 - a settings experience organized as a left navigation rail plus right content pane
 
-The redesign keeps `SUN-AGENT`'s existing features and terminology where practical, while reducing current visual fragmentation and making the app feel more intentional and product-shaped.
+The redesign keeps `TokenMind`'s existing features and terminology where practical, while reducing current visual fragmentation and making the app feel more intentional and product-shaped.
 
 ## Goals
 
-- Make the sidebar structure feel closer to Manus without removing `SUN-AGENT` functionality
+- Make the sidebar structure feel closer to Manus without removing `TokenMind` functionality
 - Keep major product areas visible and easy to reach
 - Turn the homepage empty state into a centered launchpad instead of a sparse blank screen
 - Move the input box to the center before a conversation begins, then transition it toward the bottom once chatting starts
@@ -77,7 +77,7 @@ Cons:
 
 ### Option B: Manus-Inspired Shell Reorganization
 
-Reorganize the sidebar, empty state, and settings structure to follow Manus-style layout logic while preserving `SUN-AGENT` feature surfaces and labels.
+Reorganize the sidebar, empty state, and settings structure to follow Manus-style layout logic while preserving `TokenMind` feature surfaces and labels.
 
 Pros:
 

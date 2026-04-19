@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from sun_agent.config.loader import load_config, save_config
+from tokenmind.config.loader import load_config, save_config
 
 
 def test_load_config_keeps_max_tokens_and_ignores_legacy_memory_window(tmp_path) -> None:
@@ -70,11 +70,11 @@ def test_onboard_does_not_crash_with_legacy_memory_window(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    monkeypatch.setattr("sun_agent.config.loader.get_config_path", lambda: config_path)
-    monkeypatch.setattr("sun_agent.cli.commands.get_workspace_path", lambda _workspace=None: workspace)
+    monkeypatch.setattr("tokenmind.config.loader.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tokenmind.cli.commands.get_workspace_path", lambda _workspace=None: workspace)
 
     from typer.testing import CliRunner
-    from sun_agent.cli.commands import app
+    from tokenmind.cli.commands import app
     runner = CliRunner()
     result = runner.invoke(app, ["onboard"], input="n\n")
 
@@ -102,10 +102,10 @@ def test_onboard_refresh_backfills_missing_channel_fields(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    monkeypatch.setattr("sun_agent.config.loader.get_config_path", lambda: config_path)
-    monkeypatch.setattr("sun_agent.cli.commands.get_workspace_path", lambda _workspace=None: workspace)
+    monkeypatch.setattr("tokenmind.config.loader.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tokenmind.cli.commands.get_workspace_path", lambda _workspace=None: workspace)
     monkeypatch.setattr(
-        "sun_agent.channels.registry.discover_all",
+        "tokenmind.channels.registry.discover_all",
         lambda: {
             "qq": SimpleNamespace(
                 default_config=lambda: {
@@ -120,7 +120,7 @@ def test_onboard_refresh_backfills_missing_channel_fields(tmp_path, monkeypatch)
     )
 
     from typer.testing import CliRunner
-    from sun_agent.cli.commands import app
+    from tokenmind.cli.commands import app
     runner = CliRunner()
     result = runner.invoke(app, ["onboard"], input="n\n")
 
@@ -130,12 +130,12 @@ def test_onboard_refresh_backfills_missing_channel_fields(tmp_path, monkeypatch)
 
 
 def test_get_config_path_prefers_tokenmind_home_and_migrates_legacy(tmp_path, monkeypatch) -> None:
-    from sun_agent.config import loader
+    from tokenmind.config import loader
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     loader.set_config_path(None)
 
-    legacy_config = tmp_path / ".sun_agent" / "config.json"
+    legacy_config = tmp_path / ".tokenmind" / "config.json"
     legacy_config.parent.mkdir(parents=True, exist_ok=True)
     legacy_config.write_text(json.dumps({"agents": {"defaults": {"model": "openai/gpt-4.1-mini"}}}), encoding="utf-8")
 
@@ -148,7 +148,7 @@ def test_get_config_path_prefers_tokenmind_home_and_migrates_legacy(tmp_path, mo
 
 
 def test_get_config_path_uses_existing_tokenmind_config_without_legacy_copy(tmp_path, monkeypatch) -> None:
-    from sun_agent.config import loader
+    from tokenmind.config import loader
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     loader.set_config_path(None)
@@ -157,7 +157,7 @@ def test_get_config_path_uses_existing_tokenmind_config_without_legacy_copy(tmp_
     current_config.parent.mkdir(parents=True, exist_ok=True)
     current_config.write_text(json.dumps({"agents": {"defaults": {"model": "openai/gpt-5"}}}), encoding="utf-8")
 
-    legacy_config = tmp_path / ".sun_agent" / "config.json"
+    legacy_config = tmp_path / ".tokenmind" / "config.json"
     legacy_config.parent.mkdir(parents=True, exist_ok=True)
     legacy_config.write_text(json.dumps({"agents": {"defaults": {"model": "legacy/model"}}}), encoding="utf-8")
 
@@ -166,3 +166,46 @@ def test_get_config_path_uses_existing_tokenmind_config_without_legacy_copy(tmp_
     assert path == current_config
     current = json.loads(path.read_text(encoding="utf-8"))
     assert current["agents"]["defaults"]["model"] == "openai/gpt-5"
+
+
+def test_load_config_migrates_legacy_default_workspace_to_tokenmind_home(tmp_path, monkeypatch) -> None:
+    from tokenmind.config import loader
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    config_path = tmp_path / ".tokenmind" / "config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps({"agents": {"defaults": {"workspace": "~/.tokenmind/workspace"}}}),
+        encoding="utf-8",
+    )
+
+    config = loader.load_config(config_path)
+
+    assert config.agents.defaults.workspace == "~/.tokenmind/workspace"
+
+
+def test_load_config_accepts_utf8_bom_encoded_json(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "defaults": {
+                        "provider": "minimax",
+                        "model": "MiniMax-M2.7",
+                    }
+                },
+                "providers": {
+                    "minimax": {
+                        "apiKey": "test-key",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+
+    config = load_config(config_path)
+
+    assert config.agents.defaults.provider == "minimax"
+    assert config.providers.minimax.api_key == "test-key"

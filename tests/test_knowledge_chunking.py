@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sun_agent.knowledge.chunking import semantic_chunks, simple_chunks
+from tokenmind.knowledge.chunking import semantic_chunks, simple_chunks
 
 
 def test_simple_chunks_splits_long_paragraph_by_sentence() -> None:

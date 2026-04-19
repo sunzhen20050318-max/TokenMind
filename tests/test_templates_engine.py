@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sun_agent.agent.loop import AgentLoop
-from sun_agent.bus.queue import MessageBus
-from sun_agent.config.schema import TemplatesConfig
-from sun_agent.providers.base import LLMResponse
-from sun_agent.templates_engine import TemplateRenderer
+from tokenmind.agent.loop import AgentLoop
+from tokenmind.bus.queue import MessageBus
+from tokenmind.config.schema import TemplatesConfig
+from tokenmind.providers.base import LLMResponse
+from tokenmind.templates_engine import TemplateRenderer
 
 
 def test_template_renderer_renders_known_context() -> None:

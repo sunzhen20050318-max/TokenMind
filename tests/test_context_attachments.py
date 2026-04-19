@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sun_agent.agent.context import ContextBuilder
+from tokenmind.agent.context import ContextBuilder
 
 
 def _make_workspace(tmp_path: Path) -> Path:

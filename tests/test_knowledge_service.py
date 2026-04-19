@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from sun_agent.knowledge.service import KnowledgeService
+from tokenmind.knowledge.service import KnowledgeService
 
 
 def test_create_knowledge_base_persists_metadata(tmp_path: Path) -> None:

@@ -47,6 +47,7 @@ dependencies = [
     "chardet>=3.0.2,<6.0.0",
     "openai>=2.8.0",
     "tiktoken>=0.12.0,<1.0.0",
+    "pypdf>=5.4.0,<6.0.0",
     "fastapi>=0.115.0,<1.0.0",
     "uvicorn[standard]>=0.30.0,<1.0.0",
     "jinja2>=3.1.0,<4.0.0",
@@ -75,8 +76,7 @@ dev = [
 ]
 
 [project.scripts]
-sun_agent = "sun_agent.cli.commands:app"
-tokenmind = "sun_agent.cli.commands:app"
+tokenmind = "tokenmind.cli.commands:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -87,24 +87,24 @@ allow-direct-references = true
 
 [tool.hatch.build]
 include = [
-    "sun_agent/**/*.py",
-    "sun_agent/templates/**/*.md",
-    "sun_agent/skills/**/*.md",
-    "sun_agent/skills/**/*.sh",
+    "tokenmind/**/*.py",
+    "tokenmind/templates/**/*.md",
+    "tokenmind/skills/**/*.md",
+    "tokenmind/skills/**/*.sh",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["sun_agent"]
+packages = ["tokenmind"]
 
 [tool.hatch.build.targets.wheel.sources]
-"sun_agent" = "sun_agent"
+"tokenmind" = "tokenmind"
 
 [tool.hatch.build.targets.wheel.force-include]
-"bridge" = "sun_agent/bridge"
+"bridge" = "tokenmind/bridge"
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "sun_agent/",
+    "tokenmind/",
     "bridge/",
     "README.md",
     "LICENSE",

@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from sun_agent.cron.service import CronService
-from sun_agent.cron.types import CronSchedule
+from tokenmind.cron.service import CronService
+from tokenmind.cron.types import CronSchedule
 
 
 def test_add_job_rejects_unknown_timezone(tmp_path) -> None:

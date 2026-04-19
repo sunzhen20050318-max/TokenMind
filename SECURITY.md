@@ -33,7 +33,7 @@ Recommendations:
 - Separate development and production credentials
 
 Legacy note:
-- If you still have `~/.sun_agent/config.json`, TokenMind can migrate it automatically on first launch.
+- If you still have `~/.tokenmind/config.json`, TokenMind can migrate it automatically on first launch.
 
 ### 2. Channel Access Control
 
@@ -174,7 +174,7 @@ Before deploying TokenMind:
 ## Updates
 
 For current security updates:
-- GitHub Security Advisories: [HKUDS/sun_agent security advisories](https://github.com/HKUDS/sun_agent/security/advisories)
-- Release Notes: [HKUDS/sun_agent releases](https://github.com/HKUDS/sun_agent/releases)
+- GitHub Security Advisories: [HKUDS/tokenmind security advisories](https://github.com/HKUDS/tokenmind/security/advisories)
+- Release Notes: [HKUDS/tokenmind releases](https://github.com/HKUDS/tokenmind/releases)
 
-The repository path may still use the legacy `sun_agent` name even though the product brand is now TokenMind.
+The repository path may still use the legacy `tokenmind` name even though the product brand is now TokenMind.

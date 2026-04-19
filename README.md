@@ -65,8 +65,8 @@
 ### 2. 克隆项目
 
 ```bash
-git clone https://gitee.com/sun124578963_0/sun-agent.git
-cd sun-agent   # 仓库目录当前仍沿用历史名称
+git clone https://gitee.com/sun124578963_0/TokenMind.git
+cd TokenMind   # 仓库目录当前仍沿用历史名称
 ```
 
 ### 3. 安装后端依赖
@@ -89,7 +89,7 @@ tokenmind onboard
 
 ### 5. 启动 Web 服务
 
-旧版 `~/.sun_agent/config.json` 如果存在，会在首次启动时自动迁移到 `~/.tokenmind/config.json`。
+旧版 `~/.tokenmind/config.json` 如果存在，会在首次启动时自动迁移到 `~/.tokenmind/config.json`。
 
 ```bash
 tokenmind web --port 8080
@@ -185,7 +185,7 @@ mcp_minimax_understand_image
 
 ```text
 tokenmind/
-├─ sun_agent/
+├─ tokenmind/
 │  ├─ agent/                 # Agent 主循环、上下文构建、工具系统
 │  ├─ bus/                   # 消息总线与队列
 │  ├─ channels/              # 各聊天渠道接入
@@ -210,7 +210,7 @@ tokenmind/
 ```bash
 pip install -e ".[dev]"
 pytest -q
-ruff check sun_agent/
+ruff check tokenmind/
 ```
 
 ### 前端开发
@@ -242,7 +242,7 @@ npm run build
 ## 文档
 
 - [架构说明](CLAUDE.md)
-- [TokenMind Skills 说明](sun_agent/skills/README.md)
+- [TokenMind Skills 说明](tokenmind/skills/README.md)
 
 ## License
 

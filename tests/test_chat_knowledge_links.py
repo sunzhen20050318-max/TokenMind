@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from sun_agent.knowledge.service import KnowledgeService
+from tokenmind.knowledge.service import KnowledgeService
 
 
 def test_session_can_link_multiple_knowledge_bases(tmp_path: Path) -> None:
@@ -30,7 +30,7 @@ def test_disabled_knowledge_base_is_removed_from_session_links(tmp_path: Path) -
 
 @pytest.mark.asyncio
 async def test_route_can_update_session_knowledge_links() -> None:
-    from sun_agent.server.routes import knowledge as knowledge_routes
+    from tokenmind.server.routes import knowledge as knowledge_routes
 
     stored: list[str] = []
 
@@ -59,7 +59,7 @@ async def test_route_can_update_session_knowledge_links() -> None:
 
 @pytest.mark.asyncio
 async def test_route_can_read_session_knowledge_links() -> None:
-    from sun_agent.server.routes import knowledge as knowledge_routes
+    from tokenmind.server.routes import knowledge as knowledge_routes
 
     class FakeService:
         def get_session_knowledge_links(self, session_id: str) -> list[str]:

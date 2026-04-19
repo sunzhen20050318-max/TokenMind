@@ -3,8 +3,8 @@
 import httpx
 import pytest
 
-from sun_agent.agent.tools.web import WebSearchTool
-from sun_agent.config.schema import WebSearchConfig
+from tokenmind.agent.tools.web import WebSearchTool
+from tokenmind.config.schema import WebSearchConfig
 
 
 def _tool(provider: str = "brave", api_key: str = "", base_url: str = "") -> WebSearchTool:
@@ -29,7 +29,7 @@ async def test_brave_search(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
     tool = _tool(provider="brave", api_key="brave-key")
-    result = await tool.execute(query="sun_agent", count=1)
+    result = await tool.execute(query="tokenmind", count=1)
     assert "NanoBot" in result
     assert "https://example.com" in result
 
@@ -73,8 +73,8 @@ async def test_duckduckgo_search(monkeypatch):
         def text(self, query, max_results=5):
             return [{"title": "DDG Result", "href": "https://ddg.example", "body": "From DuckDuckGo"}]
 
-    monkeypatch.setattr("sun_agent.agent.tools.web.DDGS", MockDDGS, raising=False)
-    import sun_agent.agent.tools.web as web_mod
+    monkeypatch.setattr("tokenmind.agent.tools.web.DDGS", MockDDGS, raising=False)
+    import tokenmind.agent.tools.web as web_mod
     monkeypatch.setattr(web_mod, "DDGS", MockDDGS, raising=False)
 
     from ddgs import DDGS

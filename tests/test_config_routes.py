@@ -8,7 +8,7 @@ import pytest
 @pytest.fixture
 def temp_config_path(tmp_path):
     """Point config loader at a temporary config file for the test."""
-    from sun_agent.config.loader import get_config_path, set_config_path
+    from tokenmind.config.loader import get_config_path, set_config_path
 
     previous = get_config_path()
     path = tmp_path / "config.json"
@@ -22,9 +22,9 @@ def temp_config_path(tmp_path):
 @pytest.mark.asyncio
 async def test_get_config_returns_extended_sections(temp_config_path):
     """GET config should expose agent, tools, runtime, and MCP data."""
-    from sun_agent.config.loader import save_config
-    from sun_agent.config.schema import Config, MCPServerConfig
-    from sun_agent.server.routes.config import get_config
+    from tokenmind.config.loader import save_config
+    from tokenmind.config.schema import Config, MCPServerConfig
+    from tokenmind.server.routes.config import get_config
 
     config = Config()
     config.providers.openai.api_key = "sk-test-12345678"
@@ -58,9 +58,9 @@ async def test_get_config_returns_extended_sections(temp_config_path):
 @pytest.mark.asyncio
 async def test_get_mcp_tools_returns_discovered_catalog(temp_config_path, monkeypatch):
     """GET MCP tools should expose live discovered tool metadata for each server."""
-    from sun_agent.config.loader import save_config
-    from sun_agent.config.schema import Config, MCPServerConfig
-    from sun_agent.server.routes import config as config_routes
+    from tokenmind.config.loader import save_config
+    from tokenmind.config.schema import Config, MCPServerConfig
+    from tokenmind.server.routes import config as config_routes
 
     config = Config()
     config.tools.mcp_servers["minimax"] = MCPServerConfig(
@@ -109,8 +109,8 @@ async def test_get_mcp_tools_returns_discovered_catalog(temp_config_path, monkey
 @pytest.mark.asyncio
 async def test_update_config_sections_and_mcp_servers(temp_config_path):
     """Route helpers should persist provider, agent, tools, runtime, and MCP updates."""
-    from sun_agent.config.loader import load_config
-    from sun_agent.server.routes.config import (
+    from tokenmind.config.loader import load_config
+    from tokenmind.server.routes.config import (
         AgentConfigUpdate,
         ChannelsConfigUpdate,
         ExecToolConfigUpdate,

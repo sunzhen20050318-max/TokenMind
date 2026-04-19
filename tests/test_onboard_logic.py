@@ -12,11 +12,11 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel, Field
 
-from sun_agent.cli import onboard_wizard
+from tokenmind.cli import onboard_wizard
 
 # Import functions to test
-from sun_agent.cli.commands import _merge_missing_defaults
-from sun_agent.cli.onboard_wizard import (
+from tokenmind.cli.commands import _merge_missing_defaults
+from tokenmind.cli.onboard_wizard import (
     _BACK_PRESSED,
     _configure_pydantic_model,
     _format_value,
@@ -24,8 +24,8 @@ from sun_agent.cli.onboard_wizard import (
     _get_field_type_info,
     run_onboard,
 )
-from sun_agent.config.schema import Config
-from sun_agent.utils.helpers import sync_workspace_templates
+from tokenmind.config.schema import Config
+from tokenmind.utils.helpers import sync_workspace_templates
 
 
 class TestMergeMissingDefaults:
@@ -352,7 +352,7 @@ class TestProviderChannelInfo:
     """Tests for provider and channel info retrieval."""
 
     def test_get_provider_names_returns_dict(self):
-        from sun_agent.cli.onboard_wizard import _get_provider_names
+        from tokenmind.cli.onboard_wizard import _get_provider_names
 
         names = _get_provider_names()
         assert isinstance(names, dict)
@@ -361,7 +361,7 @@ class TestProviderChannelInfo:
         assert "openai" in names or "anthropic" in names
 
     def test_get_channel_names_returns_dict(self):
-        from sun_agent.cli.onboard_wizard import _get_channel_names
+        from tokenmind.cli.onboard_wizard import _get_channel_names
 
         names = _get_channel_names()
         assert isinstance(names, dict)
@@ -369,7 +369,7 @@ class TestProviderChannelInfo:
         assert len(names) >= 0
 
     def test_get_provider_info_returns_valid_structure(self):
-        from sun_agent.cli.onboard_wizard import _get_provider_info
+        from tokenmind.cli.onboard_wizard import _get_provider_info
 
         info = _get_provider_info()
         assert isinstance(info, dict)

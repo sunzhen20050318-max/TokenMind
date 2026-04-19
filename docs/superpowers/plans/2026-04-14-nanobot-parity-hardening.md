@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Bring `sun-agent` closer to the most valuable April 2026 `nanobot` hardening work by tightening OpenRouter Claude prompt caching, strengthening long-running runtime behavior, and adding backward-compatible Jinja2-driven response/memory templates.
+**Goal:** Bring `TokenMind` closer to the most valuable April 2026 `nanobot` hardening work by tightening OpenRouter Claude prompt caching, strengthening long-running runtime behavior, and adding backward-compatible Jinja2-driven response/memory templates.
 
 **Architecture:** Keep the rollout in three isolated slices. First constrain provider-side prompt caching to the exact OpenRouter Claude cases that benefit from it. Next replace the agent loop's global serialization with session-scoped concurrency primitives and harden shared retry/background-task behavior. Finally add optional Jinja2 templating around response post-processing and memory consolidation without changing default behavior when templates are absent.
 
@@ -13,9 +13,9 @@
 ### Task 1: OpenRouter Claude-Only Prompt Caching
 
 **Files:**
-- Modify: `D:\project\sun-agent\tests\test_openai_compat_provider.py`
-- Modify: `D:\project\sun-agent\sun_agent\providers\registry.py`
-- Modify: `D:\project\sun-agent\sun_agent\providers\openai_compat_provider.py`
+- Modify: `D:\project\TokenMind\tests\test_openai_compat_provider.py`
+- Modify: `D:\project\TokenMind\tokenmind\providers\registry.py`
+- Modify: `D:\project\TokenMind\tokenmind\providers\openai_compat_provider.py`
 
 - [ ] **Step 1: Write the failing provider tests**
 
@@ -23,7 +23,7 @@ Add tests that prove `OpenRouter` only applies `cache_control` for Claude-family
 
 - [ ] **Step 2: Run the provider tests to verify failure**
 
-Run: `pytest D:\project\sun-agent\tests\test_openai_compat_provider.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_openai_compat_provider.py -q`
 Expected: FAIL on the new Claude/non-Claude caching assertions.
 
 - [ ] **Step 3: Implement the minimal provider gating**
@@ -32,23 +32,23 @@ Add model-aware prompt-caching support metadata in the provider spec / provider 
 
 - [ ] **Step 4: Re-run the provider tests**
 
-Run: `pytest D:\project\sun-agent\tests\test_openai_compat_provider.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_openai_compat_provider.py -q`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add D:/project/sun-agent/tests/test_openai_compat_provider.py D:/project/sun-agent/sun_agent/providers/registry.py D:/project/sun-agent/sun_agent/providers/openai_compat_provider.py
+git add D:/project/TokenMind/tests/test_openai_compat_provider.py D:/project/TokenMind/tokenmind/providers/registry.py D:/project/TokenMind/tokenmind/providers/openai_compat_provider.py
 git commit -m "fix: scope openrouter prompt caching to claude models"
 ```
 
 ### Task 2: Long-Running Runtime Hardening
 
 **Files:**
-- Modify: `D:\project\sun-agent\tests\test_task_cancel.py`
-- Modify: `D:\project\sun-agent\tests\test_provider_retry.py`
-- Modify: `D:\project\sun-agent\sun_agent\agent\loop.py`
-- Modify: `D:\project\sun-agent\sun_agent\providers\base.py`
+- Modify: `D:\project\TokenMind\tests\test_task_cancel.py`
+- Modify: `D:\project\TokenMind\tests\test_provider_retry.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\loop.py`
+- Modify: `D:\project\TokenMind\tokenmind\providers\base.py`
 
 - [ ] **Step 1: Write failing runtime tests**
 
@@ -60,7 +60,7 @@ Add tests that prove:
 
 - [ ] **Step 2: Run the focused runtime tests to verify failure**
 
-Run: `pytest D:\project\sun-agent\tests\test_task_cancel.py D:\project\sun-agent\tests\test_provider_retry.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_task_cancel.py D:\project\TokenMind\tests\test_provider_retry.py -q`
 Expected: FAIL on the new session-concurrency / retry-shape assertions.
 
 - [ ] **Step 3: Implement session-scoped locking and safer background tracking**
@@ -73,27 +73,27 @@ Teach `LLMProvider.chat_with_retry()` to look for structured transient indicator
 
 - [ ] **Step 5: Re-run the focused runtime tests**
 
-Run: `pytest D:\project\sun-agent\tests\test_task_cancel.py D:\project\sun-agent\tests\test_provider_retry.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_task_cancel.py D:\project\TokenMind\tests\test_provider_retry.py -q`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add D:/project/sun-agent/tests/test_task_cancel.py D:/project/sun-agent/tests/test_provider_retry.py D:/project/sun-agent/sun_agent/agent/loop.py D:/project/sun-agent/sun_agent/providers/base.py
+git add D:/project/TokenMind/tests/test_task_cancel.py D:/project/TokenMind/tests/test_provider_retry.py D:/project/TokenMind/tokenmind/agent/loop.py D:/project/TokenMind/tokenmind/providers/base.py
 git commit -m "refactor: harden long-running runtime behavior"
 ```
 
 ### Task 3: Backward-Compatible Jinja2 Response and Memory Templates
 
 **Files:**
-- Modify: `D:\project\sun-agent\pyproject.toml`
-- Create: `D:\project\sun-agent\sun_agent\templates_engine.py`
-- Modify: `D:\project\sun-agent\sun_agent\agent\memory.py`
-- Modify: `D:\project\sun-agent\sun_agent\agent\loop.py`
-- Modify: `D:\project\sun-agent\sun_agent\config\schema.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\routes\config.py`
-- Create: `D:\project\sun-agent\tests\test_templates_engine.py`
-- Modify: `D:\project\sun-agent\tests\test_memory_consolidation_types.py`
+- Modify: `D:\project\TokenMind\pyproject.toml`
+- Create: `D:\project\TokenMind\tokenmind\templates_engine.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\memory.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\loop.py`
+- Modify: `D:\project\TokenMind\tokenmind\config\schema.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\routes\config.py`
+- Create: `D:\project\TokenMind\tests\test_templates_engine.py`
+- Modify: `D:\project\TokenMind\tests\test_memory_consolidation_types.py`
 
 - [ ] **Step 1: Write failing template tests**
 
@@ -104,7 +104,7 @@ Add tests for:
 
 - [ ] **Step 2: Run the focused template tests to verify failure**
 
-Run: `pytest D:\project\sun-agent\tests\test_templates_engine.py D:\project\sun-agent\tests\test_memory_consolidation_types.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_templates_engine.py D:\project\TokenMind\tests\test_memory_consolidation_types.py -q`
 Expected: FAIL because the template engine/config does not exist yet.
 
 - [ ] **Step 3: Add the minimal template engine**
@@ -117,34 +117,34 @@ Use the template engine only when configured. Preserve the current output path w
 
 - [ ] **Step 5: Re-run the focused template tests**
 
-Run: `pytest D:\project\sun-agent\tests\test_templates_engine.py D:\project\sun-agent\tests\test_memory_consolidation_types.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_templates_engine.py D:\project\TokenMind\tests\test_memory_consolidation_types.py -q`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add D:/project/sun-agent/pyproject.toml D:/project/sun-agent/sun_agent/templates_engine.py D:/project/sun-agent/sun_agent/agent/memory.py D:/project/sun-agent/sun_agent/agent/loop.py D:/project/sun-agent/sun_agent/config/schema.py D:/project/sun-agent/sun_agent/server/routes/config.py D:/project/sun-agent/tests/test_templates_engine.py D:/project/sun-agent/tests/test_memory_consolidation_types.py
+git add D:/project/TokenMind/pyproject.toml D:/project/TokenMind/tokenmind/templates_engine.py D:/project/TokenMind/tokenmind/agent/memory.py D:/project/TokenMind/tokenmind/agent/loop.py D:/project/TokenMind/tokenmind/config/schema.py D:/project/TokenMind/tokenmind/server/routes/config.py D:/project/TokenMind/tests/test_templates_engine.py D:/project/TokenMind/tests/test_memory_consolidation_types.py
 git commit -m "feat: add optional jinja2 templates"
 ```
 
 ### Task 4: Regression Verification and Gap Summary
 
 **Files:**
-- Modify: `D:\project\sun-agent\README.md` (only if new config surface needs documentation)
+- Modify: `D:\project\TokenMind\README.md` (only if new config surface needs documentation)
 
 - [ ] **Step 1: Run focused regressions**
 
-Run: `pytest D:\project\sun-agent\tests\test_openai_compat_provider.py D:\project\sun-agent\tests\test_task_cancel.py D:\project\sun-agent\tests\test_provider_retry.py D:\project\sun-agent\tests\test_memory_consolidation_types.py D:\project\sun-agent\tests\test_exec_approval.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_openai_compat_provider.py D:\project\TokenMind\tests\test_task_cancel.py D:\project\TokenMind\tests\test_provider_retry.py D:\project\TokenMind\tests\test_memory_consolidation_types.py D:\project\TokenMind\tests\test_exec_approval.py -q`
 Expected: PASS
 
 - [ ] **Step 2: Run broader safety regression**
 
-Run: `pytest -q --ignore=D:\project\sun-agent\tests\test_matrix_channel.py`
+Run: `pytest -q --ignore=D:\project\TokenMind\tests\test_matrix_channel.py`
 Expected: PASS
 
 - [ ] **Step 3: Run syntax / build checks**
 
-Run: `python -m compileall D:\project\sun-agent\sun_agent D:\project\sun-agent\tests`
+Run: `python -m compileall D:\project\TokenMind\tokenmind D:\project\TokenMind\tests`
 Expected: PASS
 
 - [ ] **Step 4: Update docs if needed**
@@ -154,6 +154,6 @@ Only document new config/template knobs if we actually expose them in user-facin
 - [ ] **Step 5: Final commit**
 
 ```bash
-git add D:/project/sun-agent/README.md
+git add D:/project/TokenMind/README.md
 git commit -m "docs: document runtime hardening and template options"
 ```

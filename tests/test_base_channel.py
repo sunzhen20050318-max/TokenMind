@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 
-from sun_agent.bus.events import OutboundMessage
-from sun_agent.bus.queue import MessageBus
-from sun_agent.channels.base import BaseChannel
+from tokenmind.bus.events import OutboundMessage
+from tokenmind.bus.queue import MessageBus
+from tokenmind.channels.base import BaseChannel
 
 
 class _DummyChannel(BaseChannel):

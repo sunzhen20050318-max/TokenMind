@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest import mark
 
-from sun_agent.bus.events import OutboundMessage
-from sun_agent.channels.feishu import FeishuChannel
+from tokenmind.bus.events import OutboundMessage
+from tokenmind.channels.feishu import FeishuChannel
 
 
 @pytest.fixture

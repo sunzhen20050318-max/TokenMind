@@ -1,6 +1,6 @@
-from sun_agent.agent.context import ContextBuilder
-from sun_agent.agent.loop import AgentLoop
-from sun_agent.session.manager import Session
+from tokenmind.agent.context import ContextBuilder
+from tokenmind.agent.loop import AgentLoop
+from tokenmind.session.manager import Session
 
 
 def _mk_loop() -> AgentLoop:

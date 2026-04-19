@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from sun_agent.providers.base import GenerationSettings, LLMProvider, LLMResponse
+from tokenmind.providers.base import GenerationSettings, LLMProvider, LLMResponse
 
 
 class ScriptedProvider(LLMProvider):
@@ -35,7 +35,7 @@ async def test_chat_with_retry_retries_transient_error_then_succeeds(monkeypatch
     async def _fake_sleep(delay: int) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("sun_agent.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("tokenmind.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -56,7 +56,7 @@ async def test_chat_with_retry_retries_structured_transient_status(monkeypatch) 
     async def _fake_sleep(delay: int) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("sun_agent.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("tokenmind.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -76,7 +76,7 @@ async def test_chat_with_retry_does_not_retry_non_transient_error(monkeypatch) -
     async def _fake_sleep(delay: int) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("sun_agent.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("tokenmind.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -98,7 +98,7 @@ async def test_chat_with_retry_returns_final_error_after_retries(monkeypatch) ->
     async def _fake_sleep(delay: int) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("sun_agent.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("tokenmind.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 

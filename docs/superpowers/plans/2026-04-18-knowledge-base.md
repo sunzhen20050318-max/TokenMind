@@ -14,50 +14,50 @@
 
 ### Backend
 
-- Create: `D:\project\sun-agent\sun_agent\knowledge\__init__.py`
-- Create: `D:\project\sun-agent\sun_agent\knowledge\models.py`
-- Create: `D:\project\sun-agent\sun_agent\knowledge\service.py`
-- Create: `D:\project\sun-agent\sun_agent\knowledge\chunking.py`
-- Create: `D:\project\sun-agent\sun_agent\server\routes\knowledge.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\routes\__init__.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\app.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\websocket\handler.py`
-- Modify: `D:\project\sun-agent\sun_agent\agent\context.py`
-- Modify: `D:\project\sun-agent\sun_agent\agent\loop.py`
-- Test: `D:\project\sun-agent\tests\test_knowledge_service.py`
-- Test: `D:\project\sun-agent\tests\test_knowledge_routes.py`
-- Test: `D:\project\sun-agent\tests\test_chat_knowledge_links.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\__init__.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\models.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\service.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\chunking.py`
+- Create: `D:\project\TokenMind\tokenmind\server\routes\knowledge.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\routes\__init__.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\app.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\websocket\handler.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\context.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\loop.py`
+- Test: `D:\project\TokenMind\tests\test_knowledge_service.py`
+- Test: `D:\project\TokenMind\tests\test_knowledge_routes.py`
+- Test: `D:\project\TokenMind\tests\test_chat_knowledge_links.py`
 
 ### Frontend
 
-- Create: `D:\project\sun-agent\frontend\src\pages\Knowledge.tsx`
-- Create: `D:\project\sun-agent\frontend\src\pages\knowledge.css`
-- Create: `D:\project\sun-agent\frontend\src\types\knowledge.ts`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\sidebar.css`
-- Modify: `D:\project\sun-agent\frontend\src\App.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\inputArea.css`
-- Modify: `D:\project\sun-agent\frontend\src\services\api.ts`
-- Modify: `D:\project\sun-agent\frontend\src\stores\chatStore.ts`
+- Create: `D:\project\TokenMind\frontend\src\pages\Knowledge.tsx`
+- Create: `D:\project\TokenMind\frontend\src\pages\knowledge.css`
+- Create: `D:\project\TokenMind\frontend\src\types\knowledge.ts`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\sidebar.css`
+- Modify: `D:\project\TokenMind\frontend\src\App.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\inputArea.css`
+- Modify: `D:\project\TokenMind\frontend\src\services\api.ts`
+- Modify: `D:\project\TokenMind\frontend\src\stores\chatStore.ts`
 
 ---
 
 ### Task 1: Create the backend knowledge domain and local storage model
 
 **Files:**
-- Create: `D:\project\sun-agent\sun_agent\knowledge\__init__.py`
-- Create: `D:\project\sun-agent\sun_agent\knowledge\models.py`
-- Create: `D:\project\sun-agent\sun_agent\knowledge\service.py`
-- Create: `D:\project\sun-agent\sun_agent\knowledge\chunking.py`
-- Test: `D:\project\sun-agent\tests\test_knowledge_service.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\__init__.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\models.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\service.py`
+- Create: `D:\project\TokenMind\tokenmind\knowledge\chunking.py`
+- Test: `D:\project\TokenMind\tests\test_knowledge_service.py`
 
 - [ ] **Step 1: Write the failing backend service tests**
 
 ```python
 from pathlib import Path
 
-from sun_agent.knowledge.service import KnowledgeService
+from tokenmind.knowledge.service import KnowledgeService
 
 
 def test_create_knowledge_base_persists_metadata(tmp_path: Path) -> None:
@@ -98,14 +98,14 @@ def test_add_document_registers_file_under_knowledge_base(tmp_path: Path) -> Non
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_knowledge_service.py -q
+pytest D:\project\TokenMind\tests\test_knowledge_service.py -q
 ```
 
-Expected: FAIL with import errors because `sun_agent.knowledge` does not exist yet.
+Expected: FAIL with import errors because `tokenmind.knowledge` does not exist yet.
 
 - [ ] **Step 3: Add the knowledge models and service**
 
-Create `D:\project\sun-agent\sun_agent\knowledge\models.py`:
+Create `D:\project\TokenMind\tokenmind\knowledge\models.py`:
 
 ```python
 from __future__ import annotations
@@ -142,7 +142,7 @@ class SessionKnowledgeLinks(BaseModel):
     knowledge_base_ids: list[str] = Field(default_factory=list)
 ```
 
-Create `D:\project\sun-agent\sun_agent\knowledge\chunking.py`:
+Create `D:\project\TokenMind\tokenmind\knowledge\chunking.py`:
 
 ```python
 from __future__ import annotations
@@ -163,7 +163,7 @@ def simple_chunks(text: str, size: int = 800, overlap: int = 120) -> list[str]:
     return chunks
 ```
 
-Create `D:\project\sun-agent\sun_agent\knowledge\service.py`:
+Create `D:\project\TokenMind\tokenmind\knowledge\service.py`:
 
 ```python
 from __future__ import annotations
@@ -173,8 +173,8 @@ import shutil
 import uuid
 from pathlib import Path
 
-from sun_agent.knowledge.chunking import simple_chunks
-from sun_agent.knowledge.models import KnowledgeBaseRecord, KnowledgeDocumentRecord
+from tokenmind.knowledge.chunking import simple_chunks
+from tokenmind.knowledge.models import KnowledgeBaseRecord, KnowledgeDocumentRecord
 
 
 class KnowledgeService:
@@ -236,10 +236,10 @@ class KnowledgeService:
         ]
 ```
 
-Create `D:\project\sun-agent\sun_agent\knowledge\__init__.py`:
+Create `D:\project\TokenMind\tokenmind\knowledge\__init__.py`:
 
 ```python
-from sun_agent.knowledge.service import KnowledgeService
+from tokenmind.knowledge.service import KnowledgeService
 
 __all__ = ["KnowledgeService"]
 ```
@@ -249,7 +249,7 @@ __all__ = ["KnowledgeService"]
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_knowledge_service.py -q
+pytest D:\project\TokenMind\tests\test_knowledge_service.py -q
 ```
 
 Expected: PASS with 3 passing tests.
@@ -257,17 +257,17 @@ Expected: PASS with 3 passing tests.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add D:\project\sun-agent\sun_agent\knowledge D:\project\sun-agent\tests\test_knowledge_service.py
+git add D:\project\TokenMind\tokenmind\knowledge D:\project\TokenMind\tests\test_knowledge_service.py
 git commit -m "feat: add knowledge service foundation"
 ```
 
 ### Task 2: Add knowledge routes and expose them from the FastAPI app
 
 **Files:**
-- Create: `D:\project\sun-agent\sun_agent\server\routes\knowledge.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\routes\__init__.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\app.py`
-- Test: `D:\project\sun-agent\tests\test_knowledge_routes.py`
+- Create: `D:\project\TokenMind\tokenmind\server\routes\knowledge.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\routes\__init__.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\app.py`
+- Test: `D:\project\TokenMind\tests\test_knowledge_routes.py`
 
 - [ ] **Step 1: Write failing route tests**
 
@@ -280,7 +280,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_route_wrapper_returns_overview_payload() -> None:
-    route_module = importlib.import_module("sun_agent.server.routes.knowledge")
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
     service = SimpleNamespace(get_knowledge_overview=lambda: {"items": [{"id": "kb_1", "name": "测试库"}]})
 
     response = await route_module.list_knowledge_bases(service=service)
@@ -293,14 +293,14 @@ async def test_route_wrapper_returns_overview_payload() -> None:
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_knowledge_routes.py -q
+pytest D:\project\TokenMind\tests\test_knowledge_routes.py -q
 ```
 
-Expected: FAIL because `sun_agent.server.routes.knowledge` does not exist.
+Expected: FAIL because `tokenmind.server.routes.knowledge` does not exist.
 
 - [ ] **Step 3: Implement the routes and wire them into the app**
 
-Create `D:\project\sun-agent\sun_agent\server\routes\knowledge.py`:
+Create `D:\project\TokenMind\tokenmind\server\routes\knowledge.py`:
 
 ```python
 from __future__ import annotations
@@ -308,8 +308,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from sun_agent.server.app import ChatService
-from sun_agent.server.dependencies import get_chat_service
+from tokenmind.server.app import ChatService
+from tokenmind.server.dependencies import get_chat_service
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -334,10 +334,10 @@ async def get_knowledge_base_detail(knowledge_base_id: str, service: ChatService
     return service.get_knowledge_base_detail(knowledge_base_id)
 ```
 
-Modify `D:\project\sun-agent\sun_agent\server\routes\__init__.py`:
+Modify `D:\project\TokenMind\tokenmind\server\routes\__init__.py`:
 
 ```python
-from sun_agent.server.routes.knowledge import router as knowledge_router
+from tokenmind.server.routes.knowledge import router as knowledge_router
 
 __all__ = [
     "chat_router",
@@ -351,11 +351,11 @@ __all__ = [
 ]
 ```
 
-Modify `D:\project\sun-agent\sun_agent\server\app.py`:
+Modify `D:\project\TokenMind\tokenmind\server\app.py`:
 
 ```python
-from sun_agent.knowledge import KnowledgeService
-from sun_agent.server.routes import knowledge_router
+from tokenmind.knowledge import KnowledgeService
+from tokenmind.server.routes import knowledge_router
 ```
 
 ```python
@@ -386,7 +386,7 @@ app.include_router(knowledge_router)
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_knowledge_routes.py -q
+pytest D:\project\TokenMind\tests\test_knowledge_routes.py -q
 ```
 
 Expected: PASS.
@@ -394,20 +394,20 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add D:\project\sun-agent\sun_agent\server\routes\knowledge.py D:\project\sun-agent\sun_agent\server\routes\__init__.py D:\project\sun-agent\sun_agent\server\app.py D:\project\sun-agent\tests\test_knowledge_routes.py
+git add D:\project\TokenMind\tokenmind\server\routes\knowledge.py D:\project\TokenMind\tokenmind\server\routes\__init__.py D:\project\TokenMind\tokenmind\server\app.py D:\project\TokenMind\tests\test_knowledge_routes.py
 git commit -m "feat: add knowledge API routes"
 ```
 
 ### Task 3: Build the dedicated Knowledge page and main-shell entry
 
 **Files:**
-- Create: `D:\project\sun-agent\frontend\src\pages\Knowledge.tsx`
-- Create: `D:\project\sun-agent\frontend\src\pages\knowledge.css`
-- Create: `D:\project\sun-agent\frontend\src\types\knowledge.ts`
-- Modify: `D:\project\sun-agent\frontend\src\services\api.ts`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\sidebar.css`
-- Modify: `D:\project\sun-agent\frontend\src\App.tsx`
+- Create: `D:\project\TokenMind\frontend\src\pages\Knowledge.tsx`
+- Create: `D:\project\TokenMind\frontend\src\pages\knowledge.css`
+- Create: `D:\project\TokenMind\frontend\src\types\knowledge.ts`
+- Modify: `D:\project\TokenMind\frontend\src\services\api.ts`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\sidebar.css`
+- Modify: `D:\project\TokenMind\frontend\src\App.tsx`
 
 - [ ] **Step 1: Add the frontend data types**
 
@@ -447,7 +447,7 @@ export interface KnowledgeDetailResponse {
 
 - [ ] **Step 2: Extend the frontend API client**
 
-Modify `D:\project\sun-agent\frontend\src\services\api.ts`:
+Modify `D:\project\TokenMind\frontend\src\services\api.ts`:
 
 ```ts
 import type {
@@ -487,7 +487,7 @@ async createKnowledgeBase(payload: { name: string; description: string }): Promi
 
 - [ ] **Step 3: Add the page shell and sidebar entry**
 
-Create `D:\project\sun-agent\frontend\src\pages\Knowledge.tsx`:
+Create `D:\project\TokenMind\frontend\src\pages\Knowledge.tsx`:
 
 ```tsx
 import React, { useEffect, useState } from 'react';
@@ -553,7 +553,7 @@ export const KnowledgePage: React.FC = () => {
 };
 ```
 
-Modify `D:\project\sun-agent\frontend\src\App.tsx`:
+Modify `D:\project\TokenMind\frontend\src\App.tsx`:
 
 ```tsx
 const [mainView, setMainView] = useState<'chat' | 'knowledge'>('chat');
@@ -578,7 +578,7 @@ const [mainView, setMainView] = useState<'chat' | 'knowledge'>('chat');
 
 - [ ] **Step 4: Add page styling and shell integration**
 
-Create `D:\project\sun-agent\frontend\src\pages\knowledge.css`:
+Create `D:\project\TokenMind\frontend\src\pages\knowledge.css`:
 
 ```css
 .knowledge-page {
@@ -633,7 +633,7 @@ npm run build
 Workdir:
 
 ```powershell
-D:\project\sun-agent\frontend
+D:\project\TokenMind\frontend
 ```
 
 Expected: PASS.
@@ -641,19 +641,19 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add D:\project\sun-agent\frontend\src\pages\Knowledge.tsx D:\project\sun-agent\frontend\src\pages\knowledge.css D:\project\sun-agent\frontend\src\types\knowledge.ts D:\project\sun-agent\frontend\src\services\api.ts D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx D:\project\sun-agent\frontend\src\components\Layout\sidebar.css D:\project\sun-agent\frontend\src\App.tsx
+git add D:\project\TokenMind\frontend\src\pages\Knowledge.tsx D:\project\TokenMind\frontend\src\pages\knowledge.css D:\project\TokenMind\frontend\src\types\knowledge.ts D:\project\TokenMind\frontend\src\services\api.ts D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx D:\project\TokenMind\frontend\src\components\Layout\sidebar.css D:\project\TokenMind\frontend\src\App.tsx
 git commit -m "feat: add knowledge workspace shell"
 ```
 
 ### Task 4: Add document upload/delete flows to a single knowledge base
 
 **Files:**
-- Modify: `D:\project\sun-agent\sun_agent\server\routes\knowledge.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\app.py`
-- Modify: `D:\project\sun-agent\sun_agent\knowledge\service.py`
-- Modify: `D:\project\sun-agent\frontend\src\services\api.ts`
-- Modify: `D:\project\sun-agent\frontend\src\pages\Knowledge.tsx`
-- Test: `D:\project\sun-agent\tests\test_knowledge_routes.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\routes\knowledge.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\app.py`
+- Modify: `D:\project\TokenMind\tokenmind\knowledge\service.py`
+- Modify: `D:\project\TokenMind\frontend\src\services\api.ts`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Knowledge.tsx`
+- Test: `D:\project\TokenMind\tests\test_knowledge_routes.py`
 
 - [ ] **Step 1: Extend the backend tests to cover upload and delete**
 
@@ -678,14 +678,14 @@ def test_add_document_to_knowledge_base_exposes_it_in_detail(tmp_path: Path) -> 
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_knowledge_routes.py -q
+pytest D:\project\TokenMind\tests\test_knowledge_routes.py -q
 ```
 
 Expected: FAIL because upload/delete route helpers are not implemented.
 
 - [ ] **Step 3: Add upload and delete API support**
 
-Modify `D:\project\sun-agent\sun_agent\server\routes\knowledge.py`:
+Modify `D:\project\TokenMind\tokenmind\server\routes\knowledge.py`:
 
 ```python
 from fastapi import File, UploadFile
@@ -709,7 +709,7 @@ async def delete_knowledge_document(
     return service.delete_knowledge_document(knowledge_base_id, document_id)
 ```
 
-Modify `D:\project\sun-agent\sun_agent\server\app.py`:
+Modify `D:\project\TokenMind\tokenmind\server\app.py`:
 
 ```python
 async def upload_knowledge_documents(self, knowledge_base_id: str, files: list[Any]) -> dict[str, Any]:
@@ -727,9 +727,9 @@ def delete_knowledge_document(self, knowledge_base_id: str, document_id: str) ->
     return {"success": True, "document_id": document_id}
 ```
 
-Modify `D:\project\sun-agent\sun_agent\knowledge\service.py` to add `delete_document()`.
+Modify `D:\project\TokenMind\tokenmind\knowledge\service.py` to add `delete_document()`.
 
-Modify `D:\project\sun-agent\frontend\src\services\api.ts`:
+Modify `D:\project\TokenMind\frontend\src\services\api.ts`:
 
 ```ts
 async uploadKnowledgeDocuments(id: string, files: File[]): Promise<void> {
@@ -754,7 +754,7 @@ async deleteKnowledgeDocument(knowledgeBaseId: string, documentId: string): Prom
 },
 ```
 
-Modify `D:\project\sun-agent\frontend\src\pages\Knowledge.tsx` to add:
+Modify `D:\project\TokenMind\frontend\src\pages\Knowledge.tsx` to add:
 
 - upload button in detail header
 - hidden file input
@@ -766,14 +766,14 @@ Modify `D:\project\sun-agent\frontend\src\pages\Knowledge.tsx` to add:
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_knowledge_routes.py -q
+pytest D:\project\TokenMind\tests\test_knowledge_routes.py -q
 npm run build
 ```
 
 Frontend workdir:
 
 ```powershell
-D:\project\sun-agent\frontend
+D:\project\TokenMind\frontend
 ```
 
 Expected: both pass.
@@ -781,27 +781,27 @@ Expected: both pass.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add D:\project\sun-agent\sun_agent\server\routes\knowledge.py D:\project\sun-agent\sun_agent\server\app.py D:\project\sun-agent\sun_agent\knowledge\service.py D:\project\sun-agent\frontend\src\services\api.ts D:\project\sun-agent\frontend\src\pages\Knowledge.tsx D:\project\sun-agent\tests\test_knowledge_routes.py
+git add D:\project\TokenMind\tokenmind\server\routes\knowledge.py D:\project\TokenMind\tokenmind\server\app.py D:\project\TokenMind\tokenmind\knowledge\service.py D:\project\TokenMind\frontend\src\services\api.ts D:\project\TokenMind\frontend\src\pages\Knowledge.tsx D:\project\TokenMind\tests\test_knowledge_routes.py
 git commit -m "feat: manage knowledge documents"
 ```
 
 ### Task 5: Add session-level “链接知识库” controls to the composer
 
 **Files:**
-- Modify: `D:\project\sun-agent\sun_agent\knowledge\service.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\routes\knowledge.py`
-- Modify: `D:\project\sun-agent\frontend\src\services\api.ts`
-- Modify: `D:\project\sun-agent\frontend\src\stores\chatStore.ts`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\inputArea.css`
-- Test: `D:\project\sun-agent\tests\test_chat_knowledge_links.py`
+- Modify: `D:\project\TokenMind\tokenmind\knowledge\service.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\routes\knowledge.py`
+- Modify: `D:\project\TokenMind\frontend\src\services\api.ts`
+- Modify: `D:\project\TokenMind\frontend\src\stores\chatStore.ts`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\inputArea.css`
+- Test: `D:\project\TokenMind\tests\test_chat_knowledge_links.py`
 
 - [ ] **Step 1: Write the failing session-link tests**
 
 ```python
 from pathlib import Path
 
-from sun_agent.knowledge.service import KnowledgeService
+from tokenmind.knowledge.service import KnowledgeService
 
 
 def test_session_can_link_multiple_knowledge_bases(tmp_path: Path) -> None:
@@ -819,14 +819,14 @@ def test_session_can_link_multiple_knowledge_bases(tmp_path: Path) -> None:
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_chat_knowledge_links.py -q
+pytest D:\project\TokenMind\tests\test_chat_knowledge_links.py -q
 ```
 
 Expected: FAIL because route wrappers and frontend state are not connected.
 
 - [ ] **Step 3: Add API endpoints for session links**
 
-Modify `D:\project\sun-agent\sun_agent\server\routes\knowledge.py`:
+Modify `D:\project\TokenMind\tokenmind\server\routes\knowledge.py`:
 
 ```python
 class SessionKnowledgePayload(BaseModel):
@@ -849,7 +849,7 @@ async def update_session_knowledge_links(
     return {"session_id": session_id, "knowledge_base_ids": payload.knowledge_base_ids}
 ```
 
-Modify `D:\project\sun-agent\sun_agent\server\app.py`:
+Modify `D:\project\TokenMind\tokenmind\server\app.py`:
 
 ```python
 def get_session_knowledge_links(self, session_id: str) -> list[str]:
@@ -861,7 +861,7 @@ def set_session_knowledge_links(self, session_id: str, knowledge_base_ids: list[
 
 - [ ] **Step 4: Add the composer UI and state**
 
-Modify `D:\project\sun-agent\frontend\src\stores\chatStore.ts`:
+Modify `D:\project\TokenMind\frontend\src\stores\chatStore.ts`:
 
 ```ts
 linkedKnowledgeBaseIds: string[];
@@ -885,7 +885,7 @@ loadLinkedKnowledgeBases: async (sessionId) => {
 },
 ```
 
-Modify `D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx` to add:
+Modify `D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx` to add:
 
 - a `链接知识库` trigger
 - a popover with multi-select rows
@@ -912,7 +912,7 @@ Core structure:
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_chat_knowledge_links.py -q
+pytest D:\project\TokenMind\tests\test_chat_knowledge_links.py -q
 npm run build
 ```
 
@@ -921,25 +921,25 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add D:\project\sun-agent\sun_agent\server\routes\knowledge.py D:\project\sun-agent\sun_agent\server\app.py D:\project\sun-agent\sun_agent\knowledge\service.py D:\project\sun-agent\frontend\src\services\api.ts D:\project\sun-agent\frontend\src\stores\chatStore.ts D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx D:\project\sun-agent\frontend\src\components\Chat\inputArea.css D:\project\sun-agent\tests\test_chat_knowledge_links.py
+git add D:\project\TokenMind\tokenmind\server\routes\knowledge.py D:\project\TokenMind\tokenmind\server\app.py D:\project\TokenMind\tokenmind\knowledge\service.py D:\project\TokenMind\frontend\src\services\api.ts D:\project\TokenMind\frontend\src\stores\chatStore.ts D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx D:\project\TokenMind\frontend\src\components\Chat\inputArea.css D:\project\TokenMind\tests\test_chat_knowledge_links.py
 git commit -m "feat: add session knowledge linking"
 ```
 
 ### Task 6: Inject linked knowledge into chat context
 
 **Files:**
-- Modify: `D:\project\sun-agent\sun_agent\knowledge\service.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\websocket\handler.py`
-- Modify: `D:\project\sun-agent\sun_agent\agent\context.py`
-- Modify: `D:\project\sun-agent\sun_agent\agent\loop.py`
-- Test: `D:\project\sun-agent\tests\test_chat_knowledge_links.py`
+- Modify: `D:\project\TokenMind\tokenmind\knowledge\service.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\websocket\handler.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\context.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\loop.py`
+- Test: `D:\project\TokenMind\tests\test_chat_knowledge_links.py`
 
 - [ ] **Step 1: Add a failing retrieval integration test**
 
 ```python
 from pathlib import Path
 
-from sun_agent.knowledge.service import KnowledgeService
+from tokenmind.knowledge.service import KnowledgeService
 
 
 def test_retrieve_for_session_uses_only_linked_knowledge_bases(tmp_path: Path) -> None:
@@ -961,14 +961,14 @@ def test_retrieve_for_session_uses_only_linked_knowledge_bases(tmp_path: Path) -
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_chat_knowledge_links.py -q
+pytest D:\project\TokenMind\tests\test_chat_knowledge_links.py -q
 ```
 
 Expected: FAIL because retrieval is not implemented yet.
 
 - [ ] **Step 3: Implement minimal retrieval and prompt injection**
 
-Modify `D:\project\sun-agent\sun_agent\knowledge\service.py`:
+Modify `D:\project\TokenMind\tokenmind\knowledge\service.py`:
 
 ```python
 def retrieve_for_session(self, session_id: str, query: str, top_k: int = 4) -> list[dict]:
@@ -990,13 +990,13 @@ def retrieve_for_session(self, session_id: str, query: str, top_k: int = 4) -> l
     return results[:top_k]
 ```
 
-Modify `D:\project\sun-agent\sun_agent\server\websocket\handler.py`:
+Modify `D:\project\TokenMind\tokenmind\server\websocket\handler.py`:
 
 ```python
 metadata["knowledge_base_ids"] = chat_service.get_session_knowledge_links(session_id)
 ```
 
-Modify `D:\project\sun-agent\sun_agent\agent\context.py`:
+Modify `D:\project\TokenMind\tokenmind\agent\context.py`:
 
 ```python
 knowledge_chunks = runtime_context.get("knowledge_chunks", [])
@@ -1007,7 +1007,7 @@ if knowledge_chunks:
     user_text = f"[Linked Knowledge]\n{rendered_chunks}\n\n[User Request]\n{user_text}"
 ```
 
-Modify `D:\project\sun-agent\sun_agent\agent\loop.py`:
+Modify `D:\project\TokenMind\tokenmind\agent\loop.py`:
 
 ```python
 knowledge_chunks = []
@@ -1023,8 +1023,8 @@ runtime_context["knowledge_chunks"] = knowledge_chunks
 Run:
 
 ```powershell
-pytest D:\project\sun-agent\tests\test_chat_knowledge_links.py -q
-pytest D:\project\sun-agent\tests\test_memory_routes.py D:\project\sun-agent\tests\test_config_routes.py -q
+pytest D:\project\TokenMind\tests\test_chat_knowledge_links.py -q
+pytest D:\project\TokenMind\tests\test_memory_routes.py D:\project\TokenMind\tests\test_config_routes.py -q
 ```
 
 Expected: PASS.
@@ -1034,10 +1034,10 @@ Expected: PASS.
 Run:
 
 ```powershell
-cd D:\project\sun-agent\frontend
+cd D:\project\TokenMind\frontend
 npm run build
-cd D:\project\sun-agent
-python -m compileall D:\project\sun-agent\sun_agent
+cd D:\project\TokenMind
+python -m compileall D:\project\TokenMind\tokenmind
 ```
 
 Expected:
@@ -1048,7 +1048,7 @@ Expected:
 Commit:
 
 ```powershell
-git add D:\project\sun-agent\sun_agent\knowledge D:\project\sun-agent\sun_agent\server\websocket\handler.py D:\project\sun-agent\sun_agent\agent\context.py D:\project\sun-agent\sun_agent\agent\loop.py D:\project\sun-agent\tests\test_chat_knowledge_links.py
+git add D:\project\TokenMind\tokenmind\knowledge D:\project\TokenMind\tokenmind\server\websocket\handler.py D:\project\TokenMind\tokenmind\agent\context.py D:\project\TokenMind\tokenmind\agent\loop.py D:\project\TokenMind\tests\test_chat_knowledge_links.py
 git commit -m "feat: ground chat with linked knowledge bases"
 ```
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,8 +12,8 @@ import pytest
 from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
-from sun_agent.server.app import ChatService
-from sun_agent.session.manager import SessionManager
+from tokenmind.server.app import ChatService
+from tokenmind.session.manager import SessionManager
 
 
 def make_service(tmp_path: Path) -> ChatService:
@@ -165,6 +165,97 @@ async def test_delete_session_removes_session_upload_directory(tmp_path: Path) -
 
     assert not upload_path.parent.exists()
     assert not service.session_manager._get_session_path("web:test-session").exists()
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_preserves_updated_at_when_loading_and_sanitizing(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    session = service.session_manager.get_or_create("web:test-session")
+    session.created_at = datetime.fromisoformat("2026-03-28T22:37:00")
+    session.updated_at = datetime.fromisoformat("2026-04-16T17:17:00")
+    session.messages.append(
+        {
+            "role": "user",
+            "content": (
+                "[Linked Knowledge - retrieved context only, not user text]\n"
+                "1. [测试知识库/score.xlsx] 230200496 62\n\n"
+                "If the retrieved context is not relevant, say so instead of forcing it into the answer.\n\n"
+                "我的学号是230200496"
+            ),
+        }
+    )
+    service.session_manager.save(session)
+    service.session_manager.invalidate("web:test-session")
+
+    first_sessions = await service.list_sessions()
+    first_listed = next(item for item in first_sessions if item["session_id"] == "web:test-session")
+    assert first_listed["updated_at"] == "2026-04-16T17:17:00"
+
+    service.session_manager.invalidate("web:test-session")
+    second_sessions = await service.list_sessions()
+    second_listed = next(item for item in second_sessions if item["session_id"] == "web:test-session")
+    assert second_listed["updated_at"] == "2026-04-16T17:17:00"
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_prefers_latest_message_timestamp_over_corrupted_metadata(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    session = service.session_manager.get_or_create("web:test-corrupted-timestamp")
+    session.created_at = datetime.fromisoformat("2026-03-22T13:07:52.574964")
+    session.updated_at = datetime.fromisoformat("2026-04-19T12:16:33.704936")
+    session.messages.append(
+        {
+            "role": "user",
+            "content": "hello",
+            "timestamp": "2026-03-25T23:51:00",
+        }
+    )
+    session.messages.append(
+        {
+            "role": "assistant",
+            "content": "hi",
+            "timestamp": "2026-03-25T23:52:00",
+        }
+    )
+    service.session_manager.save(session)
+    service.session_manager.invalidate("web:test-corrupted-timestamp")
+
+    sessions = await service.list_sessions()
+    listed = next(item for item in sessions if item["session_id"] == "web:test-corrupted-timestamp")
+    assert listed["updated_at"] == "2026-03-25T23:52:00"
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_sorts_by_latest_real_activity_descending(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    older = service.session_manager.get_or_create("web:older-session")
+    older.updated_at = datetime.fromisoformat("2026-04-19T12:16:33.704936")
+    older.messages.append(
+        {
+            "role": "assistant",
+            "content": "old",
+            "timestamp": "2026-03-25T23:52:00",
+        }
+    )
+    service.session_manager.save(older)
+    service.session_manager.invalidate("web:older-session")
+
+    newer = service.session_manager.get_or_create("web:newer-session")
+    newer.updated_at = datetime.fromisoformat("2026-04-16T17:17:00")
+    newer.messages.append(
+        {
+            "role": "assistant",
+            "content": "new",
+            "timestamp": "2026-04-19T11:24:00",
+        }
+    )
+    service.session_manager.save(newer)
+    service.session_manager.invalidate("web:newer-session")
+
+    sessions = await service.list_sessions()
+    ordered = [item["session_id"] for item in sessions if item["session_id"] in {"web:older-session", "web:newer-session"}]
+    assert ordered[:2] == ["web:newer-session", "web:older-session"]
 
 
 def test_cleanup_uploads_removes_old_unreferenced_files_and_keeps_referenced(

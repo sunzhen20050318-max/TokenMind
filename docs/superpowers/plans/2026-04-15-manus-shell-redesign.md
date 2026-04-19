@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rebuild the main frontend shell so the sidebar, idle homepage, active chat transition, and settings modal feel Manus-inspired while preserving `SUN-AGENT` functionality.
+**Goal:** Rebuild the main frontend shell so the sidebar, idle homepage, active chat transition, and settings modal feel Manus-inspired while preserving `TokenMind` functionality.
 
 **Architecture:** Keep the existing React + Zustand app structure and modal flows, but refactor the shell into a clearer layout system. The work is split into a sidebar/navigation task, a launch-state/chat-state task, a settings-shell task, and a final polish/verification pass so each change can be tested and reviewed independently.
 
@@ -12,48 +12,48 @@
 
 ## File Map
 
-- Modify: `D:\project\sun-agent\frontend\src\App.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\App.tsx`
   - Drive shell-level state and make room for a Manus-style persistent sidebar plus content stage.
-- Modify: `D:\project\sun-agent\frontend\src\app.css`
+- Modify: `D:\project\TokenMind\frontend\src\app.css`
   - Establish shell proportions, spacing, and content-stage rules.
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
   - Reorganize sidebar into brand block, primary action, primary entries, conversation section, and bottom settings anchor.
-- Create: `D:\project\sun-agent\frontend\src\components\Layout\sidebar.css`
+- Create: `D:\project\TokenMind\frontend\src\components\Layout\sidebar.css`
   - Hold the new sidebar visual system instead of piling more inline styles into `Sidebar.tsx`.
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Header.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Header.tsx`
   - Reduce visual weight and align the header with the new shell.
-- Create: `D:\project\sun-agent\frontend\src\components\Layout\header.css`
+- Create: `D:\project\TokenMind\frontend\src\components\Layout\header.css`
   - Move the header toward a calmer Manus-like tone.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ChatWindow.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ChatWindow.tsx`
   - Introduce the Manus-like launch state and active chat state transition.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\chatWindow.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\chatWindow.css`
   - Replace the current empty-state card grid layout with a centered launchpad and transition rules.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx`
   - Add shell-aware class hooks so the composer can render differently in centered and bottom-docked states.
-- Create: `D:\project\sun-agent\frontend\src\components\Chat\inputArea.css`
+- Create: `D:\project\TokenMind\frontend\src\components\Chat\inputArea.css`
   - Define Manus-inspired composer chrome, chip layout, and state transitions.
-- Modify: `D:\project\sun-agent\frontend\src\pages\Settings.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Settings.tsx`
   - Reshape the settings modal into a stronger left-nav/right-content structure without losing current capabilities.
-- Modify: `D:\project\sun-agent\frontend\src\pages\settings.css`
+- Modify: `D:\project\TokenMind\frontend\src\pages\settings.css`
   - Retone spacing, navigation, panel density, and section presentation to match the new shell.
-- Modify: `D:\project\sun-agent\frontend\src\pages\Memory.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\pages\Tasks.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\pages\Storage.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Memory.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Tasks.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Storage.tsx`
   - Ensure modal headers, close affordances, and shell framing remain visually coherent after the settings redesign.
 
 ## Task 1: Build the Sidebar Shell
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
-- Create: `D:\project\sun-agent\frontend\src\components\Layout\sidebar.css`
-- Modify: `D:\project\sun-agent\frontend\src\App.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\app.css`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
+- Create: `D:\project\TokenMind\frontend\src\components\Layout\sidebar.css`
+- Modify: `D:\project\TokenMind\frontend\src\App.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\app.css`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Add the stylesheet import and structural class hooks first**
 
 ```tsx
-// D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx
+// D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx
 import './sidebar.css';
 
 const PRIMARY_NAV = [
@@ -73,7 +73,7 @@ Expected: FAIL with an import resolution error for `./sidebar.css`
 - [ ] **Step 3: Add the minimal sidebar CSS file and shell lane rules**
 
 ```css
-/* D:\project\sun-agent\frontend\src\components\Layout\sidebar.css */
+/* D:\project\TokenMind\frontend\src\components\Layout\sidebar.css */
 .shell-sidebar {
   width: 300px;
   height: 100%;
@@ -111,7 +111,7 @@ return (
 - [ ] **Step 5: Update `App.tsx` and `app.css` so the shell expects the new sidebar proportions**
 
 ```css
-/* D:\project\sun-agent\frontend\src\app.css */
+/* D:\project\TokenMind\frontend\src\app.css */
 .app-main {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -142,11 +142,11 @@ git commit -m "feat: reshape app shell sidebar"
 ## Task 2: Rebuild the Launch State and Composer Transition
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ChatWindow.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\chatWindow.css`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx`
-- Create: `D:\project\sun-agent\frontend\src\components\Chat\inputArea.css`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ChatWindow.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\chatWindow.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx`
+- Create: `D:\project\TokenMind\frontend\src\components\Chat\inputArea.css`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Add a shell-state flag to `ChatWindow.tsx` and wire the future composer mode**
 
@@ -164,7 +164,7 @@ Expected: FAIL with a TypeScript prop mismatch for `composerMode`
 - [ ] **Step 3: Extend `InputArea.tsx` with a `composerMode` prop and stylesheet import**
 
 ```tsx
-// D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx
+// D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx
 import './inputArea.css';
 
 interface InputAreaProps {
@@ -175,7 +175,7 @@ interface InputAreaProps {
 - [ ] **Step 4: Create the composer stylesheet and centered launch-state chrome**
 
 ```css
-/* D:\project\sun-agent\frontend\src\components\Chat\inputArea.css */
+/* D:\project\TokenMind\frontend\src\components\Chat\inputArea.css */
 .composer {
   width: min(760px, 100%);
   border: 1px solid #3a3a3f;
@@ -245,15 +245,15 @@ git commit -m "feat: add Manus-style launch state"
 ## Task 3: Quiet the Header and Harmonize the Shell
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Header.tsx`
-- Create: `D:\project\sun-agent\frontend\src\components\Layout\header.css`
-- Modify: `D:\project\sun-agent\frontend\src\app.css`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Header.tsx`
+- Create: `D:\project\TokenMind\frontend\src\components\Layout\header.css`
+- Modify: `D:\project\TokenMind\frontend\src\app.css`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Move the header off inline styles and into a dedicated stylesheet**
 
 ```tsx
-// D:\project\sun-agent\frontend\src\components\Layout\Header.tsx
+// D:\project\TokenMind\frontend\src\components\Layout\Header.tsx
 import './header.css';
 
 return (
@@ -273,7 +273,7 @@ Expected: FAIL with an import resolution error for `./header.css`
 - [ ] **Step 3: Create the calmer Manus-like header stylesheet**
 
 ```css
-/* D:\project\sun-agent\frontend\src\components\Layout\header.css */
+/* D:\project\TokenMind\frontend\src\components\Layout\header.css */
 .shell-header {
   display: flex;
   align-items: center;
@@ -292,7 +292,7 @@ Expected: FAIL with an import resolution error for `./header.css`
 - [ ] **Step 4: Tighten shell spacing so the header stops competing with the launch area**
 
 ```css
-/* D:\project\sun-agent\frontend\src\app.css */
+/* D:\project\TokenMind\frontend\src\app.css */
 .app-shell {
   background: #1f1f22;
 }
@@ -319,9 +319,9 @@ git commit -m "style: quiet header chrome"
 ## Task 4: Rebuild the Settings Modal into a Manus-Like Panel
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\pages\Settings.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\pages\settings.css`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Settings.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\pages\settings.css`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Refactor the settings JSX into a stronger two-pane structure**
 
@@ -393,12 +393,12 @@ git commit -m "style: redesign settings center shell"
 ## Task 5: Align Modal Chrome and Perform Final Verification
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\pages\Memory.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\pages\Tasks.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\pages\Storage.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ChatWindow.tsx`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Memory.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Tasks.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\pages\Storage.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ChatWindow.tsx`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Normalize top-level modal headers and close actions so they match the new shell**
 

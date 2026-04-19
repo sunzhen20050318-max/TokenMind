@@ -9,7 +9,6 @@ import { useSessions } from './hooks/useSessions';
 import './app.css';
 
 const LAST_SESSION_KEY = 'tokenmind:last-session';
-const LEGACY_LAST_SESSION_KEY = 'sun-agent:last-session';
 const SIDEBAR_COLLAPSED_KEY = 'tokenmind:sidebar-collapsed';
 
 const App: React.FC = () => {
@@ -61,9 +60,7 @@ const App: React.FC = () => {
       return;
     }
 
-    const rememberedSessionId =
-      window.localStorage.getItem(LAST_SESSION_KEY) ||
-      window.localStorage.getItem(LEGACY_LAST_SESSION_KEY);
+    const rememberedSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
     const restoredSession = sessions.find((session) => session.session_id === rememberedSessionId);
     setCurrentSession(restoredSession?.session_id || sessions[0].session_id);
   }, [appReady, currentSession, sessions, setCurrentSession]);

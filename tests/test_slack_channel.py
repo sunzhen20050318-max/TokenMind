@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from sun_agent.bus.events import OutboundMessage
-from sun_agent.bus.queue import MessageBus
-from sun_agent.channels.slack import SlackChannel
-from sun_agent.channels.slack import SlackConfig
+from tokenmind.bus.events import OutboundMessage
+from tokenmind.bus.queue import MessageBus
+from tokenmind.channels.slack import SlackChannel
+from tokenmind.channels.slack import SlackConfig
 
 
 class _FakeAsyncWebClient:

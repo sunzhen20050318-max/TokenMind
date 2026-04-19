@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from sun_agent.providers.custom_provider import CustomProvider
+from tokenmind.providers.custom_provider import CustomProvider
 
 
 def test_custom_provider_parse_handles_empty_choices() -> None:

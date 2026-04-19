@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Attachment, Message, MessageCitation } from '../../types';
+import type { Message, MessageCitation } from '../../types';
 import { BrandMark } from '../BrandMark';
+import { extractTextContent, resolveVisibleCitations } from './messageBubbleContent';
 import './messageBubble.css';
 
 interface MessageBubbleProps {
@@ -10,114 +11,19 @@ interface MessageBubbleProps {
   embeddedToolChain?: React.ReactNode;
 }
 
-const ATTACHMENTS_TAG = '[Attached Files';
-const KNOWLEDGE_TAG = '[Linked Knowledge';
-const KNOWLEDGE_END_TAG = '[/Linked Knowledge]';
-const KNOWLEDGE_TRAILER =
-  'If the retrieved context is not relevant, say so instead of forcing it into the answer.';
-
-function stripKnowledgeMetadata(text: string): string {
-  let sanitized = text;
-
-  const taggedBlockStart = sanitized.indexOf(KNOWLEDGE_TAG);
-  if (taggedBlockStart !== -1) {
-    const taggedBlockEnd = sanitized.indexOf(KNOWLEDGE_END_TAG, taggedBlockStart);
-    if (taggedBlockEnd !== -1) {
-      sanitized =
-        sanitized.slice(0, taggedBlockStart) +
-        sanitized.slice(taggedBlockEnd + KNOWLEDGE_END_TAG.length);
-    }
-  }
-
-  const trailerIndex = sanitized.lastIndexOf(KNOWLEDGE_TRAILER);
-  if (trailerIndex !== -1) {
-    const remainder = sanitized.slice(trailerIndex + KNOWLEDGE_TRAILER.length).trim();
-    if (remainder) {
-      sanitized = remainder;
-    }
-  }
-
-  if (sanitized.startsWith(KNOWLEDGE_TAG)) {
-    const endIndex = sanitized.indexOf(KNOWLEDGE_END_TAG);
-    if (endIndex !== -1) {
-      sanitized = sanitized.slice(endIndex + KNOWLEDGE_END_TAG.length).trim();
-    }
-  }
-
-  return sanitized;
-}
-
-function extractTextContent(
-  content: Message['content'],
-  attachments: Attachment[] | undefined
-): string {
-  const hidePlaceholderPaths = new Set((attachments || []).map((item) => item.path));
-
-  const filterLine = (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      return false;
-    }
-    if (trimmed.startsWith(ATTACHMENTS_TAG)) {
-      return false;
-    }
-    if (trimmed.startsWith(KNOWLEDGE_TAG) || trimmed === KNOWLEDGE_END_TAG) {
-      return false;
-    }
-    if (trimmed === KNOWLEDGE_TRAILER) {
-      return false;
-    }
-    if (trimmed === 'Attached files are available in the workspace:') {
-      return false;
-    }
-    if (trimmed.startsWith('Use read_file for text-based files when possible.')) {
-      return false;
-    }
-    if (trimmed.startsWith('- ') && attachments?.some((item) => trimmed.includes(item.path))) {
-      return false;
-    }
-    if (/^\[(image|file): .+\]$/.test(trimmed)) {
-      const path = trimmed.slice(trimmed.indexOf(':') + 1, -1).trim();
-      if (hidePlaceholderPaths.has(path)) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  if (typeof content === 'string') {
-    return stripKnowledgeMetadata(content)
-      .split('\n')
-      .filter(filterLine)
-      .join('\n')
-      .trim();
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((item) =>
-        item && typeof item === 'object' && typeof item.text === 'string'
-          ? stripKnowledgeMetadata(item.text)
-          : ''
-      )
-      .flatMap((text) => text.split('\n'))
-      .filter(filterLine)
-      .join('\n')
-      .trim();
-  }
-
-  return '';
-}
-
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedToolChain }) => {
   const isUser = message.role === 'user';
   const renderedContent = extractTextContent(message.content, message.attachments);
+  const visibleCitations = useMemo(
+    () => resolveVisibleCitations(message, renderedContent),
+    [message, renderedContent]
+  );
   const [citationsExpanded, setCitationsExpanded] = useState(false);
 
   const citationLabel = useMemo(() => {
-    const count = message.citations?.length ?? 0;
+    const count = visibleCitations.length;
     return count > 0 ? `来源 (${count})` : '来源';
-  }, [message.citations]);
+  }, [visibleCitations]);
 
   const textColor = isUser ? '#111214' : '#ececef';
   const mutedTextColor = isUser ? '#5f636c' : '#979aa3';
@@ -219,7 +125,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
                   </ol>
                 ),
                 li: ({ children }) => (
-                  <li style={{ margin: '0.2em 0', paddingLeft: '0.06em', lineHeight: '1.72', whiteSpace: 'normal' }}>
+                  <li
+                    style={{
+                      margin: '0.2em 0',
+                      paddingLeft: '0.06em',
+                      lineHeight: '1.72',
+                      whiteSpace: 'normal',
+                    }}
+                  >
                     {children}
                   </li>
                 ),
@@ -337,7 +250,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
                 ),
               }}
             >
-              {renderedContent || (message.attachments?.length ? '已附带文件' : '')}
+              {renderedContent || (message.attachments?.length ? '已附带文件。' : '')}
             </ReactMarkdown>
 
             {message.attachments && message.attachments.length > 0 ? (
@@ -356,7 +269,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
               </div>
             ) : null}
 
-            {!isUser && message.citations && message.citations.length > 0 ? (
+            {!isUser && visibleCitations.length > 0 ? (
               <div className={`message-bubble__citations ${citationsExpanded ? 'is-expanded' : ''}`}>
                 <button
                   type="button"
@@ -372,9 +285,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
                     &gt;
                   </span>
                 </button>
-                <div className="message-bubble__citations-list">
-                  {message.citations.map(renderCitation)}
-                </div>
+                <div className="message-bubble__citations-list">{visibleCitations.map(renderCitation)}</div>
               </div>
             ) : null}
 

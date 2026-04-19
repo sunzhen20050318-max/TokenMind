@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sun_agent.session.manager import Session, SessionManager
+from tokenmind.session.manager import Session, SessionManager
 
 
 def test_session_manager_roundtrip_preserves_timeline_events(tmp_path):

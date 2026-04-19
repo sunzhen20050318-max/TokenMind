@@ -1,7 +1,7 @@
 import pytest
 
-from sun_agent.utils.evaluator import evaluate_response
-from sun_agent.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from tokenmind.utils.evaluator import evaluate_response
+from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 
 class DummyProvider(LLMProvider):

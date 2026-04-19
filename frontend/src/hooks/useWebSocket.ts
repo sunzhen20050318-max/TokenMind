@@ -9,13 +9,10 @@ import { useChatStore } from '../stores/chatStore';
 import type { Attachment, PendingToolApproval, WSMessageType } from '../types';
 
 const EXEC_TRUST_STORAGE_KEY = 'tokenmind:trusted-exec-sessions';
-const LEGACY_EXEC_TRUST_STORAGE_KEY = 'sun-agent:trusted-exec-sessions';
 
 function readTrustedSessions(): string[] {
   try {
-    const raw =
-      window.localStorage.getItem(EXEC_TRUST_STORAGE_KEY) ||
-      window.localStorage.getItem(LEGACY_EXEC_TRUST_STORAGE_KEY);
+    const raw = window.localStorage.getItem(EXEC_TRUST_STORAGE_KEY);
     if (!raw) {
       return [];
     }

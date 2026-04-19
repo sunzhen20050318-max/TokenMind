@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sun_agent.agent.loop import AgentLoop
-from sun_agent.agent.tools.message import MessageTool
-from sun_agent.bus.events import InboundMessage, OutboundMessage
-from sun_agent.bus.queue import MessageBus
-from sun_agent.providers.base import LLMResponse, ToolCallRequest
+from tokenmind.agent.loop import AgentLoop
+from tokenmind.agent.tools.message import MessageTool
+from tokenmind.bus.events import InboundMessage, OutboundMessage
+from tokenmind.bus.queue import MessageBus
+from tokenmind.providers.base import LLMResponse, ToolCallRequest
 
 
 def _make_loop(tmp_path: Path) -> AgentLoop:

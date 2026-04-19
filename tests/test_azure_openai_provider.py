@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from sun_agent.providers.azure_openai_provider import AzureOpenAIProvider
-from sun_agent.providers.base import LLMResponse
+from tokenmind.providers.azure_openai_provider import AzureOpenAIProvider
+from tokenmind.providers.base import LLMResponse
 
 
 def test_azure_openai_provider_init():

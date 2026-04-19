@@ -12,35 +12,35 @@
 
 ## File Structure
 
-- Create: `D:\project\sun-agent\sun_agent\server\routes\memory.py`
+- Create: `D:\project\TokenMind\tokenmind\server\routes\memory.py`
   - Dedicated Memory Center API router.
-- Modify: `D:\project\sun-agent\sun_agent\server\routes\__init__.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\routes\__init__.py`
   - Export the new router.
-- Modify: `D:\project\sun-agent\sun_agent\server\app.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\app.py`
   - Register the new router and expose ChatService helpers for memory reads/writes.
-- Modify: `D:\project\sun-agent\sun_agent\agent\memory.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\memory.py`
   - Add small read helpers for archive previews and metadata-friendly access.
-- Create: `D:\project\sun-agent\tests\test_memory_routes.py`
+- Create: `D:\project\TokenMind\tests\test_memory_routes.py`
   - API tests for empty states, saves, current-context previews, and archive search.
-- Create: `D:\project\sun-agent\frontend\src\types\memory.ts`
+- Create: `D:\project\TokenMind\frontend\src\types\memory.ts`
   - Memory Center response and payload types.
-- Modify: `D:\project\sun-agent\frontend\src\services\api.ts`
+- Modify: `D:\project\TokenMind\frontend\src\services\api.ts`
   - Add Memory Center endpoints.
-- Create: `D:\project\sun-agent\frontend\src\pages\Memory.tsx`
+- Create: `D:\project\TokenMind\frontend\src\pages\Memory.tsx`
   - Standalone Memory Center modal.
-- Create: `D:\project\sun-agent\frontend\src\pages\memory.css`
+- Create: `D:\project\TokenMind\frontend\src\pages\memory.css`
   - Dedicated styles for the modal.
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
   - Add the new sidebar action and modal wiring.
-- Optional modify if needed: `D:\project\sun-agent\frontend\src\stores\chatStore.ts`
+- Optional modify if needed: `D:\project\TokenMind\frontend\src\stores\chatStore.ts`
   - Reuse current session metadata cleanly for the new modal.
 
 ## Task 1: Add failing backend route tests
 
 **Files:**
-- Create: `D:\project\sun-agent\tests\test_memory_routes.py`
-- Check patterns in: `D:\project\sun-agent\tests\test_storage_routes.py`
-- Check patterns in: `D:\project\sun-agent\tests\test_config_routes.py`
+- Create: `D:\project\TokenMind\tests\test_memory_routes.py`
+- Check patterns in: `D:\project\TokenMind\tests\test_storage_routes.py`
+- Check patterns in: `D:\project\TokenMind\tests\test_config_routes.py`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -106,16 +106,16 @@ def test_memory_overview_filters_archive_search(client: TestClient, workspace: P
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest D:\project\sun-agent\tests\test_memory_routes.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_memory_routes.py -q`
 Expected: FAIL with `404` for `/api/memory` or missing helper methods.
 
 ## Task 2: Implement backend memory helpers and routes
 
 **Files:**
-- Modify: `D:\project\sun-agent\sun_agent\agent\memory.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\app.py`
-- Create: `D:\project\sun-agent\sun_agent\server\routes\memory.py`
-- Modify: `D:\project\sun-agent\sun_agent\server\routes\__init__.py`
+- Modify: `D:\project\TokenMind\tokenmind\agent\memory.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\app.py`
+- Create: `D:\project\TokenMind\tokenmind\server\routes\memory.py`
+- Modify: `D:\project\TokenMind\tokenmind\server\routes\__init__.py`
 
 - [ ] **Step 1: Add archive/current-memory helper methods**
 
@@ -181,14 +181,14 @@ app.include_router(memory_router)
 
 - [ ] **Step 5: Run backend tests**
 
-Run: `pytest D:\project\sun-agent\tests\test_memory_routes.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_memory_routes.py -q`
 Expected: PASS
 
 ## Task 3: Add typed frontend API bindings
 
 **Files:**
-- Create: `D:\project\sun-agent\frontend\src\types\memory.ts`
-- Modify: `D:\project\sun-agent\frontend\src\services\api.ts`
+- Create: `D:\project\TokenMind\frontend\src\types\memory.ts`
+- Modify: `D:\project\TokenMind\frontend\src\services\api.ts`
 
 - [ ] **Step 1: Add memory response types**
 
@@ -261,9 +261,9 @@ Expected: FAIL only if the new modal does not exist yet; type definitions should
 ## Task 4: Build the Memory Center modal
 
 **Files:**
-- Create: `D:\project\sun-agent\frontend\src\pages\Memory.tsx`
-- Create: `D:\project\sun-agent\frontend\src\pages\memory.css`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
+- Create: `D:\project\TokenMind\frontend\src\pages\Memory.tsx`
+- Create: `D:\project\TokenMind\frontend\src\pages\memory.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
 
 - [ ] **Step 1: Create the modal shell and sidebar entry**
 
@@ -342,24 +342,24 @@ Expected: PASS
 
 **Files:**
 - Modify as needed based on test/build feedback:
-  - `D:\project\sun-agent\sun_agent\server\routes\memory.py`
-  - `D:\project\sun-agent\frontend\src\pages\Memory.tsx`
-  - `D:\project\sun-agent\frontend\src\pages\memory.css`
-  - `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
+  - `D:\project\TokenMind\tokenmind\server\routes\memory.py`
+  - `D:\project\TokenMind\frontend\src\pages\Memory.tsx`
+  - `D:\project\TokenMind\frontend\src\pages\memory.css`
+  - `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
 
 - [ ] **Step 1: Run targeted backend tests**
 
-Run: `pytest D:\project\sun-agent\tests\test_memory_routes.py D:\project\sun-agent\tests\test_memory_consolidation_types.py -q`
+Run: `pytest D:\project\TokenMind\tests\test_memory_routes.py D:\project\TokenMind\tests\test_memory_consolidation_types.py -q`
 Expected: PASS
 
 - [ ] **Step 2: Run full Python verification without optional Matrix dependency**
 
-Run: `pytest -q --ignore=D:\project\sun-agent\tests\test_matrix_channel.py`
+Run: `pytest -q --ignore=D:\project\TokenMind\tests\test_matrix_channel.py`
 Expected: PASS
 
 - [ ] **Step 3: Run compile verification**
 
-Run: `python -m compileall D:\project\sun-agent\sun_agent D:\project\sun-agent\tests`
+Run: `python -m compileall D:\project\TokenMind\tokenmind D:\project\TokenMind\tests`
 Expected: PASS
 
 - [ ] **Step 4: Run frontend production build**
@@ -370,7 +370,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add D:/project/sun-agent/sun_agent/agent/memory.py D:/project/sun-agent/sun_agent/server/app.py D:/project/sun-agent/sun_agent/server/routes/__init__.py D:/project/sun-agent/sun_agent/server/routes/memory.py D:/project/sun-agent/tests/test_memory_routes.py D:/project/sun-agent/frontend/src/types/memory.ts D:/project/sun-agent/frontend/src/services/api.ts D:/project/sun-agent/frontend/src/pages/Memory.tsx D:/project/sun-agent/frontend/src/pages/memory.css D:/project/sun-agent/frontend/src/components/Layout/Sidebar.tsx
+git add D:/project/TokenMind/tokenmind/agent/memory.py D:/project/TokenMind/tokenmind/server/app.py D:/project/TokenMind/tokenmind/server/routes/__init__.py D:/project/TokenMind/tokenmind/server/routes/memory.py D:/project/TokenMind/tests/test_memory_routes.py D:/project/TokenMind/frontend/src/types/memory.ts D:/project/TokenMind/frontend/src/services/api.ts D:/project/TokenMind/frontend/src/pages/Memory.tsx D:/project/TokenMind/frontend/src/pages/memory.css D:/project/TokenMind/frontend/src/components/Layout/Sidebar.tsx
 git commit -m "feat: add memory center"
 ```
 

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from sun_agent.agent.memory import MemoryStore
-from sun_agent.server.app import ChatService
-from sun_agent.session.manager import SessionManager
+from tokenmind.agent.memory import MemoryStore
+from tokenmind.server.app import ChatService
+from tokenmind.session.manager import SessionManager
 
 
 def make_service(tmp_path: Path) -> ChatService:
@@ -95,7 +95,7 @@ async def test_memory_route_returns_service_payload(tmp_path: Path) -> None:
         },
     }
 
-    memory_routes = importlib.import_module("sun_agent.server.routes.memory")
+    memory_routes = importlib.import_module("tokenmind.server.routes.memory")
     service = SimpleNamespace(get_memory_overview=lambda session_id=None, archive_query=None: expected)
 
     response = await memory_routes.get_memory_overview(service=service)

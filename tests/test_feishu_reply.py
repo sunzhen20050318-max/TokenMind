@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sun_agent.bus.events import OutboundMessage
-from sun_agent.bus.queue import MessageBus
-from sun_agent.channels.feishu import FeishuChannel, FeishuConfig
+from tokenmind.bus.events import OutboundMessage
+from tokenmind.bus.queue import MessageBus
+from tokenmind.channels.feishu import FeishuChannel, FeishuConfig
 
 
 # ---------------------------------------------------------------------------

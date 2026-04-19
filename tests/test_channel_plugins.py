@@ -7,11 +7,11 @@ from unittest.mock import patch
 
 import pytest
 
-from sun_agent.bus.events import OutboundMessage
-from sun_agent.bus.queue import MessageBus
-from sun_agent.channels.base import BaseChannel
-from sun_agent.channels.manager import ChannelManager
-from sun_agent.config.schema import ChannelsConfig
+from tokenmind.bus.events import OutboundMessage
+from tokenmind.bus.queue import MessageBus
+from tokenmind.channels.base import BaseChannel
+from tokenmind.channels.manager import ChannelManager
+from tokenmind.config.schema import ChannelsConfig
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ _EP_TARGET = "importlib.metadata.entry_points"
 
 
 def test_discover_plugins_loads_entry_points():
-    from sun_agent.channels.registry import discover_plugins
+    from tokenmind.channels.registry import discover_plugins
 
     ep = _make_entry_point("line", _FakePlugin)
     with patch(_EP_TARGET, return_value=[ep]):
@@ -101,7 +101,7 @@ def test_discover_plugins_loads_entry_points():
 
 
 def test_discover_plugins_handles_load_error():
-    from sun_agent.channels.registry import discover_plugins
+    from tokenmind.channels.registry import discover_plugins
 
     def _boom():
         raise RuntimeError("broken")
@@ -118,7 +118,7 @@ def test_discover_plugins_handles_load_error():
 # ---------------------------------------------------------------------------
 
 def test_discover_all_includes_builtins():
-    from sun_agent.channels.registry import discover_all, discover_channel_names
+    from tokenmind.channels.registry import discover_all, discover_channel_names
 
     with patch(_EP_TARGET, return_value=[]):
         result = discover_all()
@@ -131,7 +131,7 @@ def test_discover_all_includes_builtins():
 
 
 def test_discover_all_includes_external_plugin():
-    from sun_agent.channels.registry import discover_all
+    from tokenmind.channels.registry import discover_all
 
     ep = _make_entry_point("line", _FakePlugin)
     with patch(_EP_TARGET, return_value=[ep]):
@@ -142,7 +142,7 @@ def test_discover_all_includes_external_plugin():
 
 
 def test_discover_all_builtin_shadows_plugin():
-    from sun_agent.channels.registry import discover_all
+    from tokenmind.channels.registry import discover_all
 
     ep = _make_entry_point("telegram", _FakeTelegram)
     with patch(_EP_TARGET, return_value=[ep]):
@@ -159,7 +159,7 @@ def test_discover_all_builtin_shadows_plugin():
 @pytest.mark.asyncio
 async def test_manager_loads_plugin_from_dict_config():
     """ChannelManager should instantiate a plugin channel from a raw dict config."""
-    from sun_agent.channels.manager import ChannelManager
+    from tokenmind.channels.manager import ChannelManager
 
     fake_config = SimpleNamespace(
         channels=ChannelsConfig.model_validate({
@@ -169,7 +169,7 @@ async def test_manager_loads_plugin_from_dict_config():
     )
 
     with patch(
-        "sun_agent.channels.registry.discover_all",
+        "tokenmind.channels.registry.discover_all",
         return_value={"fakeplugin": _FakePlugin},
     ):
         mgr = ChannelManager.__new__(ChannelManager)
@@ -193,7 +193,7 @@ async def test_manager_skips_disabled_plugin():
     )
 
     with patch(
-        "sun_agent.channels.registry.discover_all",
+        "tokenmind.channels.registry.discover_all",
         return_value={"fakeplugin": _FakePlugin},
     ):
         mgr = ChannelManager.__new__(ChannelManager)
@@ -212,7 +212,7 @@ async def test_manager_skips_disabled_plugin():
 
 def test_builtin_channel_default_config():
     """Built-in channels expose default_config() returning a dict with 'enabled': False."""
-    from sun_agent.channels.telegram import TelegramChannel
+    from tokenmind.channels.telegram import TelegramChannel
     cfg = TelegramChannel.default_config()
     assert isinstance(cfg, dict)
     assert cfg["enabled"] is False
@@ -221,7 +221,7 @@ def test_builtin_channel_default_config():
 
 def test_builtin_channel_init_from_dict():
     """Built-in channels accept a raw dict and convert to Pydantic internally."""
-    from sun_agent.channels.telegram import TelegramChannel
+    from tokenmind.channels.telegram import TelegramChannel
     bus = MessageBus()
     ch = TelegramChannel({"enabled": False, "token": "test-tok", "allowFrom": ["*"]}, bus)
     assert ch.config.token == "test-tok"

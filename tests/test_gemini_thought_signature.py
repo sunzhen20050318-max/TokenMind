@@ -1,12 +1,12 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from sun_agent.providers.base import ToolCallRequest
-from sun_agent.providers.openai_compat_provider import OpenAICompatProvider
+from tokenmind.providers.base import ToolCallRequest
+from tokenmind.providers.openai_compat_provider import OpenAICompatProvider
 
 
 def test_openai_compat_parse_response_preserves_tool_call_provider_fields() -> None:
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(default_model="gemini/gemini-3-flash")
 
     response = SimpleNamespace(

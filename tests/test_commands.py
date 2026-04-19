@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from sun_agent.cli.commands import _make_provider, app
-from sun_agent.config.schema import Config
-from sun_agent.providers.openai_codex_provider import _strip_model_prefix
-from sun_agent.providers.registry import find_by_name
+from tokenmind.cli.commands import _make_provider, app
+from tokenmind.config.schema import Config
+from tokenmind.providers.openai_codex_provider import _strip_model_prefix
+from tokenmind.providers.registry import find_by_name
 
 runner = CliRunner()
 
@@ -26,10 +26,10 @@ import pytest
 @pytest.fixture
 def mock_paths():
     """Mock config/workspace paths for test isolation."""
-    with patch("sun_agent.config.loader.get_config_path") as mock_cp, \
-         patch("sun_agent.config.loader.save_config") as mock_sc, \
-         patch("sun_agent.config.loader.load_config") as mock_lc, \
-         patch("sun_agent.cli.commands.get_workspace_path") as mock_ws:
+    with patch("tokenmind.config.loader.get_config_path") as mock_cp, \
+         patch("tokenmind.config.loader.save_config") as mock_sc, \
+         patch("tokenmind.config.loader.load_config") as mock_lc, \
+         patch("tokenmind.cli.commands.get_workspace_path") as mock_ws:
 
         base_dir = Path("./test_onboard_data")
         if base_dir.exists():
@@ -136,10 +136,10 @@ def test_onboard_help_shows_workspace_and_config_options():
 def test_onboard_interactive_discard_does_not_save_or_create_workspace(mock_paths, monkeypatch):
     config_file, workspace_dir, _ = mock_paths
 
-    from sun_agent.cli.onboard_wizard import OnboardResult
+    from tokenmind.cli.onboard_wizard import OnboardResult
 
     monkeypatch.setattr(
-        "sun_agent.cli.onboard_wizard.run_onboard",
+        "tokenmind.cli.onboard_wizard.run_onboard",
         lambda initial_config: OnboardResult(config=initial_config, should_save=False),
     )
 
@@ -155,7 +155,7 @@ def test_onboard_uses_explicit_config_and_workspace_paths(tmp_path, monkeypatch)
     config_path = tmp_path / "instance" / "config.json"
     workspace_path = tmp_path / "workspace"
 
-    monkeypatch.setattr("sun_agent.channels.registry.discover_all", lambda: {})
+    monkeypatch.setattr("tokenmind.channels.registry.discover_all", lambda: {})
 
     result = runner.invoke(
         app,
@@ -177,13 +177,13 @@ def test_onboard_wizard_preserves_explicit_config_in_next_steps(tmp_path, monkey
     config_path = tmp_path / "instance" / "config.json"
     workspace_path = tmp_path / "workspace"
 
-    from sun_agent.cli.onboard_wizard import OnboardResult
+    from tokenmind.cli.onboard_wizard import OnboardResult
 
     monkeypatch.setattr(
-        "sun_agent.cli.onboard_wizard.run_onboard",
+        "tokenmind.cli.onboard_wizard.run_onboard",
         lambda initial_config: OnboardResult(config=initial_config, should_save=True),
     )
-    monkeypatch.setattr("sun_agent.channels.registry.discover_all", lambda: {})
+    monkeypatch.setattr("tokenmind.channels.registry.discover_all", lambda: {})
 
     result = runner.invoke(
         app,
@@ -294,7 +294,7 @@ def test_make_provider_uses_openai_compat_for_custom_provider():
         }
     )
 
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_async_openai:
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_async_openai:
         provider = _make_provider(config)
 
     kwargs = mock_async_openai.call_args.kwargs
@@ -317,14 +317,14 @@ def mock_agent_runtime(tmp_path):
     config.agents.defaults.workspace = str(tmp_path / "default-workspace")
     cron_dir = tmp_path / "data" / "cron"
 
-    with patch("sun_agent.config.loader.load_config", return_value=config) as mock_load_config, \
-         patch("sun_agent.config.paths.get_cron_dir", return_value=cron_dir), \
-         patch("sun_agent.cli.commands.sync_workspace_templates") as mock_sync_templates, \
-         patch("sun_agent.cli.commands._make_provider", return_value=object()), \
-         patch("sun_agent.cli.commands._print_agent_response") as mock_print_response, \
-         patch("sun_agent.bus.queue.MessageBus"), \
-         patch("sun_agent.cron.service.CronService"), \
-         patch("sun_agent.agent.loop.AgentLoop") as mock_agent_loop_cls:
+    with patch("tokenmind.config.loader.load_config", return_value=config) as mock_load_config, \
+         patch("tokenmind.config.paths.get_cron_dir", return_value=cron_dir), \
+         patch("tokenmind.cli.commands.sync_workspace_templates") as mock_sync_templates, \
+         patch("tokenmind.cli.commands._make_provider", return_value=object()), \
+         patch("tokenmind.cli.commands._print_agent_response") as mock_print_response, \
+         patch("tokenmind.bus.queue.MessageBus"), \
+         patch("tokenmind.cron.service.CronService"), \
+         patch("tokenmind.agent.loop.AgentLoop") as mock_agent_loop_cls:
 
         agent_loop = MagicMock()
         agent_loop.channels_config = None
@@ -387,15 +387,15 @@ def test_agent_config_sets_active_path(monkeypatch, tmp_path: Path) -> None:
     seen: dict[str, Path] = {}
 
     monkeypatch.setattr(
-        "sun_agent.config.loader.set_config_path",
+        "tokenmind.config.loader.set_config_path",
         lambda path: seen.__setitem__("config_path", path),
     )
-    monkeypatch.setattr("sun_agent.config.loader.load_config", lambda _path=None: config)
-    monkeypatch.setattr("sun_agent.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
-    monkeypatch.setattr("sun_agent.cli.commands.sync_workspace_templates", lambda _path: None)
-    monkeypatch.setattr("sun_agent.cli.commands._make_provider", lambda _config: object())
-    monkeypatch.setattr("sun_agent.bus.queue.MessageBus", lambda: object())
-    monkeypatch.setattr("sun_agent.cron.service.CronService", lambda _store: object())
+    monkeypatch.setattr("tokenmind.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("tokenmind.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
+    monkeypatch.setattr("tokenmind.cli.commands.sync_workspace_templates", lambda _path: None)
+    monkeypatch.setattr("tokenmind.cli.commands._make_provider", lambda _config: object())
+    monkeypatch.setattr("tokenmind.bus.queue.MessageBus", lambda: object())
+    monkeypatch.setattr("tokenmind.cron.service.CronService", lambda _store: object())
 
     class _FakeAgentLoop:
         def __init__(self, *args, **kwargs) -> None:
@@ -407,8 +407,8 @@ def test_agent_config_sets_active_path(monkeypatch, tmp_path: Path) -> None:
         async def close_mcp(self) -> None:
             return None
 
-    monkeypatch.setattr("sun_agent.agent.loop.AgentLoop", _FakeAgentLoop)
-    monkeypatch.setattr("sun_agent.cli.commands._print_agent_response", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("tokenmind.agent.loop.AgentLoop", _FakeAgentLoop)
+    monkeypatch.setattr("tokenmind.cli.commands._print_agent_response", lambda *_args, **_kwargs: None)
 
     result = runner.invoke(app, ["agent", "-m", "hello", "-c", str(config_file)])
 
@@ -465,16 +465,16 @@ def test_gateway_uses_workspace_from_config_by_default(monkeypatch, tmp_path: Pa
     seen: dict[str, Path] = {}
 
     monkeypatch.setattr(
-        "sun_agent.config.loader.set_config_path",
+        "tokenmind.config.loader.set_config_path",
         lambda path: seen.__setitem__("config_path", path),
     )
-    monkeypatch.setattr("sun_agent.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("tokenmind.config.loader.load_config", lambda _path=None: config)
     monkeypatch.setattr(
-        "sun_agent.cli.commands.sync_workspace_templates",
+        "tokenmind.cli.commands.sync_workspace_templates",
         lambda path: seen.__setitem__("workspace", path),
     )
     monkeypatch.setattr(
-        "sun_agent.cli.commands._make_provider",
+        "tokenmind.cli.commands._make_provider",
         lambda _config: (_ for _ in ()).throw(_StopGatewayError("stop")),
     )
 
@@ -495,14 +495,14 @@ def test_gateway_workspace_option_overrides_config(monkeypatch, tmp_path: Path) 
     override = tmp_path / "override-workspace"
     seen: dict[str, Path] = {}
 
-    monkeypatch.setattr("sun_agent.config.loader.set_config_path", lambda _path: None)
-    monkeypatch.setattr("sun_agent.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("tokenmind.config.loader.set_config_path", lambda _path: None)
+    monkeypatch.setattr("tokenmind.config.loader.load_config", lambda _path=None: config)
     monkeypatch.setattr(
-        "sun_agent.cli.commands.sync_workspace_templates",
+        "tokenmind.cli.commands.sync_workspace_templates",
         lambda path: seen.__setitem__("workspace", path),
     )
     monkeypatch.setattr(
-        "sun_agent.cli.commands._make_provider",
+        "tokenmind.cli.commands._make_provider",
         lambda _config: (_ for _ in ()).throw(_StopGatewayError("stop")),
     )
 
@@ -525,20 +525,20 @@ def test_gateway_uses_config_directory_for_cron_store(monkeypatch, tmp_path: Pat
     config.agents.defaults.workspace = str(tmp_path / "config-workspace")
     seen: dict[str, Path] = {}
 
-    monkeypatch.setattr("sun_agent.config.loader.set_config_path", lambda _path: None)
-    monkeypatch.setattr("sun_agent.config.loader.load_config", lambda _path=None: config)
-    monkeypatch.setattr("sun_agent.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
-    monkeypatch.setattr("sun_agent.cli.commands.sync_workspace_templates", lambda _path: None)
-    monkeypatch.setattr("sun_agent.cli.commands._make_provider", lambda _config: object())
-    monkeypatch.setattr("sun_agent.bus.queue.MessageBus", lambda: object())
-    monkeypatch.setattr("sun_agent.session.manager.SessionManager", lambda _workspace: object())
+    monkeypatch.setattr("tokenmind.config.loader.set_config_path", lambda _path: None)
+    monkeypatch.setattr("tokenmind.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("tokenmind.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
+    monkeypatch.setattr("tokenmind.cli.commands.sync_workspace_templates", lambda _path: None)
+    monkeypatch.setattr("tokenmind.cli.commands._make_provider", lambda _config: object())
+    monkeypatch.setattr("tokenmind.bus.queue.MessageBus", lambda: object())
+    monkeypatch.setattr("tokenmind.session.manager.SessionManager", lambda _workspace: object())
 
     class _StopCron:
         def __init__(self, store_path: Path) -> None:
             seen["cron_store"] = store_path
             raise _StopGatewayError("stop")
 
-    monkeypatch.setattr("sun_agent.cron.service.CronService", _StopCron)
+    monkeypatch.setattr("tokenmind.cron.service.CronService", _StopCron)
 
     result = runner.invoke(app, ["gateway", "--config", str(config_file)])
 
@@ -554,11 +554,11 @@ def test_gateway_uses_configured_port_when_cli_flag_is_missing(monkeypatch, tmp_
     config = Config()
     config.gateway.port = 18791
 
-    monkeypatch.setattr("sun_agent.config.loader.set_config_path", lambda _path: None)
-    monkeypatch.setattr("sun_agent.config.loader.load_config", lambda _path=None: config)
-    monkeypatch.setattr("sun_agent.cli.commands.sync_workspace_templates", lambda _path: None)
+    monkeypatch.setattr("tokenmind.config.loader.set_config_path", lambda _path: None)
+    monkeypatch.setattr("tokenmind.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("tokenmind.cli.commands.sync_workspace_templates", lambda _path: None)
     monkeypatch.setattr(
-        "sun_agent.cli.commands._make_provider",
+        "tokenmind.cli.commands._make_provider",
         lambda _config: (_ for _ in ()).throw(_StopGatewayError("stop")),
     )
 
@@ -576,11 +576,11 @@ def test_gateway_cli_port_overrides_configured_port(monkeypatch, tmp_path: Path)
     config = Config()
     config.gateway.port = 18791
 
-    monkeypatch.setattr("sun_agent.config.loader.set_config_path", lambda _path: None)
-    monkeypatch.setattr("sun_agent.config.loader.load_config", lambda _path=None: config)
-    monkeypatch.setattr("sun_agent.cli.commands.sync_workspace_templates", lambda _path: None)
+    monkeypatch.setattr("tokenmind.config.loader.set_config_path", lambda _path: None)
+    monkeypatch.setattr("tokenmind.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("tokenmind.cli.commands.sync_workspace_templates", lambda _path: None)
     monkeypatch.setattr(
-        "sun_agent.cli.commands._make_provider",
+        "tokenmind.cli.commands._make_provider",
         lambda _config: (_ for _ in ()).throw(_StopGatewayError("stop")),
     )
 

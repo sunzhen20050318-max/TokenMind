@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from sun_agent.bus.events import OutboundMessage
-from sun_agent.bus.queue import MessageBus
-from sun_agent.channels.qq import QQChannel
-from sun_agent.channels.qq import QQConfig
+from tokenmind.bus.events import OutboundMessage
+from tokenmind.bus.queue import MessageBus
+from tokenmind.channels.qq import QQChannel
+from tokenmind.channels.qq import QQConfig
 
 
 class _FakeApi:

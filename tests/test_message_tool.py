@@ -1,6 +1,6 @@
 import pytest
 
-from sun_agent.agent.tools.message import MessageTool
+from tokenmind.agent.tools.message import MessageTool
 
 
 @pytest.mark.asyncio

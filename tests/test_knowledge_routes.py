@@ -9,7 +9,7 @@ from fastapi import UploadFile
 
 @pytest.mark.asyncio
 async def test_list_knowledge_bases_returns_service_payload() -> None:
-    route_module = importlib.import_module("sun_agent.server.routes.knowledge")
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
     service = SimpleNamespace(get_knowledge_overview=lambda: {"items": [{"id": "kb_1", "name": "测试库"}]})
 
     response = await route_module.list_knowledge_bases(service=service)
@@ -19,7 +19,7 @@ async def test_list_knowledge_bases_returns_service_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_get_knowledge_base_detail_returns_service_payload() -> None:
-    route_module = importlib.import_module("sun_agent.server.routes.knowledge")
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
     service = SimpleNamespace(
         get_knowledge_base_detail=lambda knowledge_base_id: {
             "knowledge_base": {"id": knowledge_base_id, "name": "产品库", "enabled": True},
@@ -34,7 +34,7 @@ async def test_get_knowledge_base_detail_returns_service_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_update_knowledge_base_returns_updated_payload() -> None:
-    route_module = importlib.import_module("sun_agent.server.routes.knowledge")
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
     service = SimpleNamespace(
         update_knowledge_base=lambda knowledge_base_id, **kwargs: SimpleNamespace(
             model_dump=lambda: {
@@ -53,7 +53,7 @@ async def test_update_knowledge_base_returns_updated_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_delete_knowledge_base_returns_success_payload() -> None:
-    route_module = importlib.import_module("sun_agent.server.routes.knowledge")
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
     service = SimpleNamespace(
         delete_knowledge_base=lambda knowledge_base_id: {
             "success": True,
@@ -68,7 +68,7 @@ async def test_delete_knowledge_base_returns_success_payload() -> None:
 
 
 def test_chat_service_exposes_update_knowledge_base(tmp_path) -> None:
-    from sun_agent.server.app import ChatService
+    from tokenmind.server.app import ChatService
 
     service = ChatService(
         bus=None,
@@ -83,7 +83,7 @@ def test_chat_service_exposes_update_knowledge_base(tmp_path) -> None:
 
 
 def test_chat_service_exposes_delete_knowledge_base(tmp_path) -> None:
-    from sun_agent.server.app import ChatService
+    from tokenmind.server.app import ChatService
 
     service = ChatService(
         bus=None,
@@ -100,7 +100,7 @@ def test_chat_service_exposes_delete_knowledge_base(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_upload_knowledge_documents_returns_service_payload(tmp_path) -> None:
-    route_module = importlib.import_module("sun_agent.server.routes.knowledge")
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
     source = tmp_path / "faq.txt"
     source.write_text("知识库文档", encoding="utf-8")
     service = SimpleNamespace(
@@ -120,7 +120,7 @@ async def test_upload_knowledge_documents_returns_service_payload(tmp_path) -> N
 
 @pytest.mark.asyncio
 async def test_delete_knowledge_document_returns_success_payload() -> None:
-    route_module = importlib.import_module("sun_agent.server.routes.knowledge")
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
     service = SimpleNamespace(
         delete_knowledge_document=lambda knowledge_base_id, document_id: {
             "success": True,

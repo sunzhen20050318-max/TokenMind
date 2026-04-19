@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rework the main `SUN-AGENT` shell so the idle homepage and active conversation layout feel closer to Claude while preserving `SUN-AGENT`'s own sidebar destinations, execution timeline, and chat capabilities.
+**Goal:** Rework the main `TokenMind` shell so the idle homepage and active conversation layout feel closer to Claude while preserving `TokenMind`'s own sidebar destinations, execution timeline, and chat capabilities.
 
 **Architecture:** Keep the existing React + Zustand data flow, but refactor the shell into a quieter Claude-like left rail, a centered idle composer stack, and a fixed-width active reading column. The key structural rule is that messages, timeline, and bottom composer must all obey one shared centered conversation lane.
 
@@ -12,38 +12,38 @@
 
 ## File Map
 
-- Modify: `D:\project\sun-agent\frontend\src\App.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\App.tsx`
   - Keep the shell composition stable while allowing the content area to feel more Claude-like.
-- Modify: `D:\project\sun-agent\frontend\src\app.css`
+- Modify: `D:\project\TokenMind\frontend\src\app.css`
   - Tune overall shell proportions and content-stage spacing.
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
-  - Keep `SUN-AGENT` destinations but reduce weight and density toward a quieter Claude-like rail.
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\sidebar.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
+  - Keep `TokenMind` destinations but reduce weight and density toward a quieter Claude-like rail.
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\sidebar.css`
   - Retune left rail density, action hierarchy, and list feel.
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Header.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Header.tsx`
   - Keep a very light top strip for current session/model info.
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\header.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\header.css`
   - Lower chrome intensity and tighten the header.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ChatWindow.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ChatWindow.tsx`
   - Rebuild idle state and active conversation lane rules.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\chatWindow.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\chatWindow.css`
   - Add Claude-like empty-state spacing and centered active column layout.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx`
   - Keep upload/stop/send capabilities while making the composer feel lower-profile and Claude-like.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\inputArea.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\inputArea.css`
   - Style idle and active composers to match the new shell.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\MessageBubble.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\MessageBubble.tsx`
   - Align bubbles to a shared fixed-width conversation lane.
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ToolIndicator.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ToolIndicator.tsx`
   - Force execution timeline width to match the conversation lane.
 
 ## Task 1: Rebuild the Left Rail Tone
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\sidebar.css`
-- Modify: `D:\project\sun-agent\frontend\src\app.css`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\sidebar.css`
+- Modify: `D:\project\TokenMind\frontend\src\app.css`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Keep the existing sidebar destinations but strip away the current Manus-like heaviness**
 
@@ -106,13 +106,13 @@ Expected: PASS
 ## Task 2: Rebuild the Idle Homepage into a Claude-Like Center Stack
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ChatWindow.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\chatWindow.css`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\InputArea.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\inputArea.css`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Header.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\header.css`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ChatWindow.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\chatWindow.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\InputArea.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\inputArea.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Header.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\header.css`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Replace the current Manus-like launchpad copy with a quieter centered greeting stack**
 
@@ -195,12 +195,12 @@ Expected: PASS
 ## Task 3: Rebuild the Active Conversation into a Fixed Reading Column
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ChatWindow.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\chatWindow.css`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\MessageBubble.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ToolIndicator.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\inputArea.css`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ChatWindow.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\chatWindow.css`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\MessageBubble.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ToolIndicator.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\inputArea.css`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Introduce one shared centered conversation lane in the active state**
 
@@ -268,11 +268,11 @@ Expected: PASS
 ## Task 4: Final Polish and Verification
 
 **Files:**
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ChatWindow.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\MessageBubble.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Chat\ToolIndicator.tsx`
-- Modify: `D:\project\sun-agent\frontend\src\components\Layout\Sidebar.tsx`
-- Test: `D:\project\sun-agent\frontend\package.json`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ChatWindow.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\MessageBubble.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Chat\ToolIndicator.tsx`
+- Modify: `D:\project\TokenMind\frontend\src\components\Layout\Sidebar.tsx`
+- Test: `D:\project\TokenMind\frontend\package.json`
 
 - [ ] **Step 1: Recheck copy density so the layout stays calm**
 
@@ -305,7 +305,7 @@ Checklist:
 - active chat uses a centered fixed reading column
 - message bubbles share a consistent width system
 - execution timeline width matches the same lane
-- sidebar keeps `SUN-AGENT` destinations while feeling quieter
+- sidebar keeps `TokenMind` destinations while feeling quieter
 
 ## Self-Review
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from sun_agent.server.routes import storage as storage_routes
+from tokenmind.server.routes import storage as storage_routes
 
 
 @pytest.mark.asyncio

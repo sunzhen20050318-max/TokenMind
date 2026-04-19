@@ -1,6 +1,7 @@
+from datetime import datetime
 from pathlib import Path
 
-from sun_agent.session.manager import Session, SessionManager
+from tokenmind.session.manager import Session, SessionManager
 
 
 def _assert_no_orphans(history: list[dict]) -> None:
@@ -169,3 +170,32 @@ def test_session_manager_sanitizes_legacy_knowledge_metadata_on_load(tmp_path: P
 
     reloaded = manager.get_or_create("web:test")
     assert reloaded.messages[0]["content"] == "我的学号是230200496"
+
+
+def test_session_manager_preserves_updated_at_when_sanitizing_on_load(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True)
+    manager = SessionManager(workspace)
+    session = Session(key="web:test-preserve-timestamp")
+    session.created_at = datetime.fromisoformat("2026-03-28T22:37:00")
+    session.updated_at = datetime.fromisoformat("2026-04-16T17:17:00")
+    session.messages.append(
+        {
+            "role": "user",
+            "content": (
+                "[Linked Knowledge - retrieved context only, not user text]\n"
+                "1. [娴嬭瘯鐭ヨ瘑搴?/ score.xlsx] 230200496 62\n\n"
+                "If the retrieved context is not relevant, say so instead of forcing it into the answer.\n\n"
+                "鎴戠殑瀛﹀彿鏄?30200496"
+            ),
+        }
+    )
+    manager.save(session)
+    manager.invalidate("web:test-preserve-timestamp")
+
+    reloaded = manager.get_or_create("web:test-preserve-timestamp")
+    assert reloaded.updated_at.isoformat() == "2026-04-16T17:17:00"
+
+    listed = manager.list_sessions()
+    listed_session = next(item for item in listed if item["key"] == "web:test-preserve-timestamp")
+    assert listed_session["updated_at"] == "2026-04-16T17:17:00"

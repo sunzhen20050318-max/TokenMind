@@ -1,8 +1,8 @@
 """Tests for CronTool._list_jobs() output formatting."""
 
-from sun_agent.agent.tools.cron import CronTool
-from sun_agent.cron.service import CronService
-from sun_agent.cron.types import CronJobState, CronSchedule
+from tokenmind.agent.tools.cron import CronTool
+from tokenmind.cron.service import CronService
+from tokenmind.cron.types import CronJobState, CronSchedule
 
 
 def _make_tool(tmp_path) -> CronTool:

@@ -16,12 +16,12 @@ WORKDIR /app
 
 # Install Python dependencies first (cached layer)
 COPY pyproject.toml README.md LICENSE ./
-RUN mkdir -p sun_agent bridge && touch sun_agent/__init__.py && \
+RUN mkdir -p tokenmind bridge && touch tokenmind/__init__.py && \
     uv pip install --system --no-cache . && \
-    rm -rf sun_agent bridge
+    rm -rf tokenmind bridge
 
 # Copy the full source and install
-COPY sun_agent/ sun_agent/
+COPY tokenmind/ tokenmind/
 COPY bridge/ bridge/
 RUN uv pip install --system --no-cache .
 

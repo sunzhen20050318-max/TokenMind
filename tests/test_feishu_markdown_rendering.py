@@ -1,4 +1,4 @@
-from sun_agent.channels.feishu import FeishuChannel
+from tokenmind.channels.feishu import FeishuChannel
 
 
 def test_parse_md_table_strips_markdown_formatting_in_headers_and_cells() -> None:

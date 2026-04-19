@@ -10,8 +10,8 @@ import pytest
 
 def _make_loop():
     """Create a minimal AgentLoop with mocked dependencies."""
-    from sun_agent.agent.loop import AgentLoop
-    from sun_agent.bus.queue import MessageBus
+    from tokenmind.agent.loop import AgentLoop
+    from tokenmind.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -19,9 +19,9 @@ def _make_loop():
     workspace = MagicMock()
     workspace.__truediv__ = MagicMock(return_value=MagicMock())
 
-    with patch("sun_agent.agent.loop.ContextBuilder"), \
-         patch("sun_agent.agent.loop.SessionManager"), \
-         patch("sun_agent.agent.loop.SubagentManager") as MockSubMgr:
+    with patch("tokenmind.agent.loop.ContextBuilder"), \
+         patch("tokenmind.agent.loop.SessionManager"), \
+         patch("tokenmind.agent.loop.SubagentManager") as MockSubMgr:
         MockSubMgr.return_value.cancel_by_session = AsyncMock(return_value=0)
         loop = AgentLoop(bus=bus, provider=provider, workspace=workspace)
     return loop, bus
@@ -30,7 +30,7 @@ def _make_loop():
 class TestHandleStop:
     @pytest.mark.asyncio
     async def test_stop_no_active_task(self):
-        from sun_agent.bus.events import InboundMessage
+        from tokenmind.bus.events import InboundMessage
 
         loop, bus = _make_loop()
         msg = InboundMessage(channel="test", sender_id="u1", chat_id="c1", content="/stop")
@@ -40,7 +40,7 @@ class TestHandleStop:
 
     @pytest.mark.asyncio
     async def test_stop_cancels_active_task(self):
-        from sun_agent.bus.events import InboundMessage
+        from tokenmind.bus.events import InboundMessage
 
         loop, bus = _make_loop()
         cancelled = asyncio.Event()
@@ -65,7 +65,7 @@ class TestHandleStop:
 
     @pytest.mark.asyncio
     async def test_stop_cancels_multiple_tasks(self):
-        from sun_agent.bus.events import InboundMessage
+        from tokenmind.bus.events import InboundMessage
 
         loop, bus = _make_loop()
         events = [asyncio.Event(), asyncio.Event()]
@@ -92,7 +92,7 @@ class TestHandleStop:
 class TestDispatch:
     @pytest.mark.asyncio
     async def test_dispatch_processes_and_publishes(self):
-        from sun_agent.bus.events import InboundMessage, OutboundMessage
+        from tokenmind.bus.events import InboundMessage, OutboundMessage
 
         loop, bus = _make_loop()
         msg = InboundMessage(channel="test", sender_id="u1", chat_id="c1", content="hello")
@@ -105,7 +105,7 @@ class TestDispatch:
 
     @pytest.mark.asyncio
     async def test_processing_lock_serializes(self):
-        from sun_agent.bus.events import InboundMessage, OutboundMessage
+        from tokenmind.bus.events import InboundMessage, OutboundMessage
 
         loop, bus = _make_loop()
         order = []
@@ -127,7 +127,7 @@ class TestDispatch:
 
     @pytest.mark.asyncio
     async def test_dispatch_allows_different_sessions_to_run_concurrently(self):
-        from sun_agent.bus.events import InboundMessage, OutboundMessage
+        from tokenmind.bus.events import InboundMessage, OutboundMessage
 
         loop, _ = _make_loop()
         entered: list[str] = []
@@ -156,8 +156,8 @@ class TestDispatch:
 class TestSubagentCancellation:
     @pytest.mark.asyncio
     async def test_cancel_by_session(self):
-        from sun_agent.agent.subagent import SubagentManager
-        from sun_agent.bus.queue import MessageBus
+        from tokenmind.agent.subagent import SubagentManager
+        from tokenmind.bus.queue import MessageBus
 
         bus = MessageBus()
         provider = MagicMock()
@@ -184,8 +184,8 @@ class TestSubagentCancellation:
 
     @pytest.mark.asyncio
     async def test_cancel_by_session_no_tasks(self):
-        from sun_agent.agent.subagent import SubagentManager
-        from sun_agent.bus.queue import MessageBus
+        from tokenmind.agent.subagent import SubagentManager
+        from tokenmind.bus.queue import MessageBus
 
         bus = MessageBus()
         provider = MagicMock()
@@ -195,9 +195,9 @@ class TestSubagentCancellation:
 
     @pytest.mark.asyncio
     async def test_subagent_preserves_reasoning_fields_in_tool_turn(self, monkeypatch, tmp_path):
-        from sun_agent.agent.subagent import SubagentManager
-        from sun_agent.bus.queue import MessageBus
-        from sun_agent.providers.base import LLMResponse, ToolCallRequest
+        from tokenmind.agent.subagent import SubagentManager
+        from tokenmind.bus.queue import MessageBus
+        from tokenmind.providers.base import LLMResponse, ToolCallRequest
 
         bus = MessageBus()
         provider = MagicMock()
@@ -224,7 +224,7 @@ class TestSubagentCancellation:
         async def fake_execute(self, name, arguments):
             return "tool result"
 
-        monkeypatch.setattr("sun_agent.agent.tools.registry.ToolRegistry.execute", fake_execute)
+        monkeypatch.setattr("tokenmind.agent.tools.registry.ToolRegistry.execute", fake_execute)
 
         await mgr._run_subagent("sub-1", "do task", "label", {"channel": "test", "chat_id": "c1"})
 

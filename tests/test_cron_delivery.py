@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from sun_agent.cron.constants import TASK_RESULTS_SESSION_ID, TASK_RESULTS_SESSION_TITLE
-from sun_agent.cron.delivery import persist_task_result
-from sun_agent.session.manager import SessionManager
+from tokenmind.cron.constants import TASK_RESULTS_SESSION_ID, TASK_RESULTS_SESSION_TITLE
+from tokenmind.cron.delivery import persist_task_result
+from tokenmind.session.manager import SessionManager
 
 
 def test_persist_task_result_creates_task_results_session(tmp_path):

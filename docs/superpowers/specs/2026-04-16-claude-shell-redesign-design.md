@@ -2,7 +2,7 @@
 
 ## Summary
 
-This spec reshapes the main `SUN-AGENT` frontend shell so the product feels closer to the `claude.ai` references the user provided, while preserving `SUN-AGENT`'s existing product structure and capabilities.
+This spec reshapes the main `TokenMind` frontend shell so the product feels closer to the `claude.ai` references the user provided, while preserving `TokenMind`'s existing product structure and capabilities.
 
 This redesign replaces the previously approved Manus-style homepage direction for the main chat shell. The Manus-inspired work remains useful as a visual refinement baseline for modal chrome and general density, but the main shell should now follow a calmer Claude-like interaction model.
 
@@ -21,7 +21,7 @@ The goal is not to reproduce Claude verbatim. The goal is to adopt its layout gr
 - a stable, fixed reading column once a conversation begins
 - restrained conversation chrome with the content column doing most of the visual work
 
-At the same time, `SUN-AGENT` keeps its own:
+At the same time, `TokenMind` keeps its own:
 
 - product naming
 - sidebar destinations
@@ -32,7 +32,7 @@ At the same time, `SUN-AGENT` keeps its own:
 ## Goals
 
 - Make the idle homepage feel closer to Claude than Manus
-- Keep the sidebar content specific to `SUN-AGENT`
+- Keep the sidebar content specific to `TokenMind`
 - Reduce the sense of dashboard chrome and increase calm whitespace
 - Center the composer and preset prompt chips before a conversation begins
 - Shift into a fixed-width reading layout after a conversation starts
@@ -91,7 +91,7 @@ Cons:
 
 ### Option B: Homepage + Conversation Column Redesign
 
-Redesign both the idle homepage and the active conversation column so they share one Claude-like layout language, while keeping the `SUN-AGENT` sidebar content and timeline behavior.
+Redesign both the idle homepage and the active conversation column so they share one Claude-like layout language, while keeping the `TokenMind` sidebar content and timeline behavior.
 
 Pros:
 
@@ -116,7 +116,7 @@ Cons:
 
 - too derivative
 - risks breaking product identity
-- would likely force unnecessary structure changes that do not fit `SUN-AGENT`
+- would likely force unnecessary structure changes that do not fit `TokenMind`
 
 ### Recommendation
 
@@ -129,7 +129,7 @@ It delivers the layout behavior the user actually wants:
 - fixed bubble width
 - execution timeline aligned to that same column
 
-without flattening `SUN-AGENT` into a clone.
+without flattening `TokenMind` into a clone.
 
 ## Information Architecture
 
@@ -137,7 +137,7 @@ without flattening `SUN-AGENT` into a clone.
 
 The sidebar remains persistent, but it should become quieter and more Claude-like in tone.
 
-It should keep `SUN-AGENT`'s own product structure rather than Claude's literal menu labels.
+It should keep `TokenMind`'s own product structure rather than Claude's literal menu labels.
 
 Recommended order:
 
@@ -422,7 +422,7 @@ The quieter layout must not hide important system states.
 
 The redesign is complete when:
 
-- the left sidebar still contains `SUN-AGENT`'s own destinations, but feels closer to Claude in tone and density
+- the left sidebar still contains `TokenMind`'s own destinations, but feels closer to Claude in tone and density
 - the idle homepage is no longer a Manus-like launchpad and instead feels closer to Claude's centered greeting + composer stack
 - the idle composer is centered and visually lower-profile
 - lightweight prompt pills appear below the composer

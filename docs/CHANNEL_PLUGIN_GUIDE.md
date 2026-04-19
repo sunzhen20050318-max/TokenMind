@@ -6,10 +6,10 @@ Build a custom TokenMind channel in three steps: subclass, package, install.
 
 TokenMind discovers channel plugins via Python [entry points](https://packaging.python.org/en/latest/specifications/entry-points/). When `tokenmind gateway` starts, it scans:
 
-1. built-in channels in `sun_agent/channels/`
-2. external packages registered under the compatibility entry-point group `sun_agent.channels`
+1. built-in channels in `tokenmind/channels/`
+2. external packages registered under the compatibility entry-point group `tokenmind.channels`
 
-The internal package namespace is still `sun_agent`, so plugin imports and entry-point groups currently keep that name.
+The internal package namespace is still `tokenmind`, so plugin imports and entry-point groups currently keep that name.
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ We'll build a minimal webhook channel that receives messages via HTTP POST and s
 
 ```text
 tokenmind-channel-webhook/
-├── sun_agent_channel_webhook/
+├── tokenmind_channel_webhook/
 │   ├── __init__.py
 │   └── channel.py
 └── pyproject.toml
@@ -28,22 +28,22 @@ tokenmind-channel-webhook/
 ### 1. Create Your Channel
 
 ```python
-# sun_agent_channel_webhook/__init__.py
-from sun_agent_channel_webhook.channel import WebhookChannel
+# tokenmind_channel_webhook/__init__.py
+from tokenmind_channel_webhook.channel import WebhookChannel
 
 __all__ = ["WebhookChannel"]
 ```
 
 ```python
-# sun_agent_channel_webhook/channel.py
+# tokenmind_channel_webhook/channel.py
 import asyncio
 from typing import Any
 
 from aiohttp import web
 from loguru import logger
 
-from sun_agent.channels.base import BaseChannel
-from sun_agent.bus.events import OutboundMessage
+from tokenmind.channels.base import BaseChannel
+from tokenmind.bus.events import OutboundMessage
 
 
 class WebhookChannel(BaseChannel):
@@ -102,8 +102,8 @@ name = "tokenmind-channel-webhook"
 version = "0.1.0"
 dependencies = ["tokenmind-ai", "aiohttp"]
 
-[project.entry-points."sun_agent.channels"]
-webhook = "sun_agent_channel_webhook:WebhookChannel"
+[project.entry-points."tokenmind.channels"]
+webhook = "tokenmind_channel_webhook:WebhookChannel"
 
 [build-system]
 requires = ["setuptools"]
@@ -173,10 +173,10 @@ curl -X POST http://localhost:9000/message ^
 | What | Format | Example |
 |------|--------|---------|
 | Distribution name | `tokenmind-channel-{name}` | `tokenmind-channel-webhook` |
-| Entry-point group | `sun_agent.channels` | `sun_agent.channels` |
+| Entry-point group | `tokenmind.channels` | `tokenmind.channels` |
 | Entry-point key | `{name}` | `webhook` |
 | Config section | `channels.{name}` | `channels.webhook` |
-| Python package | `sun_agent_channel_{name}` | `sun_agent_channel_webhook` |
+| Python package | `tokenmind_channel_{name}` | `tokenmind_channel_webhook` |
 
 ## Local Development
 

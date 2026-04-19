@@ -8,9 +8,9 @@ import pytest
 @pytest.fixture
 def temp_cron_service(tmp_path, monkeypatch: pytest.MonkeyPatch):
     """Bind route globals to a temporary cron service."""
-    from sun_agent.cron.service import CronService
-    from sun_agent.server.dependencies import get_cron_service, set_cron_service
-    from sun_agent.server.routes import cron as cron_routes
+    from tokenmind.cron.service import CronService
+    from tokenmind.server.dependencies import get_cron_service, set_cron_service
+    from tokenmind.server.routes import cron as cron_routes
 
     previous = get_cron_service()
     service = CronService(tmp_path / "cron" / "jobs.json")
@@ -25,7 +25,7 @@ def temp_cron_service(tmp_path, monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.asyncio
 async def test_create_list_toggle_run_and_delete_cron_jobs(temp_cron_service):
     """Cron routes should support the task center lifecycle."""
-    from sun_agent.server.routes.cron import (
+    from tokenmind.server.routes.cron import (
         CronJobCreateRequest,
         CronJobToggleRequest,
         create_cron_job,
@@ -80,7 +80,7 @@ async def test_create_cron_job_validates_payload(temp_cron_service):
     """Cron routes should reject invalid schedule payloads."""
     from fastapi import HTTPException
 
-    from sun_agent.server.routes.cron import CronJobCreateRequest, create_cron_job
+    from tokenmind.server.routes.cron import CronJobCreateRequest, create_cron_job
 
     with pytest.raises(HTTPException, match="every_seconds must be greater than 0"):
         await create_cron_job(
@@ -97,8 +97,8 @@ async def test_create_cron_job_validates_payload(temp_cron_service):
 @pytest.mark.asyncio
 async def test_create_cron_job_defaults_to_task_results_session(temp_cron_service):
     """Deliverable jobs without an explicit session should target the task results session."""
-    from sun_agent.cron.constants import TASK_RESULTS_SESSION_ID
-    from sun_agent.server.routes.cron import CronJobCreateRequest, create_cron_job
+    from tokenmind.cron.constants import TASK_RESULTS_SESSION_ID
+    from tokenmind.server.routes.cron import CronJobCreateRequest, create_cron_job
 
     created = await create_cron_job(
         CronJobCreateRequest(

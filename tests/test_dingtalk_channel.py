@@ -3,10 +3,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from sun_agent.bus.queue import MessageBus
-import sun_agent.channels.dingtalk as dingtalk_module
-from sun_agent.channels.dingtalk import DingTalkChannel, NanobotDingTalkHandler
-from sun_agent.channels.dingtalk import DingTalkConfig
+from tokenmind.bus.queue import MessageBus
+import tokenmind.channels.dingtalk as dingtalk_module
+from tokenmind.channels.dingtalk import DingTalkChannel, NanobotDingTalkHandler
+from tokenmind.channels.dingtalk import DingTalkConfig
 
 
 class _FakeResponse:
@@ -148,7 +148,7 @@ async def test_handler_processes_file_message(monkeypatch) -> None:
             return _FakeFileChatbotMessage()
 
     async def fake_download(download_code, filename, sender_id):
-        return f"/tmp/sun_agent_dingtalk/{sender_id}/{filename}"
+        return f"/tmp/tokenmind_dingtalk/{sender_id}/{filename}"
 
     monkeypatch.setattr(dingtalk_module, "ChatbotMessage", _FakeFileChatbotMessage)
     monkeypatch.setattr(dingtalk_module, "AckMessage", SimpleNamespace(STATUS_OK="OK"))
@@ -169,7 +169,7 @@ async def test_handler_processes_file_message(monkeypatch) -> None:
 
     assert (status, body) == ("OK", "OK")
     assert "[File]" in msg.content
-    assert "/tmp/sun_agent_dingtalk/user1/report.xlsx" in msg.content
+    assert "/tmp/tokenmind_dingtalk/user1/report.xlsx" in msg.content
 
 
 @pytest.mark.asyncio
@@ -196,7 +196,7 @@ async def test_download_dingtalk_file(tmp_path, monkeypatch) -> None:
 
     # Redirect media dir to tmp_path
     monkeypatch.setattr(
-        "sun_agent.config.paths.get_media_dir",
+        "tokenmind.config.paths.get_media_dir",
         lambda channel_name=None: tmp_path / channel_name if channel_name else tmp_path,
     )
 

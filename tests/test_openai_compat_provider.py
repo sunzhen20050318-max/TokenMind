@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from sun_agent.providers.openai_compat_provider import OpenAICompatProvider
-from sun_agent.providers.registry import find_by_name
+from tokenmind.providers.openai_compat_provider import OpenAICompatProvider
+from tokenmind.providers.registry import find_by_name
 
 
 def _fake_chat_response(content: str = "ok") -> SimpleNamespace:
@@ -34,7 +34,7 @@ async def test_openrouter_keeps_model_name_intact() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("openrouter")
 
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
         client_instance = mock_client.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -58,7 +58,7 @@ async def test_openrouter_claude_models_apply_prompt_caching() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("openrouter")
 
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
         client_instance = mock_client.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -85,7 +85,7 @@ async def test_openrouter_non_claude_models_skip_prompt_caching() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("openrouter")
 
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
         client_instance = mock_client.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -112,7 +112,7 @@ async def test_aihubmix_strips_model_prefix() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("aihubmix")
 
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
         client_instance = mock_client.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -136,7 +136,7 @@ async def test_standard_provider_strips_explicit_provider_prefix() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("deepseek")
 
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
         client_instance = mock_client.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -156,7 +156,7 @@ async def test_standard_provider_strips_explicit_provider_prefix() -> None:
 
 def test_openai_model_passthrough() -> None:
     spec = find_by_name("openai")
-    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
             api_key="sk-test-key",
             default_model="gpt-4o",

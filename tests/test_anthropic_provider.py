@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from sun_agent.providers.anthropic_provider import AnthropicProvider
-from sun_agent.providers.base import LLMResponse
+from tokenmind.providers.anthropic_provider import AnthropicProvider
+from tokenmind.providers.base import LLMResponse
 
 
 def test_anthropic_provider_init_requires_api_key() -> None:
