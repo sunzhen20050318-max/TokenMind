@@ -29,7 +29,7 @@ class ChannelsConfig(Base):
 class AgentDefaults(Base):
     """Default agent configuration."""
 
-    workspace: str = "~/.sun_agent/workspace"
+    workspace: str = "~/.tokenmind/workspace"
     model: str = "anthropic/claude-opus-4-5"
     provider: str = (
         "auto"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
@@ -134,6 +134,30 @@ class UploadsConfig(Base):
     cleanup_interval_hours: int = 12
 
 
+class KnowledgeConfig(Base):
+    """Knowledge base ingestion and retrieval configuration."""
+
+    vector_backend: str = "qdrant"
+    chunk_size: int = 900
+    chunk_overlap: int = 120
+    top_k: int = 6
+    embedding_model: str = ""
+    embedding_api_key: str = ""
+    embedding_api_base: str | None = None
+    rerank_model: str = ""
+    rerank_api_key: str = ""
+    rerank_api_base: str | None = None
+    rerank_top_n: int = 12
+
+
+class TemplatesConfig(Base):
+    """Optional Jinja2 templates for response and memory flows."""
+
+    response: str | None = None
+    memory_system: str | None = None
+    memory_prompt: str | None = None
+
+
 class MCPServerConfig(Base):
     """MCP server connection configuration (stdio or HTTP)."""
 
@@ -152,6 +176,7 @@ class ToolsConfig(Base):
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     uploads: UploadsConfig = Field(default_factory=UploadsConfig)
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     audit_enabled: bool = True
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
@@ -165,6 +190,7 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
 
     @property
     def workspace_path(self) -> Path:

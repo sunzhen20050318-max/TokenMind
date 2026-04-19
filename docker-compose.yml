@@ -3,11 +3,11 @@ x-common-config: &common-config
     context: .
     dockerfile: Dockerfile
   volumes:
-    - ~/.sun_agent:/root/.sun_agent
+    - ~/.tokenmind:/root/.tokenmind
 
 services:
-  sun_agent-gateway:
-    container_name: sun_agent-gateway
+  tokenmind-gateway:
+    container_name: tokenmind-gateway
     <<: *common-config
     command: ["gateway"]
     restart: unless-stopped
@@ -22,7 +22,7 @@ services:
           cpus: '0.25'
           memory: 256M
   
-  sun_agent-cli:
+  tokenmind-cli:
     <<: *common-config
     profiles:
       - cli

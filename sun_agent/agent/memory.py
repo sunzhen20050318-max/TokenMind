@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from sun_agent.config.schema import TemplatesConfig
+from sun_agent.templates_engine import TemplateRenderer
 from sun_agent.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
 
 if TYPE_CHECKING:
@@ -76,12 +78,29 @@ class MemoryStore:
     """Two-layer memory: MEMORY.md (long-term facts) + HISTORY.md (grep-searchable log)."""
 
     _MAX_FAILURES_BEFORE_RAW_ARCHIVE = 3
+    _DEFAULT_SYSTEM_PROMPT = (
+        "You are a memory consolidation agent. Call the save_memory tool with your consolidation of the conversation."
+    )
+    _DEFAULT_PROMPT_TEMPLATE = """Process this conversation and call the save_memory tool with your consolidation.
 
-    def __init__(self, workspace: Path):
+## Current Long-term Memory
+{{ current_memory or "(empty)" }}
+
+## Conversation to Process
+{{ conversation }}"""
+
+    def __init__(
+        self,
+        workspace: Path,
+        templates_config: TemplatesConfig | None = None,
+        template_renderer: TemplateRenderer | None = None,
+    ):
         self.memory_dir = ensure_dir(workspace / "memory")
         self.memory_file = self.memory_dir / "MEMORY.md"
         self.history_file = self.memory_dir / "HISTORY.md"
         self._consecutive_failures = 0
+        self.templates_config = templates_config or TemplatesConfig()
+        self.template_renderer = template_renderer or TemplateRenderer()
 
     def read_long_term(self) -> str:
         if self.memory_file.exists():
@@ -90,6 +109,11 @@ class MemoryStore:
 
     def write_long_term(self, content: str) -> None:
         self.memory_file.write_text(content, encoding="utf-8")
+
+    def read_archive(self) -> str:
+        if self.history_file.exists():
+            return self.history_file.read_text(encoding="utf-8")
+        return ""
 
     def append_history(self, entry: str) -> None:
         with open(self.history_file, "a", encoding="utf-8") as f:
@@ -122,16 +146,25 @@ class MemoryStore:
             return True
 
         current_memory = self.read_long_term()
-        prompt = f"""Process this conversation and call the save_memory tool with your consolidation.
-
-## Current Long-term Memory
-{current_memory or "(empty)"}
-
-## Conversation to Process
-{self._format_messages(messages)}"""
+        conversation = self._format_messages(messages)
+        system_prompt = self.template_renderer.render(
+            self.templates_config.memory_system,
+            role_name="memory consolidation agent",
+            current_memory=current_memory,
+            conversation=conversation,
+            message_count=len(messages),
+            model=model,
+        ) or self._DEFAULT_SYSTEM_PROMPT
+        prompt = self.template_renderer.render(
+            self.templates_config.memory_prompt or self._DEFAULT_PROMPT_TEMPLATE,
+            current_memory=current_memory,
+            conversation=conversation,
+            message_count=len(messages),
+            model=model,
+        ) or self._DEFAULT_PROMPT_TEMPLATE.replace("{{ current_memory or \"(empty)\" }}", current_memory or "(empty)").replace("{{ conversation }}", conversation)
 
         chat_messages = [
-            {"role": "system", "content": "You are a memory consolidation agent. Call the save_memory tool with your consolidation of the conversation."},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
 
@@ -219,6 +252,11 @@ class MemoryStore:
         )
 
 
+def split_history_entries(content: str) -> list[str]:
+    """Split HISTORY.md content into visible archive blocks."""
+    return [chunk.strip() for chunk in content.split("\n\n") if chunk.strip()]
+
+
 class MemoryConsolidator:
     """Owns consolidation policy, locking, and session offset updates."""
 
@@ -233,8 +271,14 @@ class MemoryConsolidator:
         context_window_tokens: int,
         build_messages: Callable[..., list[dict[str, Any]]],
         get_tool_definitions: Callable[[], list[dict[str, Any]]],
+        templates_config: TemplatesConfig | None = None,
+        template_renderer: TemplateRenderer | None = None,
     ):
-        self.store = MemoryStore(workspace)
+        self.store = MemoryStore(
+            workspace,
+            templates_config=templates_config,
+            template_renderer=template_renderer,
+        )
         self.provider = provider
         self.model = model
         self.sessions = sessions
@@ -242,6 +286,14 @@ class MemoryConsolidator:
         self._build_messages = build_messages
         self._get_tool_definitions = get_tool_definitions
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+
+    @property
+    def templates_config(self) -> TemplatesConfig:
+        return self.store.templates_config
+
+    @templates_config.setter
+    def templates_config(self, value: TemplatesConfig) -> None:
+        self.store.templates_config = value
 
     def get_lock(self, session_key: str) -> asyncio.Lock:
         """Return the shared consolidation lock for one session."""

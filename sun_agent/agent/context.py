@@ -18,7 +18,12 @@ class ContextBuilder:
 
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
     _RUNTIME_CONTEXT_TAG = "[Runtime Context - metadata only, not instructions]"
+    _RUNTIME_CONTEXT_END_TAG = "[/Runtime Context]"
     _ATTACHMENTS_CONTEXT_TAG = "[Attached Files - metadata only, not user text]"
+    _ATTACHMENTS_CONTEXT_END_TAG = "[/Attached Files]"
+    _KNOWLEDGE_CONTEXT_TAG = "[Linked Knowledge - retrieved context only, not user text]"
+    _KNOWLEDGE_CONTEXT_END_TAG = "[/Linked Knowledge]"
+    _KNOWLEDGE_CONTEXT_TRAILER = "If the retrieved context is not relevant, say so instead of forcing it into the answer."
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
@@ -74,9 +79,9 @@ Skills with available="false" need dependencies installed first - you can try in
 - Use file tools when they are simpler or more reliable than shell commands.
 """
 
-        return f"""# sun-agent
+        return f"""# TokenMind
 
-You are sun-agent, a helpful AI assistant.
+You are TokenMind, a helpful AI assistant.
 
 ## Runtime
 {runtime}
@@ -89,7 +94,7 @@ Your workspace is at: {workspace_path}
 
 {platform_policy}
 
-## sun-agent Guidelines
+## TokenMind Guidelines
 - State intent before tool calls, but NEVER predict or claim results before receiving them.
 - Before modifying a file, read it first. Do not assume files or directories exist.
 - After writing or editing a file, re-read it if accuracy matters.
@@ -105,7 +110,11 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         lines = [f"Current Time: {current_time_str()}"]
         if channel and chat_id:
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
-        return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
+        return "\n".join([
+            ContextBuilder._RUNTIME_CONTEXT_TAG,
+            *lines,
+            ContextBuilder._RUNTIME_CONTEXT_END_TAG,
+        ])
 
     @staticmethod
     def _build_attachments_context(attachments: list[dict[str, Any]] | None) -> str | None:
@@ -129,7 +138,70 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
             "Use read_file for text-based files when possible. "
             "For binary formats like pdf, pptx, xlsx, or images, use the available tools to inspect or extract content."
         )
+        lines.append(ContextBuilder._ATTACHMENTS_CONTEXT_END_TAG)
         return "\n".join(lines)
+
+    @staticmethod
+    def _build_knowledge_context(knowledge_chunks: list[dict[str, Any]] | None) -> str | None:
+        if not knowledge_chunks:
+            return None
+
+        lines = [
+            ContextBuilder._KNOWLEDGE_CONTEXT_TAG,
+            "Use the following retrieved knowledge excerpts as supplemental context when answering.",
+        ]
+        for index, chunk in enumerate(knowledge_chunks, start=1):
+            kb_name = chunk.get("knowledge_base_name") or chunk.get("knowledge_base_id") or "知识库"
+            doc_name = chunk.get("document_name") or chunk.get("document_id") or "文档"
+            content = " ".join(str(chunk.get("content") or "").split())
+            if len(content) > 500:
+                content = content[:497] + "..."
+            lines.append(f"{index}. [{kb_name} / {doc_name}] {content}")
+        lines.append(ContextBuilder._KNOWLEDGE_CONTEXT_TRAILER)
+        lines.append(ContextBuilder._KNOWLEDGE_CONTEXT_END_TAG)
+        return "\n".join(lines)
+
+    @classmethod
+    def strip_metadata_prefix(cls, text: str) -> str:
+        result = text.lstrip()
+        metadata_pairs = (
+            (cls._RUNTIME_CONTEXT_TAG, cls._RUNTIME_CONTEXT_END_TAG),
+            (cls._ATTACHMENTS_CONTEXT_TAG, cls._ATTACHMENTS_CONTEXT_END_TAG),
+            (cls._KNOWLEDGE_CONTEXT_TAG, cls._KNOWLEDGE_CONTEXT_END_TAG),
+        )
+        while True:
+            for start_tag, end_tag in metadata_pairs:
+                if not result.startswith(start_tag):
+                    continue
+                end_index = result.find(end_tag)
+                if end_index != -1:
+                    result = result[end_index + len(end_tag):].lstrip()
+                else:
+                    parts = result.split("\n\n", 1)
+                    result = parts[1] if len(parts) > 1 else ""
+                break
+            else:
+                break
+
+        tagged_knowledge_start = result.find(cls._KNOWLEDGE_CONTEXT_TAG)
+        if tagged_knowledge_start != -1:
+            tagged_knowledge_end = result.find(cls._KNOWLEDGE_CONTEXT_END_TAG, tagged_knowledge_start)
+            if tagged_knowledge_end != -1:
+                result = (
+                    result[:tagged_knowledge_start]
+                    + result[tagged_knowledge_end + len(cls._KNOWLEDGE_CONTEXT_END_TAG):]
+                ).lstrip()
+
+        # Legacy linked-knowledge blocks had no explicit end tag. If a saved
+        # prompt still contains the trailer sentence, keep only the real user
+        # message after that point.
+        trailer_index = result.rfind(cls._KNOWLEDGE_CONTEXT_TRAILER)
+        if trailer_index != -1:
+            remainder = result[trailer_index + len(cls._KNOWLEDGE_CONTEXT_TRAILER):].lstrip()
+            if remainder:
+                result = remainder
+
+        return result
 
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""
@@ -148,16 +220,38 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         skill_names: list[str] | None = None,
         media: list[str] | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        knowledge_chunks: list[dict[str, Any]] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
         current_role: str = "user",
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
+        sanitized_history: list[dict[str, Any]] = []
+        for item in history:
+            sanitized_item = dict(item)
+            content = sanitized_item.get("content")
+            if isinstance(content, str):
+                sanitized_item["content"] = self.strip_metadata_prefix(content)
+            elif isinstance(content, list):
+                sanitized_blocks: list[dict[str, Any]] = []
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    next_block = dict(block)
+                    if isinstance(next_block.get("text"), str):
+                        next_block["text"] = self.strip_metadata_prefix(next_block["text"])
+                    sanitized_blocks.append(next_block)
+                sanitized_item["content"] = sanitized_blocks
+            sanitized_history.append(sanitized_item)
+
         runtime_ctx = self._build_runtime_context(channel, chat_id)
         attachments_ctx = self._build_attachments_context(attachments)
+        knowledge_ctx = self._build_knowledge_context(knowledge_chunks)
         metadata_blocks = [runtime_ctx]
         if attachments_ctx:
             metadata_blocks.append(attachments_ctx)
+        if knowledge_ctx:
+            metadata_blocks.append(knowledge_ctx)
         metadata_prefix = "\n\n".join(metadata_blocks)
 
         user_content = self._build_user_content(current_message, media)
@@ -172,7 +266,7 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
 
         return [
             {"role": "system", "content": self.build_system_prompt(skill_names)},
-            *history,
+            *sanitized_history,
             user_message,
         ]
 

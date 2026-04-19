@@ -1,0 +1,56 @@
+.shell-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 32px 8px;
+  background: transparent;
+}
+
+.shell-header__meta {
+  min-width: 0;
+}
+
+.shell-header__model {
+  color: #f2f2f5;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.shell-header__session {
+  margin-top: 5px;
+  color: #868892;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-header__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  color: #84868f;
+  font-size: 12px;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.shell-header__status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #676973;
+}
+
+.shell-header__status-dot.is-online {
+  background: #f3f4f6;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+
+.shell-header__status-dot.is-offline {
+  background: #7a7d86;
+}

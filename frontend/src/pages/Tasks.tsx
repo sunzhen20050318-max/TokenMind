@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { BrandMark } from '../components/BrandMark';
+import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
 import type { Session } from '../types';
 import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
@@ -7,6 +9,7 @@ import './tasks.css';
 
 type ScheduleKind = 'every' | 'cron' | 'at';
 type FixedCronPreset = 'daily' | 'weekdays' | 'weekly' | 'custom';
+type TasksSection = 'overview' | 'jobs' | 'create' | 'delivery';
 
 interface NoticeState {
   tone: 'success' | 'error';
@@ -22,6 +25,16 @@ interface TasksModalProps {
 
 const TASK_RESULTS_SESSION_ID = 'web:task-results';
 const TASK_RESULTS_SESSION_TITLE = '任务结果';
+const TASK_SECTION_META: Array<{
+  id: TasksSection;
+  title: string;
+  copy: string;
+}> = [
+  { id: 'overview', title: '概览', copy: '查看自动化当前的运行状态、总量和下一次执行。' },
+  { id: 'jobs', title: '任务列表', copy: '统一查看、启停、立即执行和删除已有任务。' },
+  { id: 'create', title: '新建任务', copy: '把重复动作整理成稳定的自动化任务。' },
+  { id: 'delivery', title: '结果投递', copy: '决定任务执行后把结果发到哪个会话。' },
+];
 
 const WEEKDAY_OPTIONS = [
   { value: '1', label: '周一' },
@@ -125,6 +138,7 @@ export const TasksModal: React.FC<TasksModalProps> = ({
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [atValue, setAtValue] = useState(defaultAtValue());
   const [selectedTargetSessionId, setSelectedTargetSessionId] = useState(TASK_RESULTS_SESSION_ID);
+  const [selectedSection, setSelectedSection] = useState<TasksSection>('overview');
 
   const availableTargetSessions = useMemo(
     () =>
@@ -179,6 +193,18 @@ export const TasksModal: React.FC<TasksModalProps> = ({
     () => buildCronPreview(fixedCronPreset, fixedTime, timezone, weeklyDay),
     [fixedCronPreset, fixedTime, timezone, weeklyDay]
   );
+
+  const currentSectionMeta =
+    TASK_SECTION_META.find((section) => section.id === selectedSection) || TASK_SECTION_META[0];
+
+  const navigateTo = (section: TasksSection) => {
+    setSelectedSection(section);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`tasks-section-${section}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   const loadData = async (silent = false) => {
     if (!silent) {
@@ -304,21 +330,65 @@ export const TasksModal: React.FC<TasksModalProps> = ({
       }}
     >
       <div className="tasks-modal" onClick={(event) => event.stopPropagation()}>
-        <header className="tasks-header">
-          <div>
-            <div className="tasks-kicker">automation</div>
-            <h2>定时任务</h2>
-            <p>在这里创建、管理和手动触发自动化任务，让 SUN-AGENT 按计划主动工作。</p>
+        <aside className="tasks-sidebar">
+          <div className="tasks-profile-card">
+            <div className="tasks-profile-card__avatar">
+              <BrandMark size={18} alt="TokenMind 标志" variant="icon" />
+            </div>
+            <div className="tasks-profile-card__body">
+              <div className="tasks-profile-card__name">TokenMind</div>
+              <div className="tasks-profile-card__role">定时任务</div>
+            </div>
+            <div className="tasks-profile-card__chevron" aria-hidden="true">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <path d="M5.5 3.5 10 8l-4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
           </div>
-          <button className="tasks-close" onClick={onClose} type="button">
-            关闭
-          </button>
-        </header>
 
-        <div className="tasks-content">
+          <div className="tasks-sidebar-divider" />
+
+          <div className="tasks-sidebar-group-label">任务视图</div>
+
+          <nav className="tasks-nav">
+            {TASK_SECTION_META.map((section) => (
+              <button
+                key={section.id}
+                className={`tasks-nav-button ${selectedSection === section.id ? 'is-active' : ''}`}
+                onClick={() => navigateTo(section.id)}
+                type="button"
+              >
+                <span className="tasks-nav-title">{section.title}</span>
+                <span className="tasks-nav-copy">{section.copy}</span>
+              </button>
+            ))}
+          </nav>
+
+          <button className="tasks-sidebar-help" type="button">
+            <span>了解自动化建议</span>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10.5 5.5 4.5 11.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </aside>
+
+        <section className="tasks-main">
+          <header className="tasks-header">
+            <div>
+              <div className="tasks-kicker">自动化</div>
+              <h2>{currentSectionMeta.title}</h2>
+              <p>{currentSectionMeta.copy}</p>
+            </div>
+            <button aria-label="关闭定时任务" className="tasks-close" onClick={onClose} type="button">
+              <CloseIcon />
+            </button>
+          </header>
+
+          <div className="tasks-content">
           {notice ? <div className={`tasks-notice ${notice.tone}`}>{notice.text}</div> : null}
 
-          <section className="tasks-metrics">
+          <section className="tasks-metrics" id="tasks-section-overview">
             <div className="tasks-metric-card">
               <div className="tasks-metric-label">运行状态</div>
               <div className="tasks-metric-value">{status?.enabled ? '运行中' : '未启动'}</div>
@@ -336,7 +406,7 @@ export const TasksModal: React.FC<TasksModalProps> = ({
           </section>
 
           <div className="tasks-layout">
-            <section className="tasks-panel">
+            <section className="tasks-panel" id="tasks-section-jobs">
               <div className="tasks-panel-head">
                 <div>
                   <h3>现有任务</h3>
@@ -419,7 +489,7 @@ export const TasksModal: React.FC<TasksModalProps> = ({
               )}
             </section>
 
-            <section className="tasks-panel">
+            <section className="tasks-panel" id="tasks-section-create">
               <div className="tasks-panel-head">
                 <div>
                   <h3>创建任务</h3>
@@ -593,7 +663,7 @@ export const TasksModal: React.FC<TasksModalProps> = ({
                   </select>
                 </label>
 
-                <div className="tasks-deliver-box">
+                <div className="tasks-deliver-box" id="tasks-section-delivery">
                   <div>
                     <strong>任务结果投递</strong>
                     <span>
@@ -620,6 +690,7 @@ export const TasksModal: React.FC<TasksModalProps> = ({
             </section>
           </div>
         </div>
+        </section>
       </div>
     </div>
   );

@@ -125,6 +125,33 @@ class TestDispatch:
         await asyncio.gather(t1, t2)
         assert order == ["start-a", "end-a", "start-b", "end-b"]
 
+    @pytest.mark.asyncio
+    async def test_dispatch_allows_different_sessions_to_run_concurrently(self):
+        from sun_agent.bus.events import InboundMessage, OutboundMessage
+
+        loop, _ = _make_loop()
+        entered: list[str] = []
+        release = asyncio.Event()
+
+        async def mock_process(m, **kwargs):
+            entered.append(m.session_key)
+            if len(entered) == 2:
+                release.set()
+            await release.wait()
+            return OutboundMessage(channel=m.channel, chat_id=m.chat_id, content=m.content)
+
+        loop._process_message = mock_process
+        msg1 = InboundMessage(channel="test", sender_id="u1", chat_id="c1", content="a")
+        msg2 = InboundMessage(channel="test", sender_id="u1", chat_id="c2", content="b")
+
+        t1 = asyncio.create_task(loop._dispatch(msg1))
+        t2 = asyncio.create_task(loop._dispatch(msg2))
+
+        await asyncio.wait_for(release.wait(), timeout=0.1)
+        await asyncio.gather(t1, t2)
+
+        assert entered == ["test:c1", "test:c2"]
+
 
 class TestSubagentCancellation:
     @pytest.mark.asyncio

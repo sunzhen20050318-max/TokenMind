@@ -1,4 +1,4 @@
-"""CLI commands for sun_agent."""
+"""CLI commands for TokenMind."""
 
 import asyncio
 from contextlib import contextmanager, nullcontext
@@ -37,8 +37,8 @@ from sun_agent.config.schema import Config
 from sun_agent.utils.helpers import sync_workspace_templates
 
 app = typer.Typer(
-    name="sun_agent",
-    help=f"{__logo__} sun_agent - Personal AI Assistant",
+    name="tokenmind",
+    help=f"{__logo__} TokenMind - Personal AI Assistant",
     no_args_is_help=True,
 )
 
@@ -136,7 +136,7 @@ def _print_agent_response(response: str, render_markdown: bool) -> None:
     content = response or ""
     body = Markdown(content) if render_markdown else Text(content)
     console.print()
-    console.print(f"[cyan]{__logo__} sun_agent[/cyan]")
+    console.print(f"[cyan]{__logo__} TokenMind[/cyan]")
     console.print(body)
     console.print()
 
@@ -159,7 +159,7 @@ async def _print_interactive_response(response: str, render_markdown: bool) -> N
         ansi = _render_interactive_ansi(
             lambda c: (
                 c.print(),
-                c.print(f"[cyan]{__logo__} sun_agent[/cyan]"),
+                c.print(f"[cyan]{__logo__} TokenMind[/cyan]"),
                 c.print(Markdown(content) if render_markdown else Text(content)),
                 c.print(),
             )
@@ -174,7 +174,7 @@ class _ThinkingSpinner:
 
     def __init__(self, enabled: bool):
         self._spinner = console.status(
-            "[dim]sun_agent is thinking...[/dim]", spinner="dots"
+            "[dim]TokenMind is thinking...[/dim]", spinner="dots"
         ) if enabled else None
         self._active = False
 
@@ -241,7 +241,7 @@ async def _read_interactive_input_async() -> str:
 
 def version_callback(value: bool):
     if value:
-        console.print(f"{__logo__} sun_agent v{__version__}")
+        console.print(f"{__logo__} TokenMind v{__version__}")
         raise typer.Exit()
 
 
@@ -251,7 +251,7 @@ def main(
         None, "--version", "-v", callback=version_callback, is_eager=True
     ),
 ):
-    """sun_agent - Personal AI Assistant."""
+    """TokenMind - Personal AI Assistant."""
     pass
 
 
@@ -266,7 +266,7 @@ def onboard(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
     wizard: bool = typer.Option(False, "--wizard", help="Use interactive wizard"),
 ):
-    """Initialize sun_agent configuration and workspace."""
+    """Initialize TokenMind configuration and workspace."""
     from sun_agent.config.loader import get_config_path, load_config, save_config, set_config_path
     from sun_agent.config.schema import Config
 
@@ -320,7 +320,7 @@ def onboard(
             console.print(f"[green]✓[/green] Config saved at {config_path}")
         except Exception as e:
             console.print(f"[red]✗[/red] Error during configuration: {e}")
-            console.print("[yellow]Please run 'sun_agent onboard' again to complete setup.[/yellow]")
+            console.print("[yellow]Please run 'tokenmind onboard' again to complete setup.[/yellow]")
             raise typer.Exit(1)
     _onboard_plugins(config_path)
 
@@ -332,13 +332,13 @@ def onboard(
 
     sync_workspace_templates(workspace_path)
 
-    agent_cmd = 'sun_agent agent -m "Hello!"'
-    gateway_cmd = "sun_agent gateway"
+    agent_cmd = 'tokenmind agent -m "Hello!"'
+    gateway_cmd = "tokenmind gateway"
     if config:
         agent_cmd += f" --config {config_path}"
         gateway_cmd += f" --config {config_path}"
 
-    console.print(f"\n{__logo__} sun_agent is ready!")
+    console.print(f"\n{__logo__} TokenMind is ready!")
     console.print("\nNext steps:")
     if wizard:
         console.print(f"  1. Chat: [cyan]{agent_cmd}[/cyan]")
@@ -347,7 +347,7 @@ def onboard(
         console.print(f"  1. Add your API key to [cyan]{config_path}[/cyan]")
         console.print("     Get one at: https://openrouter.ai/keys")
         console.print(f"  2. Chat: [cyan]{agent_cmd}[/cyan]")
-    console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/sun_agent#-chat-apps[/dim]")
+    console.print("\n[dim]Want Telegram/WhatsApp? See the chat app setup section in README.[/dim]")
 
 
 def _merge_missing_defaults(existing: Any, defaults: Any) -> Any:
@@ -408,7 +408,7 @@ def _make_provider(config: Config):
     elif backend == "anthropic":
         if not p or not p.api_key:
             console.print("[red]Error: Anthropic requires api_key.[/red]")
-            console.print("Set it in ~/.sun_agent/config.json under providers.anthropic section")
+            console.print("Set it in ~/.tokenmind/config.json under providers.anthropic section")
             raise typer.Exit(1)
         provider = AnthropicProvider(
             api_key=p.api_key,
@@ -420,7 +420,7 @@ def _make_provider(config: Config):
     elif backend == "azure_openai":
         if not p or not p.api_key or not p.api_base:
             console.print("[red]Error: Azure OpenAI requires api_key and api_base.[/red]")
-            console.print("Set them in ~/.sun_agent/config.json under providers.azure_openai section")
+            console.print("Set them in ~/.tokenmind/config.json under providers.azure_openai section")
             console.print("Use the model field to specify the deployment name.")
             raise typer.Exit(1)
         provider = AzureOpenAIProvider(
@@ -437,7 +437,7 @@ def _make_provider(config: Config):
             and not (spec and (spec.is_oauth or spec.is_local or spec.is_direct))
         ):
             console.print("[red]Error: No API key configured.[/red]")
-            console.print("Set one in ~/.sun_agent/config.json under providers section")
+            console.print("Set one in ~/.tokenmind/config.json under providers section")
             raise typer.Exit(1)
         provider = OpenAICompatProvider(
             api_key=p.api_key if p else None,
@@ -506,7 +506,7 @@ def gateway(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
 ):
-    """Start the sun_agent gateway."""
+    """Start the TokenMind gateway."""
     from sun_agent.agent.loop import AgentLoop
     from sun_agent.bus.queue import MessageBus
     from sun_agent.channels.manager import ChannelManager
@@ -524,7 +524,7 @@ def gateway(
     config = _load_runtime_config(config, workspace)
     port = port if port is not None else config.gateway.port
 
-    console.print(f"{__logo__} Starting sun_agent gateway version {__version__} on port {port}...")
+    console.print(f"{__logo__} Starting TokenMind gateway version {__version__} on port {port}...")
     sync_workspace_templates(config.workspace_path)
     bus = MessageBus()
     provider = _make_provider(config)
@@ -545,11 +545,13 @@ def gateway(
         web_search_config=config.tools.web.search,
         web_proxy=config.tools.web.proxy or None,
         exec_config=config.tools.exec,
+        knowledge_config=config.tools.knowledge,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        templates_config=config.templates,
         config_path=get_config_path(),
     )
 
@@ -694,7 +696,7 @@ def web(
     workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
 ):
-    """Start the sun_agent Web UI server."""
+    """Start the TokenMind Web UI server."""
     from loguru import logger
     import uvicorn
     from sun_agent.agent.loop import AgentLoop
@@ -711,7 +713,7 @@ def web(
     from sun_agent.server.websocket.manager import ConnectionManager
 
     config = _load_runtime_config(config, workspace)
-    console.print(f"{__logo__} Starting sun_agent Web UI on port {port}...")
+    console.print(f"{__logo__} Starting TokenMind Web UI on port {port}...")
     sync_workspace_templates(config.workspace_path)
 
     bus = MessageBus()
@@ -733,11 +735,13 @@ def web(
         web_search_config=config.tools.web.search,
         web_proxy=config.tools.web.proxy or None,
         exec_config=config.tools.exec,
+        knowledge_config=config.tools.knowledge,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        templates_config=config.templates,
         config_path=get_config_path(),
     )
 
@@ -875,7 +879,7 @@ def agent(
     workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Config file path"),
     markdown: bool = typer.Option(True, "--markdown/--no-markdown", help="Render assistant output as Markdown"),
-    logs: bool = typer.Option(False, "--logs/--no-logs", help="Show sun_agent runtime logs during chat"),
+    logs: bool = typer.Option(False, "--logs/--no-logs", help="Show TokenMind runtime logs during chat"),
 ):
     """Interact with the agent directly."""
     from loguru import logger
@@ -911,10 +915,12 @@ def agent(
         web_search_config=config.tools.web.search,
         web_proxy=config.tools.web.proxy or None,
         exec_config=config.tools.exec,
+        knowledge_config=config.tools.knowledge,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        templates_config=config.templates,
         config_path=get_config_path(),
     )
 
@@ -1120,7 +1126,7 @@ def _get_bridge_dir() -> Path:
 
     if not source:
         console.print("[red]Bridge source not found.[/red]")
-        console.print("Try reinstalling: pip install --force-reinstall sun_agent")
+        console.print("Try reinstalling: pip install --force-reinstall tokenmind-ai")
         raise typer.Exit(1)
 
     console.print(f"{__logo__} Setting up bridge...")
@@ -1231,14 +1237,14 @@ def plugins_list():
 
 @app.command()
 def status():
-    """Show sun_agent status."""
+    """Show TokenMind status."""
     from sun_agent.config.loader import get_config_path, load_config
 
     config_path = get_config_path()
     config = load_config()
     workspace = config.workspace_path
 
-    console.print(f"{__logo__} sun_agent Status\n")
+    console.print(f"{__logo__} TokenMind Status\n")
 
     console.print(f"Config: {config_path} {'[green]✓[/green]' if config_path.exists() else '[red]✗[/red]'}")
     console.print(f"Workspace: {workspace} {'[green]✓[/green]' if workspace.exists() else '[red]✗[/red]'}")

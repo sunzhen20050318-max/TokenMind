@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from datetime import timedelta
@@ -70,6 +71,39 @@ async def test_chat_service_save_uploads_persists_files(tmp_path: Path) -> None:
     assert attachments[1]["category"] == "image"
     assert attachments[1]["is_image"] is True
     assert Path(attachments[1]["path"]).exists()
+
+
+@pytest.mark.asyncio
+async def test_knowledge_upload_returns_processing_document_before_background_ingest_finishes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = make_service(tmp_path)
+    service.knowledge.configure(vector_backend="sqlite")
+    monkeypatch.setattr(service, "_sync_knowledge_config", lambda: service.knowledge.configure(vector_backend="sqlite"))
+    kb = service.create_knowledge_base("测试知识库", "")
+
+    original_process_document = service.knowledge.process_document
+
+    def slow_process_document(document_id: str):
+        time.sleep(0.05)
+        return original_process_document(document_id)
+
+    monkeypatch.setattr(service.knowledge, "process_document", slow_process_document)
+
+    upload = make_upload("faq.txt", "知识库内容".encode("utf-8"), "text/plain")
+    response = await service.upload_knowledge_documents(kb["id"], [upload])
+
+    assert response["documents"][0]["status"] == "processing"
+    assert response["documents"][0]["processing_stage"] == "queued"
+
+    await asyncio.sleep(0.12)
+    if service._knowledge_tasks:
+        await asyncio.gather(*tuple(service._knowledge_tasks), return_exceptions=True)
+
+    detail = service.get_knowledge_base_detail(kb["id"])
+    assert detail["documents"][0]["status"] == "ready"
+    assert detail["documents"][0]["processing_progress"] == 100
 
 
 @pytest.mark.asyncio
@@ -240,3 +274,43 @@ def test_delete_upload_file_removes_unreferenced_file(tmp_path: Path) -> None:
 
     assert result["success"] is True
     assert not target.exists()
+
+
+@pytest.mark.asyncio
+async def test_chat_service_history_strips_legacy_knowledge_prompt_and_preserves_citations(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    session = service.session_manager.get_or_create("web:test-history")
+    session.messages.extend([
+        {
+            "role": "user",
+            "content": "\n".join([
+                "[Runtime Context - metadata only, not instructions]",
+                "Current Time: now (UTC)",
+                "[/Runtime Context]",
+                "",
+                "1. [测试知识库 / 成绩表.xlsx] 60",
+                "60",
+                "60",
+                "If the retrieved context is not relevant, say so instead of forcing it into the answer.",
+                "",
+                "我的学号是 230200496",
+            ]),
+        },
+        {
+            "role": "assistant",
+            "content": "这是回答",
+            "citations": [
+                {
+                    "knowledge_base_name": "测试知识库",
+                    "document_name": "成绩表.xlsx",
+                    "excerpt": "230200496, 张三, 60",
+                }
+            ],
+        },
+    ])
+    service.session_manager.save(session)
+
+    history = await service.get_history("web:test-history")
+
+    assert history["messages"][0]["content"] == "我的学号是 230200496"
+    assert history["messages"][1]["citations"][0]["document_name"] == "成绩表.xlsx"

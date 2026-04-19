@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from sun_agent.agent.memory import MemoryStore
+from sun_agent.config.schema import TemplatesConfig
 from sun_agent.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 
@@ -431,6 +432,32 @@ class TestMemoryConsolidationTypeHandling:
 
         assert result is False
         assert not store.history_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_consolidation_uses_custom_templates_when_configured(self, tmp_path: Path) -> None:
+        """Custom memory templates should render into the consolidation call without changing save behavior."""
+        store = MemoryStore(
+            tmp_path,
+            templates_config=TemplatesConfig(
+                memory_system="You are {{ role_name }}.",
+                memory_prompt="MEM={{ current_memory or '(empty)' }}\nCOUNT={{ message_count }}\n{{ conversation }}",
+            ),
+        )
+        provider = AsyncMock()
+        provider.chat_with_retry = AsyncMock(
+            return_value=_make_tool_response(
+                history_entry="[2026-01-01] Template path worked.",
+                memory_update="# Memory\nTemplated.",
+            )
+        )
+        messages = _make_messages(message_count=3)
+
+        result = await store.consolidate(messages, provider, "test-model")
+
+        assert result is True
+        _, kwargs = provider.chat_with_retry.await_args
+        assert kwargs["messages"][0]["content"] == "You are memory consolidation agent."
+        assert "COUNT=3" in kwargs["messages"][1]["content"]
 
     @pytest.mark.asyncio
     async def test_raw_archive_after_consecutive_failures(self, tmp_path: Path) -> None:

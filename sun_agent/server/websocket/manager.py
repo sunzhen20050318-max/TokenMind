@@ -1,4 +1,4 @@
-"""WebSocket connection manager for sun_agent Web UI."""
+"""WebSocket connection manager for TokenMind Web UI."""
 
 from __future__ import annotations
 

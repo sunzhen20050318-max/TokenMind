@@ -1,6 +1,6 @@
-# sun-agent Skills
+# TokenMind Skills
 
-This directory contains built-in skills that extend sun-agent's capabilities.
+This directory contains built-in skills that extend TokenMind's capabilities.
 
 ## Skill Format
 

@@ -1,5 +1,5 @@
 """
-sun_agent - A lightweight AI agent framework
+TokenMind - A lightweight AI agent framework
 """
 
 __version__ = "0.1.4.post5"

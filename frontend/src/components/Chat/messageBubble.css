@@ -1,0 +1,244 @@
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 0;
+  box-sizing: border-box;
+  animation: messageFadeIn 0.22s ease-out;
+}
+
+.message-row.is-user {
+  justify-content: flex-end;
+}
+
+.message-row__avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message-row__avatar.is-assistant {
+  background: transparent;
+  border: none;
+  justify-content: center;
+}
+
+.message-row__avatar.is-user {
+  background: #ffffff;
+  margin-right: -24px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+}
+
+.message-row__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.message-row__assistant-mark {
+  display: block;
+  opacity: 0.96;
+}
+
+.message-row.is-user .message-row__body {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message-bubble {
+  max-width: min(100%, 856px);
+  color: #ececef;
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.message-bubble.is-user {
+  max-width: min(84%, 784px);
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #ffffff;
+  color: #111214;
+  border: 1px solid #e4e6ea;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.12);
+}
+
+.message-bubble.is-assistant {
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #1d1d21;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.message-markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.message-markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.message-markdown li > p {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.message-bubble__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.message-bubble__citations {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.message-bubble__citations-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.message-bubble__citations-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8f939d;
+}
+
+.message-bubble__citations-chevron {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+  color: #8f939d;
+  transform: rotate(0deg);
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.message-bubble__citations-chevron.is-expanded {
+  transform: rotate(90deg);
+  color: #c9ccd3;
+}
+
+.message-bubble__citations-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.message-bubble__citations:not(.is-expanded) .message-bubble__citations-list {
+  display: none;
+}
+
+.message-bubble__citation-card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.message-bubble__citation-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #e8eaee;
+  margin-bottom: 4px;
+}
+
+.message-bubble__citation-kb {
+  font-weight: 700;
+}
+
+.message-bubble__citation-separator,
+.message-bubble__citation-doc {
+  color: #a0a4ad;
+}
+
+.message-bubble__citation-excerpt {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #b8bcc5;
+}
+
+.message-bubble__embedded-toolchain {
+  margin-bottom: 12px;
+}
+
+.message-bubble__attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.message-bubble__attachment.is-user {
+  background: #f3f4f6;
+  border: 1px solid #e3e5e8;
+  color: #1b1d20;
+}
+
+.message-bubble__attachment.is-assistant {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #d9dbe0;
+}
+
+.message-bubble__attachment-name {
+  font-weight: 600;
+}
+
+.message-bubble__attachment-type {
+  color: #8b8e95;
+  text-transform: capitalize;
+}
+
+.message-bubble__cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background-color: #8d8f95;
+  opacity: 0.9;
+  animation: messageCursorBlink 1s steps(1) infinite;
+}
+
+@keyframes messageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes messageCursorBlink {
+  50% {
+    opacity: 0;
+  }
+}

@@ -1,4 +1,6 @@
-from sun_agent.session.manager import Session
+from pathlib import Path
+
+from sun_agent.session.manager import Session, SessionManager
 
 
 def _assert_no_orphans(history: list[dict]) -> None:
@@ -144,3 +146,26 @@ def test_window_cuts_mid_tool_group():
     # leaving orphan tool results for split_a at the front.
     history = session.get_history(max_messages=6)
     _assert_no_orphans(history)
+
+
+def test_session_manager_sanitizes_legacy_knowledge_metadata_on_load(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True)
+    manager = SessionManager(workspace)
+    session = Session(key="web:test")
+    session.messages.append(
+        {
+            "role": "user",
+            "content": (
+                "[Linked Knowledge - retrieved context only, not user text]\n"
+                "1. [测试知识库 / score.xlsx] 230200496 62\n\n"
+                "If the retrieved context is not relevant, say so instead of forcing it into the answer.\n\n"
+                "我的学号是230200496"
+            ),
+        }
+    )
+    manager.save(session)
+    manager.invalidate("web:test")
+
+    reloaded = manager.get_or_create("web:test")
+    assert reloaded.messages[0]["content"] == "我的学号是230200496"

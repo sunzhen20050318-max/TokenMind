@@ -30,6 +30,7 @@ async def test_get_config_returns_extended_sections(temp_config_path):
     config.providers.openai.api_key = "sk-test-12345678"
     config.providers.openai.default_model = "gpt-4.1"
     config.tools.web.search.api_key = "search-secret-9876"
+    config.templates.response = "{{ content }}"
     config.tools.mcp_servers["docs"] = MCPServerConfig(
         type="stdio",
         command="npx",
@@ -47,9 +48,11 @@ async def test_get_config_returns_extended_sections(temp_config_path):
     assert response.tools["exec"]["confirm_high_risk"] is True
     assert response.tools["exec"]["approval_timeout_s"] == 300
     assert response.tools["uploads"]["max_file_mb"] == 50
+    assert response.tools["knowledge"]["vector_backend"] == "qdrant"
     assert response.tools["audit_enabled"] is True
     assert response.tools["mcp_servers"]["docs"]["command"] == "npx"
     assert response.runtime["gateway"]["heartbeat"]["enabled"] is True
+    assert response.templates["response"] == "{{ content }}"
 
 
 @pytest.mark.asyncio
@@ -113,9 +116,11 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
         ExecToolConfigUpdate,
         GatewayConfigUpdate,
         HeartbeatConfigUpdate,
+        KnowledgeConfigUpdate,
         MCPServerConfigUpdate,
         ProviderConfigUpdate,
         RuntimeConfigUpdate,
+        TemplatesConfigUpdate,
         ToolsConfigUpdate,
         UploadsConfigUpdate,
         WebSearchConfigUpdate,
@@ -124,6 +129,7 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
         update_agent_config,
         update_provider_config,
         update_runtime_config,
+        update_templates_config,
         update_tools_config,
         upsert_mcp_server,
     )
@@ -173,6 +179,15 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
                 retention_days=21,
                 cleanup_interval_hours=6,
             ),
+            knowledge=KnowledgeConfigUpdate(
+                vector_backend="sqlite",
+                chunk_size=1024,
+                chunk_overlap=160,
+                top_k=8,
+                embedding_model="text-embedding-3-small",
+                embedding_api_key="embed-secret",
+                embedding_api_base="https://embed.example/v1",
+            ),
             audit_enabled=False,
         )
     )
@@ -184,6 +199,13 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
                 port=8080,
                 heartbeat=HeartbeatConfigUpdate(enabled=False, interval_s=120),
             ),
+        )
+    )
+    await update_templates_config(
+        TemplatesConfigUpdate(
+            response="{{ content }}",
+            memory_system="You are {{ role_name }}.",
+            memory_prompt="COUNT={{ message_count }}",
         )
     )
     await upsert_mcp_server(
@@ -213,9 +235,17 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
     assert config.tools.uploads.max_total_mb == 2048
     assert config.tools.uploads.retention_days == 21
     assert config.tools.uploads.cleanup_interval_hours == 6
+    assert config.tools.knowledge.chunk_size == 1024
+    assert config.tools.knowledge.chunk_overlap == 160
+    assert config.tools.knowledge.top_k == 8
+    assert config.tools.knowledge.embedding_model == "text-embedding-3-small"
+    assert config.tools.knowledge.embedding_api_base == "https://embed.example/v1"
     assert config.tools.audit_enabled is False
     assert config.channels.send_progress is False
     assert config.gateway.heartbeat.interval_s == 120
+    assert config.templates.response == "{{ content }}"
+    assert config.templates.memory_system == "You are {{ role_name }}."
+    assert config.templates.memory_prompt == "COUNT={{ message_count }}"
     assert config.tools.mcp_servers["filesystem"].env["ROOT"] == "D:/project"
 
     await delete_mcp_server("filesystem")

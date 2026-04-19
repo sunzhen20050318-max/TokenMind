@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { BrandMark } from '../components/BrandMark';
+import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
 import type { StorageFileItem, StorageOverviewResponse } from '../types/storage';
 import { useChatStore } from '../stores/chatStore';
 import './storage.css';
 
 type FilterMode = 'all' | 'referenced' | 'orphan';
+type StorageSection = 'overview' | 'files' | 'cleanup' | 'quota';
 
 interface NoticeState {
   tone: 'success' | 'error';
@@ -14,6 +17,17 @@ interface NoticeState {
 interface StorageModalProps {
   onClose: () => void;
 }
+
+const STORAGE_SECTION_META: Array<{
+  id: StorageSection;
+  title: string;
+  copy: string;
+}> = [
+  { id: 'overview', title: '概览', copy: '查看存储占用、配额和未清理文件的整体状态。' },
+  { id: 'files', title: '文件列表', copy: '按引用状态筛选上传文件，并快速跳回引用会话。' },
+  { id: 'cleanup', title: '清理策略', copy: '了解保留天数、自动清理周期和手动清理动作。' },
+  { id: 'quota', title: '配额说明', copy: '查看单文件上限、总配额和当前可用空间。' },
+];
 
 function formatBytes(size: number): string {
   if (!Number.isFinite(size) || size <= 0) {
@@ -52,6 +66,7 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
   const [query, setQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [actionPath, setActionPath] = useState<string | null>(null);
+  const [selectedSection, setSelectedSection] = useState<StorageSection>('overview');
 
   const loadData = async (silent = false) => {
     if (!silent) {
@@ -106,6 +121,18 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
     return Math.min(100, Math.round((overview.summary.used_bytes / overview.summary.quota_bytes) * 100));
   }, [overview]);
 
+  const currentSectionMeta =
+    STORAGE_SECTION_META.find((section) => section.id === selectedSection) || STORAGE_SECTION_META[0];
+
+  const navigateTo = (section: StorageSection) => {
+    setSelectedSection(section);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`storage-section-${section}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   const handleCleanup = async () => {
     setActionPath('__cleanup__');
     try {
@@ -154,30 +181,74 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
       }}
     >
       <div className="storage-modal" onClick={(event) => event.stopPropagation()}>
-        <header className="storage-header">
-          <div>
-            <div className="storage-kicker">storage center</div>
-            <h2>文件中心</h2>
-            <p>集中查看上传文件、空间占用、会话引用关系，以及当前自动清理策略。</p>
+        <aside className="storage-sidebar">
+          <div className="storage-profile-card">
+            <div className="storage-profile-card__avatar">
+              <BrandMark size={18} alt="TokenMind 标志" variant="icon" />
+            </div>
+            <div className="storage-profile-card__body">
+              <div className="storage-profile-card__name">TokenMind</div>
+              <div className="storage-profile-card__role">文件中心</div>
+            </div>
+            <div className="storage-profile-card__chevron" aria-hidden="true">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <path d="M5.5 3.5 10 8l-4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
           </div>
-          <div className="storage-header-actions">
-            <button className="storage-secondary" onClick={() => void loadData()} type="button">
-              刷新
-            </button>
-            <button className="storage-close" onClick={onClose} type="button">
-              关闭
-            </button>
-          </div>
-        </header>
 
-        <div className="storage-content">
+          <div className="storage-sidebar-divider" />
+
+          <div className="storage-sidebar-group-label">文件视图</div>
+
+          <nav className="storage-nav">
+            {STORAGE_SECTION_META.map((section) => (
+              <button
+                key={section.id}
+                className={`storage-nav-button ${selectedSection === section.id ? 'is-active' : ''}`}
+                onClick={() => navigateTo(section.id)}
+                type="button"
+              >
+                <span className="storage-nav-title">{section.title}</span>
+                <span className="storage-nav-copy">{section.copy}</span>
+              </button>
+            ))}
+          </nav>
+
+          <button className="storage-sidebar-help" type="button">
+            <span>了解存储规则</span>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10.5 5.5 4.5 11.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </aside>
+
+        <section className="storage-main">
+          <header className="storage-header">
+            <div>
+              <div className="storage-kicker">文件中心</div>
+              <h2>{currentSectionMeta.title}</h2>
+              <p>{currentSectionMeta.copy}</p>
+            </div>
+            <div className="storage-header-actions">
+              <button className="storage-secondary" onClick={() => void loadData()} type="button">
+                刷新
+              </button>
+              <button aria-label="关闭文件中心" className="storage-close" onClick={onClose} type="button">
+                <CloseIcon />
+              </button>
+            </div>
+          </header>
+
+          <div className="storage-content">
           {notice ? <div className={`storage-notice ${notice.tone}`}>{notice.text}</div> : null}
 
           {loading || !overview ? (
             <div className="storage-empty">正在加载文件中心...</div>
           ) : (
             <>
-              <section className="storage-metrics">
+              <section className="storage-metrics" id="storage-section-overview">
                 <div className="storage-metric-card">
                   <div className="storage-metric-label">已用空间</div>
                   <div className="storage-metric-value">{formatBytes(overview.summary.used_bytes)}</div>
@@ -198,7 +269,7 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
 
               <div className="storage-layout">
                 <aside className="storage-side">
-                  <section className="storage-panel">
+                  <section className="storage-panel" id="storage-section-quota">
                     <div className="storage-panel-head">
                       <h3>空间占用</h3>
                       <p>当前上传文件会保存在工作区，并按配置策略自动清理。</p>
@@ -217,7 +288,7 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
                     </div>
                   </section>
 
-                  <section className="storage-panel">
+                  <section className="storage-panel" id="storage-section-cleanup">
                     <div className="storage-panel-head">
                       <h3>清理策略</h3>
                       <p>你可以在设置中心的工具分组里调整上传限制和保留策略。</p>
@@ -253,7 +324,7 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
                   </section>
                 </aside>
 
-                <section className="storage-main-panel">
+                <section className="storage-main-panel" id="storage-section-files">
                   <div className="storage-panel-head storage-main-head">
                     <div>
                       <h3>上传文件列表</h3>
@@ -356,6 +427,7 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
             </>
           )}
         </div>
+        </section>
       </div>
     </div>
   );

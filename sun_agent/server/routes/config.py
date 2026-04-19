@@ -77,12 +77,29 @@ class UploadsConfigUpdate(BaseModel):
     cleanup_interval_hours: int | None = None
 
 
+class KnowledgeConfigUpdate(BaseModel):
+    """Partial update for knowledge base configuration."""
+
+    vector_backend: str | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    top_k: int | None = None
+    embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    embedding_api_base: str | None = None
+    rerank_model: str | None = None
+    rerank_api_key: str | None = None
+    rerank_api_base: str | None = None
+    rerank_top_n: int | None = None
+
+
 class ToolsConfigUpdate(BaseModel):
     """Partial update for tool configuration."""
 
     web: WebToolsConfigUpdate | None = None
     exec: ExecToolConfigUpdate | None = None
     uploads: UploadsConfigUpdate | None = None
+    knowledge: KnowledgeConfigUpdate | None = None
     audit_enabled: bool | None = None
     restrict_to_workspace: bool | None = None
 
@@ -116,6 +133,14 @@ class RuntimeConfigUpdate(BaseModel):
     gateway: GatewayConfigUpdate | None = None
 
 
+class TemplatesConfigUpdate(BaseModel):
+    """Partial update for optional Jinja2 templates."""
+
+    response: str | None = None
+    memory_system: str | None = None
+    memory_prompt: str | None = None
+
+
 class MCPServerConfigUpdate(BaseModel):
     """Create or update an MCP server configuration."""
 
@@ -137,6 +162,7 @@ class ConfigResponse(BaseModel):
     agent: dict[str, Any]
     tools: dict[str, Any]
     runtime: dict[str, Any]
+    templates: dict[str, Any]
 
 
 class MCPDiscoveredToolResponse(BaseModel):
@@ -226,6 +252,11 @@ def _build_config_response() -> ConfigResponse:
         },
         "exec": config.tools.exec.model_dump(),
         "uploads": config.tools.uploads.model_dump(),
+        "knowledge": {
+            **config.tools.knowledge.model_dump(),
+            "embedding_api_key": _mask_api_key(config.tools.knowledge.embedding_api_key),
+            "rerank_api_key": _mask_api_key(config.tools.knowledge.rerank_api_key),
+        },
         "audit_enabled": config.tools.audit_enabled,
         "restrict_to_workspace": config.tools.restrict_to_workspace,
         "mcp_servers": {
@@ -244,6 +275,7 @@ def _build_config_response() -> ConfigResponse:
             "heartbeat": config.gateway.heartbeat.model_dump(),
         },
     }
+    templates_dict = config.templates.model_dump()
 
     return ConfigResponse(
         providers=providers_dict,
@@ -251,6 +283,7 @@ def _build_config_response() -> ConfigResponse:
         agent=agent_dict,
         tools=tools_dict,
         runtime=runtime_dict,
+        templates=templates_dict,
     )
 
 
@@ -413,6 +446,31 @@ async def update_tools_config(update: ToolsConfigUpdate):
             if "cleanup_interval_hours" in update.uploads.model_fields_set:
                 uploads.cleanup_interval_hours = update.uploads.cleanup_interval_hours
 
+        if update.knowledge is not None:
+            knowledge = config.tools.knowledge
+            if "vector_backend" in update.knowledge.model_fields_set:
+                knowledge.vector_backend = update.knowledge.vector_backend or "sqlite"
+            if "chunk_size" in update.knowledge.model_fields_set:
+                knowledge.chunk_size = update.knowledge.chunk_size
+            if "chunk_overlap" in update.knowledge.model_fields_set:
+                knowledge.chunk_overlap = update.knowledge.chunk_overlap
+            if "top_k" in update.knowledge.model_fields_set:
+                knowledge.top_k = update.knowledge.top_k
+            if "embedding_model" in update.knowledge.model_fields_set:
+                knowledge.embedding_model = update.knowledge.embedding_model or ""
+            if "embedding_api_key" in update.knowledge.model_fields_set:
+                knowledge.embedding_api_key = update.knowledge.embedding_api_key or ""
+            if "embedding_api_base" in update.knowledge.model_fields_set:
+                knowledge.embedding_api_base = update.knowledge.embedding_api_base or None
+            if "rerank_model" in update.knowledge.model_fields_set:
+                knowledge.rerank_model = update.knowledge.rerank_model or ""
+            if "rerank_api_key" in update.knowledge.model_fields_set:
+                knowledge.rerank_api_key = update.knowledge.rerank_api_key or ""
+            if "rerank_api_base" in update.knowledge.model_fields_set:
+                knowledge.rerank_api_base = update.knowledge.rerank_api_base or None
+            if "rerank_top_n" in update.knowledge.model_fields_set:
+                knowledge.rerank_top_n = update.knowledge.rerank_top_n
+
         save_config(config)
 
         return {
@@ -454,6 +512,29 @@ async def update_runtime_config(update: RuntimeConfigUpdate):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update runtime config: {e}") from e
+
+
+@router.put("/templates")
+async def update_templates_config(update: TemplatesConfigUpdate):
+    """Update optional Jinja2 templates for responses and memory flows."""
+    try:
+        config = load_config()
+
+        if "response" in update.model_fields_set:
+            config.templates.response = update.response or None
+        if "memory_system" in update.model_fields_set:
+            config.templates.memory_system = update.memory_system or None
+        if "memory_prompt" in update.model_fields_set:
+            config.templates.memory_prompt = update.memory_prompt or None
+
+        save_config(config)
+
+        return {
+            "success": True,
+            "templates": config.templates.model_dump(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update templates config: {e}") from e
 
 
 @router.put("/mcp-servers/{server_name}")

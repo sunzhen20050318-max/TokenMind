@@ -9,6 +9,7 @@ from typing import Any
 
 from loguru import logger
 
+from sun_agent.agent.context import ContextBuilder
 from sun_agent.config.paths import get_legacy_sessions_dir
 from sun_agent.utils.helpers import ensure_dir, safe_filename
 
@@ -199,7 +200,9 @@ class SessionManager:
                     else:
                         messages.append(data)
 
-            return Session(
+            messages, changed = self._sanitize_loaded_messages(messages)
+
+            session = Session(
                 key=key,
                 messages=messages,
                 created_at=created_at or datetime.now(),
@@ -207,9 +210,45 @@ class SessionManager:
                 timeline_events=timeline_events,
                 last_consolidated=last_consolidated
             )
+            if changed:
+                logger.info("Sanitized legacy knowledge metadata from session {}", key)
+                self.save(session)
+            return session
         except Exception as e:
             logger.warning("Failed to load session {}: {}", key, e)
             return None
+
+    @staticmethod
+    def _sanitize_loaded_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+        changed = False
+        sanitized_messages: list[dict[str, Any]] = []
+        for message in messages:
+            next_message = dict(message)
+            content = next_message.get("content")
+            if isinstance(content, str):
+                cleaned = ContextBuilder.strip_metadata_prefix(content)
+                if cleaned != content:
+                    changed = True
+                    next_message["content"] = cleaned
+            elif isinstance(content, list):
+                sanitized_blocks: list[dict[str, Any]] = []
+                block_changed = False
+                for block in content:
+                    if not isinstance(block, dict):
+                        sanitized_blocks.append(block)
+                        continue
+                    next_block = dict(block)
+                    if isinstance(next_block.get("text"), str):
+                        cleaned_text = ContextBuilder.strip_metadata_prefix(next_block["text"])
+                        if cleaned_text != next_block["text"]:
+                            block_changed = True
+                            next_block["text"] = cleaned_text
+                    sanitized_blocks.append(next_block)
+                if block_changed:
+                    changed = True
+                    next_message["content"] = sanitized_blocks
+            sanitized_messages.append(next_message)
+        return sanitized_messages, changed
 
     def save(self, session: Session) -> None:
         """Save a session to disk."""

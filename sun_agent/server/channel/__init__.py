@@ -1,4 +1,4 @@
-"""Web channel for sun_agent Web UI."""
+"""Web channel for TokenMind Web UI."""
 
 from sun_agent.server.channel.web import WebChannel
 

@@ -23,6 +23,7 @@ class ProviderSpec:
 
     strip_model_prefix: bool = False
     model_overrides: tuple[tuple[str, dict[str, Any]], ...] = ()
+    prompt_caching_model_patterns: tuple[str, ...] = ()
 
     is_oauth: bool = False
     is_direct: bool = False
@@ -59,6 +60,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         detect_by_base_keyword="openrouter",
         default_api_base="https://openrouter.ai/api/v1",
         supports_prompt_caching=True,
+        prompt_caching_model_patterns=("claude",),
     ),
     ProviderSpec(
         name="aihubmix",

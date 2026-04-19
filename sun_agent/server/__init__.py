@@ -1,3 +1,3 @@
-"""sun_agent Web UI Server."""
+"""TokenMind Web UI Server."""
 
 __version__ = "0.1.0"

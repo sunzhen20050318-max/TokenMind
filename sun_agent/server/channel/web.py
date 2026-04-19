@@ -171,6 +171,7 @@ class WebChannel(BaseChannel):
         # Forward to WebSocket manager as chunked response events so the
         # frontend can render a streaming-style reply incrementally.
         logger.info("Sending RESP: {}", msg.content[:50] if msg.content else "")
+        citations = msg.metadata.get("_citations")
         await self._ws_manager.send_to_session(
             session_key=msg.chat_id,
             message={
@@ -193,6 +194,7 @@ class WebChannel(BaseChannel):
                 "type": "response_end",
                 "content": msg.content,
                 "channel": msg.channel,
+                "citations": citations,
             },
         )
 

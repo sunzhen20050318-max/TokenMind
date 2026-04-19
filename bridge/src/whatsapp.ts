@@ -64,7 +64,7 @@ export class WhatsAppClient {
       version,
       logger,
       printQRInTerminal: false,
-      browser: ['sun_agent', 'cli', VERSION],
+      browser: ['TokenMind', 'desktop', VERSION],
       syncFullHistory: false,
       markOnlineOnConnect: false,
     });

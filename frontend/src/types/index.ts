@@ -7,12 +7,23 @@ export interface Attachment {
   is_image?: boolean;
 }
 
+export interface MessageCitation {
+  id?: string;
+  knowledge_base_id?: string;
+  knowledge_base_name: string;
+  document_id?: string;
+  document_name: string;
+  excerpt: string;
+  score?: number;
+}
+
 export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string | Array<{ type?: string; text?: string; [key: string]: unknown }>;
   timestamp?: string;
   isStreaming?: boolean;
   attachments?: Attachment[];
+  citations?: MessageCitation[];
   tool_call_id?: string;
   name?: string;
   tool_calls?: Array<{
@@ -88,10 +99,10 @@ export interface StatusResponse {
 export type WSMessageType =
   | { type: 'connected'; session_id: string }
   | { type: 'message'; content: string; session_id: string; attachments?: Attachment[] }
-  | { type: 'response'; content: string; channel: string }
+  | { type: 'response'; content: string; channel: string; citations?: MessageCitation[] }
   | { type: 'response_start'; channel: string }
   | { type: 'response_delta'; content: string; channel: string }
-  | { type: 'response_end'; content: string; channel: string }
+  | { type: 'response_end'; content: string; channel: string; citations?: MessageCitation[] }
   | { type: 'tool'; content: string; channel: string }
   | { type: 'tool_start'; content: string; tool_id: string; tool_name: string; channel: string }
   | { type: 'tool_end'; content: string; tool_id: string; tool_name: string; duration: number; channel: string }

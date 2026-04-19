@@ -42,6 +42,20 @@ export interface UploadsSettings {
   cleanup_interval_hours: number;
 }
 
+export interface KnowledgeSettings {
+  vector_backend: string;
+  chunk_size: number;
+  chunk_overlap: number;
+  top_k: number;
+  embedding_model: string;
+  embedding_api_key: string;
+  embedding_api_base: string | null;
+  rerank_model: string;
+  rerank_api_key: string;
+  rerank_api_base: string | null;
+  rerank_top_n: number;
+}
+
 export interface McpServerSettings {
   type: 'stdio' | 'sse' | 'streamableHttp' | null;
   command: string;
@@ -73,6 +87,7 @@ export interface ToolsSettings {
   web: WebToolSettings;
   exec: ExecToolSettings;
   uploads: UploadsSettings;
+  knowledge: KnowledgeSettings;
   audit_enabled: boolean;
   restrict_to_workspace: boolean;
   mcp_servers: Record<string, McpServerSettings>;
@@ -144,6 +159,19 @@ export interface ToolsSettingsUpdate {
     max_total_mb?: number;
     retention_days?: number;
     cleanup_interval_hours?: number;
+  };
+  knowledge?: {
+    vector_backend?: string;
+    chunk_size?: number;
+    chunk_overlap?: number;
+    top_k?: number;
+    embedding_model?: string;
+    embedding_api_key?: string;
+    embedding_api_base?: string | null;
+    rerank_model?: string;
+    rerank_api_key?: string;
+    rerank_api_base?: string | null;
+    rerank_top_n?: number;
   };
   audit_enabled?: boolean;
   restrict_to_workspace?: boolean;

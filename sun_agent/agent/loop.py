@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+import weakref
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,11 +30,12 @@ from sun_agent.agent.tools.web import WebFetchTool, WebSearchTool
 from sun_agent.audit import AuditLogger
 from sun_agent.bus.events import InboundMessage, OutboundMessage
 from sun_agent.bus.queue import MessageBus
+from sun_agent.knowledge import KnowledgeService
 from sun_agent.providers.base import LLMProvider
 from sun_agent.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from sun_agent.config.schema import ChannelsConfig, ExecToolConfig, WebSearchConfig
+    from sun_agent.config.schema import ChannelsConfig, ExecToolConfig, KnowledgeConfig, TemplatesConfig, WebSearchConfig
     from sun_agent.cron.service import CronService
 
 
@@ -79,14 +81,17 @@ class AgentLoop:
         web_search_config: WebSearchConfig | None = None,
         web_proxy: str | None = None,
         exec_config: ExecToolConfig | None = None,
+        knowledge_config: KnowledgeConfig | None = None,
         cron_service: CronService | None = None,
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        templates_config: TemplatesConfig | None = None,
         config_path: Path | None = None,
     ):
-        from sun_agent.config.schema import ExecToolConfig, WebSearchConfig
+        from sun_agent.config.schema import ExecToolConfig, KnowledgeConfig, TemplatesConfig, WebSearchConfig
+        from sun_agent.templates_engine import TemplateRenderer
 
         self.bus = bus
         self.channels_config = channels_config
@@ -100,10 +105,27 @@ class AgentLoop:
         self.web_search_config = web_search_config or WebSearchConfig()
         self.web_proxy = web_proxy
         self.exec_config = exec_config or ExecToolConfig()
+        self.knowledge_config = knowledge_config or KnowledgeConfig()
+        self.templates_config = templates_config or TemplatesConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
 
         self.context = ContextBuilder(workspace)
+        self.knowledge = KnowledgeService(
+            workspace,
+            vector_backend=self.knowledge_config.vector_backend,
+            chunk_size=self.knowledge_config.chunk_size,
+            chunk_overlap=self.knowledge_config.chunk_overlap,
+            top_k=self.knowledge_config.top_k,
+            embedding_model=self.knowledge_config.embedding_model,
+            embedding_api_key=self.knowledge_config.embedding_api_key,
+            embedding_api_base=self.knowledge_config.embedding_api_base,
+            rerank_model=self.knowledge_config.rerank_model,
+            rerank_api_key=self.knowledge_config.rerank_api_key,
+            rerank_api_base=self.knowledge_config.rerank_api_base,
+            rerank_top_n=self.knowledge_config.rerank_top_n,
+        )
+        self.template_renderer = TemplateRenderer()
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -123,8 +145,8 @@ class AgentLoop:
         self._mcp_connected = False
         self._mcp_connecting = False
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
-        self._background_tasks: list[asyncio.Task] = []
-        self._processing_lock = asyncio.Lock()
+        self._background_tasks: set[asyncio.Task] = set()
+        self._processing_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._pending_approvals: dict[str, PendingApproval] = {}
         self.audit = AuditLogger(workspace)
         self.memory_consolidator = MemoryConsolidator(
@@ -135,6 +157,8 @@ class AgentLoop:
             context_window_tokens=context_window_tokens,
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
+            templates_config=self.templates_config,
+            template_renderer=self.template_renderer,
         )
         self._register_default_tools()
 
@@ -184,6 +208,22 @@ class AgentLoop:
         # Update subagents and memory_consolidator which also hold provider references
         self.subagents.provider = new_provider
         self.memory_consolidator.provider = new_provider
+        self.knowledge_config = cfg.tools.knowledge
+        self.knowledge.configure(
+            vector_backend=cfg.tools.knowledge.vector_backend,
+            chunk_size=cfg.tools.knowledge.chunk_size,
+            chunk_overlap=cfg.tools.knowledge.chunk_overlap,
+            top_k=cfg.tools.knowledge.top_k,
+            embedding_model=cfg.tools.knowledge.embedding_model,
+            embedding_api_key=cfg.tools.knowledge.embedding_api_key,
+            embedding_api_base=cfg.tools.knowledge.embedding_api_base,
+            rerank_model=cfg.tools.knowledge.rerank_model,
+            rerank_api_key=cfg.tools.knowledge.rerank_api_key,
+            rerank_api_base=cfg.tools.knowledge.rerank_api_base,
+            rerank_top_n=cfg.tools.knowledge.rerank_top_n,
+        )
+        self.templates_config = cfg.templates
+        self.memory_consolidator.templates_config = cfg.templates
 
         logger.info("Provider reloaded: {} / {}", cfg.agents.defaults.provider, cfg.agents.defaults.model)
 
@@ -624,7 +664,11 @@ class AgentLoop:
 
     async def _dispatch(self, msg: InboundMessage) -> None:
         """Process a message under the global lock."""
-        async with self._processing_lock:
+        lock = self._processing_locks.get(msg.session_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._processing_locks[msg.session_key] = lock
+        async with lock:
             try:
                 response = await self._process_message(msg)
                 if response is not None:
@@ -647,7 +691,7 @@ class AgentLoop:
     async def close_mcp(self) -> None:
         """Drain pending background archives, then close MCP connections."""
         if self._background_tasks:
-            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            await asyncio.gather(*tuple(self._background_tasks), return_exceptions=True)
             self._background_tasks.clear()
         if self._mcp_stack:
             try:
@@ -659,13 +703,70 @@ class AgentLoop:
     def _schedule_background(self, coro) -> None:
         """Schedule a coroutine as a tracked background task (drained on shutdown)."""
         task = asyncio.create_task(coro)
-        self._background_tasks.append(task)
-        task.add_done_callback(self._background_tasks.remove)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
         logger.info("Agent loop stopping")
+
+    def _render_response_template(
+        self,
+        content: str,
+        *,
+        msg: InboundMessage,
+        session_key: str,
+        tools_used: list[str],
+    ) -> str:
+        """Render an optional Jinja2 response template around the final assistant text."""
+        rendered = self.template_renderer.render(
+            self.templates_config.response,
+            content=content,
+            model=self.model,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            session_key=session_key,
+            sender_id=msg.sender_id,
+            tools_used=tools_used,
+        )
+        return rendered or content
+
+    @staticmethod
+    def _build_knowledge_citations(knowledge_chunks: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        """Build compact, user-facing citation metadata from retrieved knowledge chunks."""
+        if not knowledge_chunks:
+            return []
+
+        citations: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for chunk in knowledge_chunks:
+            knowledge_base_id = str(chunk.get("knowledge_base_id") or "")
+            document_id = str(chunk.get("document_id") or "")
+            chunk_id = str(chunk.get("id") or "")
+            dedupe_key = (knowledge_base_id, document_id, chunk_id)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+
+            excerpt = str(chunk.get("content") or "").strip()
+            if len(excerpt) > 180:
+                excerpt = excerpt[:177] + "..."
+
+            citations.append(
+                {
+                    "id": chunk_id,
+                    "knowledge_base_id": knowledge_base_id,
+                    "knowledge_base_name": chunk.get("knowledge_base_name") or knowledge_base_id or "知识库",
+                    "document_id": document_id,
+                    "document_name": chunk.get("document_name") or document_id or "文档",
+                    "excerpt": excerpt,
+                    "score": chunk.get("score"),
+                }
+            )
+            if len(citations) >= 3:
+                break
+        return citations
 
     async def _process_message(
         self,
@@ -719,7 +820,7 @@ class AgentLoop:
                                   content="New session started.")
         if cmd == "/help":
             lines = [
-                "🐈 sun_agent commands:",
+                "🐈 TokenMind commands:",
                 "/new — Start a new conversation",
                 "/stop — Stop the current task",
                 "/restart — Restart the bot",
@@ -736,11 +837,14 @@ class AgentLoop:
                 message_tool.start_turn()
 
         history = session.get_history(max_messages=0)
+        knowledge_chunks = self.knowledge.retrieve_for_session(key, msg.content)
+        knowledge_citations = self._build_knowledge_citations(knowledge_chunks)
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,
             media=msg.media if msg.media else None,
             attachments=msg.metadata.get("attachments") if msg.metadata else None,
+            knowledge_chunks=knowledge_chunks,
             channel=msg.channel, chat_id=msg.chat_id,
         )
         raw_timeline_events: list[dict[str, Any]] = []
@@ -783,12 +887,24 @@ class AgentLoop:
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))
 
-        final_content, _, all_msgs = await self._run_agent_loop(
+        final_content, tools_used, all_msgs = await self._run_agent_loop(
             initial_messages, msg=msg, on_progress=on_progress or _bus_progress,
         )
 
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
+        else:
+            final_content = self._render_response_template(
+                final_content,
+                msg=msg,
+                session_key=key,
+                tools_used=tools_used,
+            )
+            if all_msgs and all_msgs[-1].get("role") == "assistant":
+                updated_assistant = {**all_msgs[-1], "content": final_content}
+                if knowledge_citations:
+                    updated_assistant["citations"] = knowledge_citations
+                all_msgs[-1] = updated_assistant
 
         saved_entries = self._save_turn(session, all_msgs, 1 + len(history))
         self._save_timeline_events(session, saved_entries, raw_timeline_events)
@@ -800,9 +916,12 @@ class AgentLoop:
 
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
         logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
+        metadata = dict(msg.metadata or {})
+        if knowledge_citations:
+            metadata["_citations"] = knowledge_citations
         return OutboundMessage(
             channel=msg.channel, chat_id=msg.chat_id, content=final_content,
-            metadata=msg.metadata or {},
+            metadata=metadata,
         )
 
     def _save_turn(self, session: Session, messages: list[dict], skip: int) -> list[dict]:
@@ -817,21 +936,16 @@ class AgentLoop:
             if role == "tool" and isinstance(content, str) and len(content) > self._TOOL_RESULT_MAX_CHARS:
                 entry["content"] = content[:self._TOOL_RESULT_MAX_CHARS] + "\n... (truncated)"
             elif role == "user":
-                if isinstance(content, str) and content.startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
-                    while isinstance(content, str) and content.startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
-                        parts = content.split("\n\n", 1)
-                        content = parts[1] if len(parts) > 1 else ""
+                if isinstance(content, str):
+                    content = ContextBuilder.strip_metadata_prefix(content)
                     if not isinstance(content, str) or not content.strip():
                         continue
                     entry["content"] = content
                 if isinstance(content, list):
                     filtered = []
                     for c in content:
-                        if c.get("type") == "text" and isinstance(c.get("text"), str) and c["text"].startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
-                            text = c["text"]
-                            while text.startswith(ContextBuilder._RUNTIME_CONTEXT_TAG):
-                                parts = text.split("\n\n", 1)
-                                text = parts[1] if len(parts) > 1 else ""
+                        if c.get("type") == "text" and isinstance(c.get("text"), str):
+                            text = ContextBuilder.strip_metadata_prefix(c["text"])
                             if not text.strip():
                                 continue
                             c = {**c, "text": text}

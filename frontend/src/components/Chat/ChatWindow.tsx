@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BrandMark } from '../BrandMark';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
-import { InputArea, type DraftAttachment } from './InputArea';
+import { InputArea, type DraftAttachment, type ComposerReasoningOption } from './InputArea';
 import { ToolChain } from './ToolIndicator';
 import { ToolApprovalModal } from './ToolApprovalModal';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
@@ -26,55 +27,43 @@ interface TurnArtifacts {
 
 interface StarterCard {
   id: string;
-  tag: string;
   title: string;
-  description: string;
   prompt: string;
 }
 
 const STARTER_CARDS: StarterCard[] = [
   {
-    id: 'channel-setup',
-    tag: '渠道接入',
-    title: '配置聊天渠道',
-    description: '帮我配置 Telegram、飞书、Slack、WhatsApp 或其他聊天渠道的接入方式。',
-    prompt: '请帮我检查当前项目支持哪些聊天渠道，并告诉我如何配置其中一个渠道接入。',
-  },
-  {
-    id: 'search-summary',
-    tag: '搜索总结',
-    title: '搜索并整理信息',
-    description: '搜索网页、提炼重点、输出结构化结论，适合做信息收集和快速总结。',
+    id: 'search',
+    title: '搜索信息',
     prompt: '请帮我搜索一个主题，并把结果整理成清晰的要点总结。',
   },
   {
-    id: 'file-image',
-    tag: '文件理解',
-    title: '读取文件或图片',
-    description: '帮我处理文档、图片、截图或本地文件，提取内容并解释重点。',
+    id: 'files',
+    title: '读取文件',
     prompt: '请帮我读取一个文件或图片，并提取其中的关键信息给我。',
   },
   {
-    id: 'mcp-workflow',
-    tag: 'MCP',
-    title: '使用 MCP 工具',
-    description: '检查当前已连接的 MCP 服务和工具，让它们直接参与具体任务执行。',
+    id: 'mcp',
+    title: '使用 MCP',
     prompt: '请检查当前可用的 MCP 服务和工具，并告诉我它们可以帮我完成什么任务。',
   },
   {
-    id: 'automation',
-    tag: '自动化',
-    title: '创建定时任务',
-    description: '把常见动作做成定时执行的任务，例如日报、提醒、巡检或信息汇总。',
+    id: 'task',
+    title: '定时任务',
     prompt: '请帮我设计一个适合当前项目的自动化或定时任务方案。',
   },
   {
-    id: 'assistant-task',
-    tag: '个人助理',
-    title: '处理日常任务',
-    description: '把 SUN-AGENT 当成你的个人 AI 助手，让它帮你安排、分析、整理或执行任务。',
-    prompt: '我想把 SUN-AGENT 当成个人 AI 助手使用，请先告诉我它最适合帮我做哪些事情。',
+    id: 'assistant',
+    title: '个人助理',
+    prompt: '我想把 TokenMind 当成个人 AI 助手使用，请先告诉我它最适合帮我做哪些事情。',
   },
+];
+
+const REASONING_OPTIONS: ComposerReasoningOption[] = [
+  { value: '', label: '关闭' },
+  { value: 'low', label: '轻度' },
+  { value: 'medium', label: '标准' },
+  { value: 'high', label: '深度' },
 ];
 
 function getTurnKey(message: Message, rawIndex: number): string {
@@ -94,10 +83,7 @@ function groupByTurnId<T extends { turnId: string }>(items: T[]): Map<string, T[
   return grouped;
 }
 
-function mergeTimelineEvents(
-  primary: TimelineEvent[],
-  fallback: TimelineEvent[]
-): TimelineEvent[] {
+function mergeTimelineEvents(primary: TimelineEvent[], fallback: TimelineEvent[]): TimelineEvent[] {
   const merged = new Map<string, TimelineEvent>();
   for (const event of fallback) {
     merged.set(event.id, event);
@@ -120,15 +106,16 @@ function formatToolDisplayName(toolName: string, rawArguments?: string): string 
     return toolName;
   }
   const compactArgs = rawArguments.replace(/\s+/g, ' ').trim();
-  const clippedArgs = compactArgs.length > 140
-    ? `${compactArgs.slice(0, 137)}...`
-    : compactArgs;
+  const clippedArgs = compactArgs.length > 140 ? `${compactArgs.slice(0, 137)}...` : compactArgs;
   return `${toolName}(${clippedArgs})`;
 }
 
 function deriveTurnArtifacts(messages: Message[]): Map<string, TurnArtifacts> {
   const artifacts = new Map<string, TurnArtifacts>();
-  const toolMeta = new Map<string, { turnKey: string; toolName: string; displayName: string; startedAt?: string }>();
+  const toolMeta = new Map<
+    string,
+    { turnKey: string; toolName: string; displayName: string; startedAt?: string }
+  >();
   let currentTurnKey: string | null = null;
 
   const ensureTurn = (turnKey: string): TurnArtifacts => {
@@ -192,7 +179,6 @@ function deriveTurnArtifacts(messages: Message[]): Map<string, TurnArtifacts> {
       const turnKey = meta?.turnKey || currentTurnKey;
       const toolName = meta?.toolName || message.name || 'tool';
       const displayName = meta?.displayName || toolName;
-      const timestamp = message.timestamp || new Date().toISOString();
       const duration =
         meta?.startedAt && message.timestamp
           ? Math.max(
@@ -202,6 +188,7 @@ function deriveTurnArtifacts(messages: Message[]): Map<string, TurnArtifacts> {
               )
             )
           : undefined;
+      const timestamp = message.timestamp || new Date().toISOString();
       const turn = ensureTurn(turnKey);
 
       turn.timelineEvents.push({
@@ -234,13 +221,19 @@ function deriveTurnArtifacts(messages: Message[]): Map<string, TurnArtifacts> {
 
   for (const [, turn] of artifacts) {
     turn.toolCalls = turn.toolCalls.map((toolCall) =>
-      toolCall.status === 'running'
-        ? { ...toolCall, status: 'completed' }
-        : toolCall
+      toolCall.status === 'running' ? { ...toolCall, status: 'completed' } : toolCall
     );
   }
 
   return artifacts;
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return '夜深了，现在想继续完成什么？';
+  if (hour < 12) return '早上好，今天想先推进什么？';
+  if (hour < 18) return '下午好，今天想一起完成什么？';
+  return '晚上好，现在想处理什么？';
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
@@ -256,6 +249,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     currentTurnId,
     setActiveTool,
     setCurrentTurnId,
+    modelProviders,
+    activeModelId,
+    modelProvidersStatus,
+    setActiveModel,
+    availableKnowledgeBases,
+    linkedKnowledgeBaseIds,
+    loadKnowledgeBases,
+    loadLinkedKnowledgeBases,
+    setLinkedKnowledgeBases,
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const {
@@ -276,12 +278,40 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [pendingFiles, setPendingFiles] = useState<Array<{ id: string; file: File }>>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [reasoningEffort, setReasoningEffort] = useState<string>('');
 
   useEffect(() => {
     setDraftMessage('');
     setPendingFiles([]);
     setUploadProgress(null);
   }, [sessionId]);
+
+  useEffect(() => {
+    void loadKnowledgeBases();
+    void loadLinkedKnowledgeBases(sessionId);
+  }, [loadKnowledgeBases, loadLinkedKnowledgeBases, sessionId]);
+
+  useEffect(() => {
+    let active = true;
+    const loadComposerConfig = async () => {
+      try {
+        const config = await api.getConfig();
+        if (!active) {
+          return;
+        }
+        setReasoningEffort(config.agent.reasoning_effort || '');
+      } catch {
+        if (active) {
+          setReasoningEffort('');
+        }
+      }
+    };
+
+    void loadComposerConfig();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const visibleMessages = useMemo<VisibleMessageEntry[]>(
     () =>
@@ -294,11 +324,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           if (message.role === 'assistant' && message.tool_calls?.length) {
             return false;
           }
-          if (
-            message.role === 'assistant' &&
-            typeof message.content === 'string' &&
-            !message.content.trim()
-          ) {
+          if (message.role === 'assistant' && typeof message.content === 'string' && !message.content.trim()) {
             return false;
           }
           return true;
@@ -306,13 +332,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     [messages]
   );
 
+  const hasConversation = visibleMessages.length > 0;
   const persistedArtifactsByTurn = useMemo(() => deriveTurnArtifacts(messages), [messages]);
   const liveToolCallsByTurn = useMemo(() => groupByTurnId(toolCalls), [toolCalls]);
   const liveTimelineEventsByTurn = useMemo(() => groupByTurnId(timelineEvents), [timelineEvents]);
 
   useEffect(() => {
     const container = messagesEndRef.current?.parentElement;
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     const { scrollTop, scrollHeight, clientHeight } = container;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
@@ -321,13 +350,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
     if (newMessagesCount > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    } else if ((toolCalls.length > 0 || timelineEvents.length > 0) && distanceFromBottom < 100) {
+    } else if ((toolCalls.length > 0 || timelineEvents.length > 0) && distanceFromBottom < 120) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
     }
   }, [visibleMessages, toolCalls, timelineEvents]);
 
   const handleSend = async (content: string) => {
-    if (!isConnected || (!content.trim() && pendingFiles.length === 0)) return;
+    if (!isConnected || (!content.trim() && pendingFiles.length === 0)) {
+      return;
+    }
+
     let attachments: Attachment[] = [];
     setError(null);
 
@@ -392,6 +424,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setPendingFiles((existing) => existing.filter((item) => item.id !== id));
   };
 
+  const handleReasoningChange = async (value: string) => {
+    setReasoningEffort(value);
+    try {
+      await api.updateAgentConfig({ reasoning_effort: value || null });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '更新思考等级失败');
+    }
+  };
+
   const draftAttachments: DraftAttachment[] = pendingFiles.map(({ id, file }) => ({
     id,
     name: file.name,
@@ -399,142 +440,227 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     type: file.type,
   }));
 
+  const composerModelOptions = modelProviders.map((provider) => ({
+    id: provider.id,
+    label: provider.name,
+    configured: provider.configured,
+  }));
+
+  const renderedThread = useMemo(() => {
+    const nodes: React.ReactNode[] = [];
+    let pendingTurnKey: string | null = null;
+    let pendingArtifacts: TurnArtifacts | null = null;
+    let pendingIsCurrentTurn = false;
+
+    const buildStandaloneChain = (keySeed: string) => {
+      if (!pendingTurnKey || !pendingArtifacts) {
+        return null;
+      }
+
+      const hasArtifacts =
+        pendingArtifacts.toolCalls.length > 0 ||
+        pendingArtifacts.timelineEvents.length > 0 ||
+        (pendingIsCurrentTurn && isLoading && !!activeTool);
+
+      if (!hasArtifacts) {
+        return null;
+      }
+
+      return (
+        <ToolChain
+          key={`toolchain-standalone-${keySeed}`}
+          toolCalls={pendingArtifacts.toolCalls}
+          isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
+          isDone={
+            !pendingIsCurrentTurn ||
+            !isLoading ||
+            !pendingArtifacts.toolCalls.some((toolCall) => toolCall.status === 'running')
+          }
+          displayCount={pendingArtifacts.toolCalls.length}
+          activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
+          timelineEvents={pendingArtifacts.timelineEvents}
+        />
+      );
+    };
+
+    const flushPendingStandalone = (keySeed: string) => {
+      const standalone = buildStandaloneChain(keySeed);
+      if (standalone) {
+        nodes.push(standalone);
+      }
+      pendingTurnKey = null;
+      pendingArtifacts = null;
+      pendingIsCurrentTurn = false;
+    };
+
+    visibleMessages.forEach(({ message, rawIndex }, idx) => {
+      const keyBase = message.timestamp ? `${message.timestamp}-${idx}` : `msg-${idx}`;
+
+      if (message.role === 'user') {
+        if (pendingTurnKey) {
+          flushPendingStandalone(`${keyBase}-before-user`);
+        }
+
+        const turnKey = getTurnKey(message, rawIndex);
+        const persistedArtifacts = persistedArtifactsByTurn.get(turnKey);
+        pendingTurnKey = turnKey;
+        pendingArtifacts = {
+          toolCalls: liveToolCallsByTurn.get(turnKey) || persistedArtifacts?.toolCalls || [],
+          timelineEvents: mergeTimelineEvents(
+            liveTimelineEventsByTurn.get(turnKey) || [],
+            persistedArtifacts?.timelineEvents || []
+          ),
+        };
+        pendingIsCurrentTurn = turnKey === currentTurnId;
+        nodes.push(<MessageBubble key={keyBase} message={message} />);
+        return;
+      }
+
+      if (message.role === 'assistant' && pendingTurnKey && pendingArtifacts) {
+        const hasArtifacts =
+          pendingArtifacts.toolCalls.length > 0 ||
+          pendingArtifacts.timelineEvents.length > 0 ||
+          (pendingIsCurrentTurn && isLoading && !!activeTool);
+
+        nodes.push(
+          <MessageBubble
+            key={keyBase}
+            message={message}
+            embeddedToolChain={
+              hasArtifacts ? (
+                <ToolChain
+                  toolCalls={pendingArtifacts.toolCalls}
+                  isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
+                  isDone={
+                    !pendingIsCurrentTurn ||
+                    !isLoading ||
+                    !pendingArtifacts.toolCalls.some((toolCall) => toolCall.status === 'running')
+                  }
+                  displayCount={pendingArtifacts.toolCalls.length}
+                  activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
+                  timelineEvents={pendingArtifacts.timelineEvents}
+                  variant="embedded"
+                />
+              ) : undefined
+            }
+          />
+        );
+        pendingTurnKey = null;
+        pendingArtifacts = null;
+        pendingIsCurrentTurn = false;
+        return;
+      }
+
+      nodes.push(<MessageBubble key={keyBase} message={message} />);
+    });
+
+    if (pendingTurnKey) {
+      flushPendingStandalone('tail');
+    }
+
+    return nodes;
+  }, [
+    activeTool,
+    currentTurnId,
+    isLoading,
+    liveTimelineEventsByTurn,
+    liveToolCallsByTurn,
+    persistedArtifactsByTurn,
+    visibleMessages,
+  ]);
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        backgroundColor: '#0a0a0a',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          padding: '12px 16px 0',
-        }}
-      >
+    <div className={`chat-shell ${hasConversation ? 'chat-shell--active' : 'chat-shell--launch'}`}>
+      <div className="chat-shell__topbar">
         <button
           type="button"
+          className={`chat-shell__trust ${sessionExecTrusted ? 'is-trusted' : ''}`}
           onClick={sessionExecTrusted ? disableExecForSession : enableExecForSession}
-          style={{
-            borderRadius: '999px',
-            border: sessionExecTrusted ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.14)',
-            background: sessionExecTrusted ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
-            color: sessionExecTrusted ? '#f4f4f4' : '#c6c6c6',
-            padding: '8px 12px',
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.18s ease',
-          }}
           title={
             sessionExecTrusted
-              ? '当前会话中的 exec 将自动允许，点击可恢复逐次确认。'
-              : '点击后，当前会话中的 exec 将不再每次弹确认。'
+              ? '当前会话中的 exec 会自动允许，点击后恢复逐次确认。'
+              : '开启后，当前会话中的 exec 不再每次弹出确认。'
           }
         >
           {sessionExecTrusted ? '当前会话 Exec 已允许' : '允许当前会话执行 Exec'}
         </button>
       </div>
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          paddingTop: '24px',
-          paddingBottom: '12px',
-          contentVisibility: 'auto',
-        }}
-      >
-        {visibleMessages.length === 0 ? (
-          <div className="chat-empty-state">
-            <div className="chat-empty-shell">
-              <div className="chat-empty-badge">SUN-AGENT workspace</div>
-              <h2 className="chat-empty-title">把 SUN-AGENT 变成你的个人 AI 助手</h2>
-              <p className="chat-empty-copy">
-                这里更像一个可连接渠道、调用工具、处理文件、执行 MCP 和承接自动化任务的助手入口。选择一个场景后，提示词会自动填入下方输入框。
-              </p>
 
-              <div className="chat-starter-grid">
-                {STARTER_CARDS.map((card) => (
-                  <button
-                    key={card.id}
-                    type="button"
-                    className="chat-starter-card"
-                    onClick={() => handleStarterCardSelect(card.prompt)}
-                  >
-                    <div className="chat-starter-top">
-                      <span className="chat-starter-tag">{card.tag}</span>
-                      <span className="chat-starter-action">点击填入</span>
-                    </div>
-                    <div className="chat-starter-title">{card.title}</div>
-                    <div className="chat-starter-description">{card.description}</div>
-                    <div className="chat-starter-prompt">{card.prompt}</div>
-                  </button>
-                ))}
+      <div className="chat-shell__surface">
+        <div className={`chat-shell__scroll ${hasConversation ? 'is-active' : 'is-launch'}`}>
+          {!hasConversation ? (
+            <section className="chat-launch">
+              <div className="chat-launch__headline">
+                <span className="chat-launch__mark">
+                  <BrandMark size={18} alt="" />
+                </span>
+                <h1 className="chat-launch__title">{getGreeting()}</h1>
               </div>
-
-              <div className="chat-empty-note">
-                这些只是常见起点，你也可以直接描述自己的真实任务。
-              </div>
+            </section>
+          ) : (
+            <div className="chat-thread">
+              {renderedThread}
+              {isLoading && !activeTool && visibleMessages.length > 0 ? <TypingIndicator /> : null}
             </div>
-          </div>
-        ) : (
-          <>
-            {visibleMessages.map(({ message, rawIndex }, idx) => {
-              const turnKey = message.role === 'user' ? getTurnKey(message, rawIndex) : null;
-              const persistedArtifacts = turnKey ? persistedArtifactsByTurn.get(turnKey) : undefined;
-              const turnToolCalls = turnKey
-                ? liveToolCallsByTurn.get(turnKey) || persistedArtifacts?.toolCalls || []
-                : [];
-              const turnTimeline = turnKey
-                ? mergeTimelineEvents(
-                    liveTimelineEventsByTurn.get(turnKey) || [],
-                    persistedArtifacts?.timelineEvents || []
-                  )
-                : [];
-              const isCurrentTurn = turnKey !== null && turnKey === currentTurnId;
-              const showToolChain =
-                message.role === 'user' &&
-                (turnToolCalls.length > 0 || turnTimeline.length > 0 || (isCurrentTurn && !!activeTool));
+          )}
+          <div ref={messagesEndRef} />
+        </div>
 
-              return (
-                <React.Fragment key={message.timestamp ? `${message.timestamp}-${idx}` : `msg-${idx}`}>
-                  <MessageBubble message={message} />
-                  {showToolChain && (
-                    <ToolChain
-                      toolCalls={turnToolCalls}
-                      isActive={isCurrentTurn && isLoading && !!activeTool}
-                      isDone={!isCurrentTurn || !isLoading || !turnToolCalls.some((toolCall) => toolCall.status === 'running')}
-                      displayCount={turnToolCalls.length}
-                      activeToolName={isCurrentTurn ? activeTool || undefined : undefined}
-                      timelineEvents={turnTimeline}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            })}
-            {isLoading && !activeTool && visibleMessages.length > 0 && <TypingIndicator />}
-          </>
-        )}
-        <div ref={messagesEndRef} />
+        <div className={`chat-composer-dock ${hasConversation ? 'is-active' : 'is-launch'}`}>
+          <InputArea
+            onSend={handleSend}
+            onStop={stopMessage}
+            disabled={!isConnected}
+            isStreaming={isLoading}
+            isUploading={isUploading}
+            uploadProgress={uploadProgress}
+            value={draftMessage}
+            onChange={setDraftMessage}
+            focusSignal={inputFocusSignal}
+            attachments={draftAttachments}
+            onSelectFiles={handleSelectFiles}
+            onRemoveAttachment={handleRemoveAttachment}
+            composerMode={hasConversation ? 'active' : 'launch'}
+            modelOptions={composerModelOptions}
+            activeModelId={activeModelId}
+            modelStatus={modelProvidersStatus}
+            onSelectModel={(providerId) => {
+              void setActiveModel(providerId);
+            }}
+            reasoningOptions={REASONING_OPTIONS}
+            activeReasoning={reasoningEffort}
+            onSelectReasoning={(value) => {
+              void handleReasoningChange(value);
+            }}
+            knowledgeOptions={availableKnowledgeBases
+              .filter((item) => item.enabled)
+              .map((item) => ({
+              id: item.id,
+              name: item.name,
+              description: item.description,
+            }))}
+            linkedKnowledgeBaseIds={linkedKnowledgeBaseIds}
+            onUpdateLinkedKnowledgeBases={(knowledgeBaseIds) => {
+              void setLinkedKnowledgeBases(knowledgeBaseIds);
+            }}
+          />
+
+          <div className={`chat-launch__chips ${hasConversation ? 'is-hidden' : ''}`}>
+            {STARTER_CARDS.map((card) => (
+              <button
+                key={card.id}
+                type="button"
+                className="chat-launch__chip"
+                onClick={() => handleStarterCardSelect(card.prompt)}
+                title={card.prompt}
+              >
+                {card.title}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <InputArea
-        onSend={handleSend}
-        onStop={stopMessage}
-        disabled={!isConnected}
-        isStreaming={isLoading}
-        isUploading={isUploading}
-        uploadProgress={uploadProgress}
-        value={draftMessage}
-        onChange={setDraftMessage}
-        focusSignal={inputFocusSignal}
-        attachments={draftAttachments}
-        onSelectFiles={handleSelectFiles}
-        onRemoveAttachment={handleRemoveAttachment}
-      />
       <ToolApprovalModal
         approval={pendingApproval}
         onApprove={approvePendingTool}

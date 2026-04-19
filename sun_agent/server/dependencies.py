@@ -1,4 +1,4 @@
-"""FastAPI dependencies for sun_agent Web UI."""
+"""FastAPI dependencies for TokenMind Web UI."""
 
 from __future__ import annotations
 

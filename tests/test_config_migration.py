@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from sun_agent.config.loader import load_config, save_config
 
@@ -126,3 +127,42 @@ def test_onboard_refresh_backfills_missing_channel_fields(tmp_path, monkeypatch)
     assert result.exit_code == 0
     saved = json.loads(config_path.read_text(encoding="utf-8"))
     assert saved["channels"]["qq"]["msgFormat"] == "plain"
+
+
+def test_get_config_path_prefers_tokenmind_home_and_migrates_legacy(tmp_path, monkeypatch) -> None:
+    from sun_agent.config import loader
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    loader.set_config_path(None)
+
+    legacy_config = tmp_path / ".sun_agent" / "config.json"
+    legacy_config.parent.mkdir(parents=True, exist_ok=True)
+    legacy_config.write_text(json.dumps({"agents": {"defaults": {"model": "openai/gpt-4.1-mini"}}}), encoding="utf-8")
+
+    path = loader.get_config_path()
+
+    assert path == tmp_path / ".tokenmind" / "config.json"
+    assert path.exists()
+    migrated = json.loads(path.read_text(encoding="utf-8"))
+    assert migrated["agents"]["defaults"]["model"] == "openai/gpt-4.1-mini"
+
+
+def test_get_config_path_uses_existing_tokenmind_config_without_legacy_copy(tmp_path, monkeypatch) -> None:
+    from sun_agent.config import loader
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    loader.set_config_path(None)
+
+    current_config = tmp_path / ".tokenmind" / "config.json"
+    current_config.parent.mkdir(parents=True, exist_ok=True)
+    current_config.write_text(json.dumps({"agents": {"defaults": {"model": "openai/gpt-5"}}}), encoding="utf-8")
+
+    legacy_config = tmp_path / ".sun_agent" / "config.json"
+    legacy_config.parent.mkdir(parents=True, exist_ok=True)
+    legacy_config.write_text(json.dumps({"agents": {"defaults": {"model": "legacy/model"}}}), encoding="utf-8")
+
+    path = loader.get_config_path()
+
+    assert path == current_config
+    current = json.loads(path.read_text(encoding="utf-8"))
+    assert current["agents"]["defaults"]["model"] == "openai/gpt-5"

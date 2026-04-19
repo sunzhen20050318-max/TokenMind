@@ -1,11 +1,29 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { UploadProgress } from '../../types';
+import './inputArea.css';
 
 export interface DraftAttachment {
   id: string;
   name: string;
   size: number;
   type: string;
+}
+
+export interface ComposerModelOption {
+  id: string;
+  label: string;
+  configured: boolean;
+}
+
+export interface ComposerReasoningOption {
+  value: string;
+  label: string;
+}
+
+export interface ComposerKnowledgeOption {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 interface InputAreaProps {
@@ -21,17 +39,125 @@ interface InputAreaProps {
   uploadProgress?: UploadProgress | null;
   onSelectFiles?: (files: FileList) => void;
   onRemoveAttachment?: (id: string) => void;
+  composerMode?: 'launch' | 'active';
+  modelOptions?: ComposerModelOption[];
+  activeModelId?: string | null;
+  modelStatus?: 'idle' | 'loading' | 'ready' | 'error';
+  onSelectModel?: (providerId: string) => void;
+  reasoningOptions?: ComposerReasoningOption[];
+  activeReasoning?: string | null;
+  onSelectReasoning?: (value: string) => void;
+  knowledgeOptions?: ComposerKnowledgeOption[];
+  linkedKnowledgeBaseIds?: string[];
+  onUpdateLinkedKnowledgeBases?: (knowledgeBaseIds: string[]) => void;
+}
+
+interface InlineSelectOption {
+  value: string;
+  label: string;
+}
+
+interface InlineSelectProps {
+  value: string;
+  placeholder: string;
+  options: InlineSelectOption[];
+  onSelect: (value: string) => void;
+  disabled?: boolean;
+  align?: 'left' | 'right';
 }
 
 function formatFileSize(size: number): string {
   if (!Number.isFinite(size) || size <= 0) {
     return '0 B';
   }
+
   const units = ['B', 'KB', 'MB', 'GB'];
   const exponent = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
   const value = size / 1024 ** exponent;
+
   return `${value >= 100 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
 }
+
+const InlineSelect: React.FC<InlineSelectProps> = ({
+  value,
+  placeholder,
+  options,
+  onSelect,
+  disabled = false,
+  align = 'right',
+}) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const currentLabel = options.find((option) => option.value === value)?.label || placeholder;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="composer__inline-select" ref={rootRef}>
+      <button
+        type="button"
+        className="composer__inline-trigger"
+        disabled={disabled}
+        onClick={() => setOpen((state) => !state)}
+        aria-expanded={open}
+      >
+        <span>{currentLabel}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open ? (
+        <div className={`composer__inline-menu composer__inline-menu--${align}`}>
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value || 'empty'}
+                type="button"
+                className={`composer__inline-option ${selected ? 'is-selected' : ''}`}
+                onClick={() => {
+                  onSelect(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span>{option.label}</span>
+                {selected ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 export const InputArea: React.FC<InputAreaProps> = ({
   onSend,
@@ -46,101 +172,126 @@ export const InputArea: React.FC<InputAreaProps> = ({
   uploadProgress,
   onSelectFiles,
   onRemoveAttachment,
+  composerMode = 'active',
+  modelOptions = [],
+  activeModelId,
+  modelStatus = 'idle',
+  onSelectModel,
+  reasoningOptions = [],
+  activeReasoning,
+  onSelectReasoning,
+  knowledgeOptions = [],
+  linkedKnowledgeBaseIds = [],
+  onUpdateLinkedKnowledgeBases,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const canSubmit = (value.trim() || attachments.length > 0) && !disabled && !isUploading;
+  const knowledgeRef = useRef<HTMLDivElement>(null);
+  const canSubmit = (!!value.trim() || attachments.length > 0) && !disabled && !isUploading;
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const availableModels = useMemo(
+    () => modelOptions.filter((option) => option.configured || option.id === activeModelId),
+    [activeModelId, modelOptions]
+  );
+
+  const modelSelectOptions = useMemo<InlineSelectOption[]>(
+    () => availableModels.map((option) => ({ value: option.id, label: option.label })),
+    [availableModels]
+  );
+
+  const reasoningSelectOptions = useMemo<InlineSelectOption[]>(
+    () => reasoningOptions.map((option) => ({ value: option.value, label: option.label })),
+    [reasoningOptions]
+  );
+
+  const modelPlaceholder =
+    modelStatus === 'loading'
+      ? '正在读取模型...'
+      : availableModels.length === 0
+        ? '未配置模型'
+        : '选择模型';
+
+  const reasoningPlaceholder =
+    reasoningSelectOptions.find((option) => option.value === activeReasoning)?.label || '关闭';
+
+  const linkedKnowledgeBases = useMemo(
+    () => knowledgeOptions.filter((option) => linkedKnowledgeBaseIds.includes(option.id)),
+    [knowledgeOptions, linkedKnowledgeBaseIds]
+  );
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     if (canSubmit) {
       void onSend(value.trim());
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit(event);
     }
   };
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
+    if (!textareaRef.current) {
+      return;
     }
+
+    textareaRef.current.style.height = 'auto';
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
   }, [value]);
 
   useEffect(() => {
     if (!textareaRef.current || focusSignal === undefined) {
       return;
     }
+
     textareaRef.current.focus();
     const length = textareaRef.current.value.length;
     textareaRef.current.setSelectionRange(length, length);
   }, [focusSignal]);
 
+  useEffect(() => {
+    if (!knowledgeOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!knowledgeRef.current?.contains(event.target as Node)) {
+        setKnowledgeOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [knowledgeOpen]);
+
+  const toggleKnowledgeBase = (knowledgeBaseId: string) => {
+    const nextIds = linkedKnowledgeBaseIds.includes(knowledgeBaseId)
+      ? linkedKnowledgeBaseIds.filter((id) => id !== knowledgeBaseId)
+      : [...linkedKnowledgeBaseIds, knowledgeBaseId];
+    onUpdateLinkedKnowledgeBases?.(nextIds);
+  };
+
   return (
     <form
+      className={`composer composer--${composerMode} ${isUploading ? 'is-uploading' : ''}`}
       onSubmit={handleSubmit}
-      style={{
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: '12px',
-        padding: '16px 24px',
-        backgroundColor: '#0a0a0a',
-        borderTop: '1px solid #1a1a1a',
-        flexWrap: 'wrap',
-      }}
     >
-      {attachments.length > 0 && (
-        <div
-          style={{
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-            marginBottom: '4px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '8px',
-            }}
-          >
+      {attachments.length > 0 ? (
+        <div className="composer__attachments">
+          <div className="composer__attachment-list">
             {attachments.map((attachment) => (
-              <div
-                key={attachment.id}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '6px 10px',
-                  borderRadius: '999px',
-                  backgroundColor: '#151515',
-                  border: '1px solid #2a2a2a',
-                  color: '#d8d8d8',
-                  fontSize: '12px',
-                }}
-              >
-                <span>{attachment.name}</span>
-                <span style={{ color: '#7c7c7c' }}>{formatFileSize(attachment.size)}</span>
+              <div className="composer__attachment" key={attachment.id}>
+                <span className="composer__attachment-name">{attachment.name}</span>
+                <span className="composer__attachment-size">{formatFileSize(attachment.size)}</span>
                 <button
                   type="button"
                   disabled={!!isUploading}
                   onClick={() => onRemoveAttachment?.(attachment.id)}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: isUploading ? '#5c5c5c' : '#9a9a9a',
-                    cursor: isUploading ? 'not-allowed' : 'pointer',
-                    padding: 0,
-                    lineHeight: 1,
-                    fontSize: '14px',
-                  }}
+                  className="composer__attachment-remove"
                   aria-label={`移除 ${attachment.name}`}
                 >
                   ×
@@ -149,190 +300,166 @@ export const InputArea: React.FC<InputAreaProps> = ({
             ))}
           </div>
 
-          {isUploading && uploadProgress && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                padding: '0 2px',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  color: '#8f8f94',
-                  fontSize: '12px',
-                }}
-              >
+          {isUploading && uploadProgress ? (
+            <div className="composer__upload">
+              <div className="composer__upload-meta">
                 <span>
                   正在上传 {attachments.length} 个文件 · {formatFileSize(uploadProgress.loaded)} /{' '}
                   {formatFileSize(uploadProgress.total)}
                 </span>
-                <span
-                  style={{
-                    color: '#f5f5f5',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  {uploadProgress.percent}%
-                </span>
+                <strong>{uploadProgress.percent}%</strong>
               </div>
-
-              <div
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  height: '6px',
-                  borderRadius: '999px',
-                  backgroundColor: '#171717',
-                  overflow: 'hidden',
-                }}
-              >
+              <div className="composer__upload-track">
                 <div
-                  style={{
-                    width: `${uploadProgress.percent}%`,
-                    height: '100%',
-                    borderRadius: 'inherit',
-                    background:
-                      'linear-gradient(90deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 1))',
-                    boxShadow: '0 0 16px rgba(255, 255, 255, 0.18)',
-                    transition: 'width 0.14s ease',
-                  }}
+                  className="composer__upload-fill"
+                  style={{ width: `${uploadProgress.percent}%` }}
                 />
               </div>
             </div>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept=".pdf,.ppt,.pptx,.xls,.xlsx,.csv,.md,.markdown,.txt,.json,.yaml,.yml,.xml,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          if (e.target.files && e.target.files.length > 0) {
-            onSelectFiles?.(e.target.files);
-            e.target.value = '';
-          }
-        }}
-      />
-
-      <button
-        type="button"
-        disabled={!!disabled || !!isUploading}
-        onClick={() => fileInputRef.current?.click()}
-        style={{
-          width: '38px',
-          height: '38px',
-          borderRadius: '12px',
-          border: '1px solid #2a2a2a',
-          backgroundColor: '#141414',
-          color: '#d8d8d8',
-          cursor: disabled || isUploading ? 'not-allowed' : 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-        aria-label="上传文件"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 0 1-7.78-7.78l8.49-8.49a3.5 3.5 0 0 1 4.95 4.95l-8.5 8.49a1.5 1.5 0 0 1-2.12-2.12l7.79-7.78" />
-        </svg>
-      </button>
-
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={isUploading ? '正在上传文件...' : '给 SUN-AGENT 发送消息，或附带文件一起提问'}
-        disabled={!!disabled || !!isUploading}
-        rows={1}
-        style={{
-          flex: 1,
-          padding: '10px 16px',
-          borderRadius: '12px',
-          border: '1px solid #2a2a2a',
-          backgroundColor: '#141414',
-          color: '#e5e5e5',
-          resize: 'none',
-          outline: 'none',
-          fontSize: '14px',
-          fontFamily: 'inherit',
-          maxHeight: '150px',
-          transition: 'border-color 0.2s ease',
-        }}
-        onFocus={(e) => {
-          e.currentTarget.style.borderColor = '#444';
-        }}
-        onBlur={(e) => {
-          e.currentTarget.style.borderColor = '#2a2a2a';
-        }}
-      />
-
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        style={{
-          width: '36px',
-          height: '36px',
-          borderRadius: '50%',
-          border: 'none',
-          backgroundColor: canSubmit ? '#fff' : '#2a2a2a',
-          color: canSubmit ? '#000' : '#666',
-          fontSize: '18px',
-          cursor: canSubmit ? 'pointer' : 'not-allowed',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s ease',
-          transform: canSubmit ? 'scale(1)' : 'scale(0.95)',
-        }}
-        onMouseOver={(e) => {
-          if (canSubmit) {
-            e.currentTarget.style.backgroundColor = '#e5e5e5';
-          }
-        }}
-        onMouseOut={(e) => {
-          if (canSubmit) {
-            e.currentTarget.style.backgroundColor = '#fff';
-          }
-        }}
-        aria-label="发送消息"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <line x1="12" y1="19" x2="12" y2="5" />
-          <polyline points="5 12 12 5 19 12" />
-        </svg>
-      </button>
-
-      {isStreaming && (
-        <button
-          type="button"
-          onClick={onStop}
-          style={{
-            padding: '0 14px',
-            height: '36px',
-            borderRadius: '999px',
-            border: '1px solid #3a3a3a',
-            backgroundColor: '#171717',
-            color: '#f2f2f2',
-            fontSize: '13px',
-            cursor: 'pointer',
+      <div className="composer__surface">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.ppt,.pptx,.xls,.xlsx,.csv,.md,.markdown,.txt,.json,.yaml,.yml,.xml,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg"
+          className="composer__file-input"
+          onChange={(event) => {
+            if (event.target.files && event.target.files.length > 0) {
+              onSelectFiles?.(event.target.files);
+              event.target.value = '';
+            }
           }}
-        >
-          停止
-        </button>
-      )}
+        />
+
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            isUploading
+              ? '正在上传文件...'
+              : composerMode === 'launch'
+                ? '想让 TokenMind 帮你处理什么？'
+                : '继续和 TokenMind 对话'
+          }
+          disabled={!!disabled || !!isUploading}
+          rows={1}
+          className="composer__textarea"
+        />
+
+        <div className="composer__footer">
+          <div className="composer__footer-left">
+            <button
+              type="button"
+              disabled={!!disabled || !!isUploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="composer__icon-button"
+              aria-label="上传文件"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+            </button>
+
+            <div className="composer__knowledge" ref={knowledgeRef}>
+              <button
+                type="button"
+                className={`composer__knowledge-trigger ${knowledgeOpen ? 'is-open' : ''}`}
+                onClick={() => setKnowledgeOpen((state) => !state)}
+              >
+                {linkedKnowledgeBases.length > 0 ? '已链接知识库' : '链接知识库'}
+              </button>
+
+              {knowledgeOpen ? (
+                <div className="composer__knowledge-menu">
+                  <div className="composer__knowledge-menu-head">
+                    <strong>选择当前会话要参考的知识库</strong>
+                    <span>可多选</span>
+                  </div>
+                  {knowledgeOptions.length === 0 ? (
+                    <div className="composer__knowledge-empty">
+                      还没有知识库。先去左侧知识库页面创建一个。
+                    </div>
+                  ) : (
+                    <div className="composer__knowledge-options">
+                      {knowledgeOptions.map((item) => {
+                        const selected = linkedKnowledgeBaseIds.includes(item.id);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={`composer__knowledge-option ${selected ? 'is-selected' : ''}`}
+                            onClick={() => toggleKnowledgeBase(item.id)}
+                          >
+                            <div>
+                              <strong>{item.name}</strong>
+                              <p>{item.description || '未填写简介'}</p>
+                            </div>
+                            <span>{selected ? '已链接' : '链接'}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="composer__footer-right">
+            {composerMode === 'active' ? (
+              <div className="composer__controls">
+                <InlineSelect
+                  value={activeModelId || ''}
+                  placeholder={modelPlaceholder}
+                  options={modelSelectOptions}
+                  onSelect={(next) => onSelectModel?.(next)}
+                  disabled={modelStatus === 'loading' || modelSelectOptions.length === 0}
+                />
+                <span className="composer__controls-divider" />
+                <InlineSelect
+                  value={activeReasoning || ''}
+                  placeholder={reasoningPlaceholder}
+                  options={reasoningSelectOptions}
+                  onSelect={(next) => onSelectReasoning?.(next)}
+                />
+              </div>
+            ) : null}
+
+            {isStreaming ? (
+              <button
+                type="button"
+                onClick={onStop}
+                disabled={!onStop}
+                className="composer__submit composer__submit--stop is-ready"
+                aria-label="停止生成"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="7" y="7" width="10" height="10" rx="2.2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className={`composer__submit ${canSubmit ? 'is-ready' : ''}`}
+                aria-label="发送消息"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <line x1="12" y1="19" x2="12" y2="5" />
+                  <polyline points="5 12 12 5 19 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </form>
   );
 };

@@ -44,6 +44,10 @@ class LLMResponse:
     usage: dict[str, int] = field(default_factory=dict)
     reasoning_content: str | None = None  # Kimi, DeepSeek-R1 etc.
     thinking_blocks: list[dict] | None = None  # Anthropic extended thinking
+    error_status_code: int | None = None
+    error_code: str | None = None
+    retry_after_s: float | None = None
+    is_transient: bool | None = None
     
     @property
     def has_tool_calls(self) -> bool:
@@ -192,6 +196,56 @@ class LLMProvider(ABC):
         err = (content or "").lower()
         return any(marker in err for marker in cls._TRANSIENT_ERROR_MARKERS)
 
+    @classmethod
+    def _is_transient_response(cls, response: LLMResponse) -> bool:
+        if response.is_transient is not None:
+            return response.is_transient
+        if response.error_status_code in {408, 409, 425, 429, 500, 502, 503, 504, 529}:
+            return True
+        if response.retry_after_s is not None and response.finish_reason == "error":
+            return True
+        return cls._is_transient_error(response.content)
+
+    @staticmethod
+    def _error_response_from_exception(exc: Exception) -> LLMResponse:
+        response_obj = getattr(exc, "response", None)
+        status_code = getattr(exc, "status_code", None) or getattr(response_obj, "status_code", None)
+        error_code = getattr(exc, "code", None) or getattr(exc, "error_code", None)
+        retry_after_s: float | None = None
+
+        headers = getattr(response_obj, "headers", None)
+        if headers is not None:
+            raw_retry_after = None
+            if isinstance(headers, dict):
+                raw_retry_after = headers.get("retry-after") or headers.get("Retry-After")
+            else:
+                raw_retry_after = getattr(headers, "get", lambda *_: None)("retry-after")
+                if raw_retry_after is None:
+                    raw_retry_after = getattr(headers, "get", lambda *_: None)("Retry-After")
+            if raw_retry_after is not None:
+                try:
+                    retry_after_s = float(raw_retry_after)
+                except (TypeError, ValueError):
+                    retry_after_s = None
+
+        body = getattr(exc, "doc", None) or getattr(response_obj, "text", None)
+        message = f"Error calling LLM: {exc}"
+        if body and str(body).strip():
+            message = f"Error: {str(body).strip()[:500]}"
+
+        transient = status_code in {408, 409, 425, 429, 500, 502, 503, 504, 529}
+        if retry_after_s is not None and status_code is None:
+            transient = True
+
+        return LLMResponse(
+            content=message,
+            finish_reason="error",
+            error_status_code=status_code if isinstance(status_code, int) else None,
+            error_code=str(error_code) if error_code is not None else None,
+            retry_after_s=retry_after_s,
+            is_transient=transient if (status_code is not None or retry_after_s is not None) else None,
+        )
+
     @staticmethod
     def _strip_image_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
         """Replace image_url blocks with text placeholder. Returns None if no images found."""
@@ -221,7 +275,7 @@ class LLMProvider(ABC):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            return LLMResponse(content=f"Error calling LLM: {exc}", finish_reason="error")
+            return self._error_response_from_exception(exc)
 
     async def chat_with_retry(
         self,
@@ -258,7 +312,7 @@ class LLMProvider(ABC):
             if response.finish_reason != "error":
                 return response
 
-            if not self._is_transient_error(response.content):
+            if not self._is_transient_response(response):
                 stripped = self._strip_image_content(messages)
                 if stripped is not None:
                     logger.warning("Non-transient LLM error with image content, retrying without images")

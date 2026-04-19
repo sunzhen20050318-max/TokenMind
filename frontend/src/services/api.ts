@@ -13,6 +13,7 @@ import type {
   StorageCleanupResponse,
   StorageOverviewResponse,
 } from '../types/storage';
+import type { LongTermMemoryState, MemoryOverviewResponse } from '../types/memory';
 import type {
   AgentSettingsUpdate,
   AppConfigResponse,
@@ -22,6 +23,7 @@ import type {
   RuntimeSettingsUpdate,
   ToolsSettingsUpdate,
 } from '../types/config';
+import type { KnowledgeDetailResponse, KnowledgeDocument, KnowledgeOverviewResponse } from '../types/knowledge';
 
 const API_BASE = '/api';
 
@@ -258,6 +260,45 @@ export const api = {
     return res.json();
   },
 
+  async getMemoryOverview(
+    sessionId?: string | null,
+    archiveQuery?: string
+  ): Promise<MemoryOverviewResponse> {
+    const params = new URLSearchParams();
+    if (sessionId) {
+      params.set('session_id', sessionId);
+    }
+    if (archiveQuery?.trim()) {
+      params.set('archive_query', archiveQuery.trim());
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE}/memory${suffix}`);
+    if (res.status === 404) {
+      throw new Error('当前后端还没有加载记忆中心接口，请重启后端后再试。');
+    }
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to load memory overview: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateLongTermMemory(content: string): Promise<LongTermMemoryState> {
+    const res = await fetch(`${API_BASE}/memory/long-term`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (res.status === 404) {
+      throw new Error('当前后端还没有加载记忆中心接口，请重启后端后再试。');
+    }
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to update long-term memory: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
   async getConfig(): Promise<AppConfigResponse> {
     const res = await fetch(`${API_BASE}/config`);
     if (!res.ok) {
@@ -369,6 +410,158 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Failed to delete MCP server: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getKnowledgeOverview(): Promise<KnowledgeOverviewResponse> {
+    const res = await fetch(`${API_BASE}/knowledge`);
+    if (!res.ok) {
+      throw new Error(`Failed to load knowledge overview: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getKnowledgeDetail(id: string): Promise<KnowledgeDetailResponse> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load knowledge base: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async createKnowledgeBase(payload: { name: string; description: string }): Promise<KnowledgeDetailResponse | KnowledgeOverviewResponse | Record<string, unknown>> {
+    const res = await fetch(`${API_BASE}/knowledge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to create knowledge base: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateKnowledgeBase(
+    id: string,
+    payload: { name?: string; description?: string; enabled?: boolean }
+  ): Promise<{ knowledge_base: KnowledgeDetailResponse['knowledge_base'] }> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update knowledge base: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async deleteKnowledgeBase(id: string): Promise<{ success: boolean; knowledge_base_id: string }> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to delete knowledge base: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async uploadKnowledgeDocuments(
+    id: string,
+    files: File[],
+    onProgress?: (progress: UploadProgress) => void
+  ): Promise<{ documents: KnowledgeDocument[] }> {
+    const formData = new FormData();
+    const fallbackTotal = files.reduce((sum, file) => sum + file.size, 0);
+    files.forEach((file) => formData.append('files', file));
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/knowledge/${encodeURIComponent(id)}/documents`, true);
+
+      xhr.upload.onprogress = (event) => {
+        const total = event.lengthComputable ? event.total : fallbackTotal;
+        if (!total) {
+          return;
+        }
+        onProgress?.({
+          loaded: event.loaded,
+          total,
+          percent: Math.min(100, Math.round((event.loaded / total) * 100)),
+        });
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Failed to upload knowledge documents'));
+      };
+
+      xhr.onload = () => {
+        let payload: { documents: KnowledgeDocument[] } | { detail?: string } | null = null;
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch {
+          payload = null;
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300 && payload) {
+          onProgress?.({
+            loaded: fallbackTotal,
+            total: fallbackTotal,
+            percent: 100,
+          });
+          resolve(payload as { documents: KnowledgeDocument[] });
+          return;
+        }
+
+        const detail =
+          payload && typeof payload === 'object' && 'detail' in payload && typeof payload.detail === 'string'
+            ? payload.detail
+            : `Failed to upload knowledge documents: ${xhr.statusText}`;
+        reject(new Error(detail));
+      };
+
+      xhr.send(formData);
+    });
+  },
+
+  async deleteKnowledgeDocument(knowledgeBaseId: string, documentId: string): Promise<{ success: boolean }> {
+    const res = await fetch(
+      `${API_BASE}/knowledge/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to delete knowledge document: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getSessionKnowledgeLinks(
+    sessionId: string
+  ): Promise<{ session_id: string; knowledge_base_ids: string[] }> {
+    const res = await fetch(`${API_BASE}/knowledge/links/${encodeURIComponent(sessionId)}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load session knowledge links: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateSessionKnowledgeLinks(
+    sessionId: string,
+    knowledgeBaseIds: string[]
+  ): Promise<{ session_id: string; knowledge_base_ids: string[] }> {
+    const res = await fetch(`${API_BASE}/knowledge/links/${encodeURIComponent(sessionId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        knowledge_base_ids: knowledgeBaseIds,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update session knowledge links: ${res.statusText}`);
     }
     return res.json();
   },

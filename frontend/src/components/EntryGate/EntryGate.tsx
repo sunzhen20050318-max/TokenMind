@@ -21,7 +21,7 @@ const PARTICLES = [
 
 const SWIPE_THRESHOLD = 88;
 const WHEEL_THRESHOLD = -44;
-const WORDMARK_TEXT = 'SUN-AGENT';
+const WORDMARK_TEXT = 'TokenMind';
 const TAGLINE_TEXT = 'YOUR PERSONAL AI ASSISTANT';
 
 export const EntryGate: React.FC<EntryGateProps> = ({ onEnter, isExiting }) => {
@@ -216,7 +216,7 @@ export const EntryGate: React.FC<EntryGateProps> = ({ onEnter, isExiting }) => {
       }}
       role="button"
       tabIndex={0}
-      aria-label="进入 SUN-AGENT"
+      aria-label="进入 TokenMind"
     >
       <div className="entry-gate__ambient" />
       <div className="entry-gate__spotlight" />
@@ -246,9 +246,8 @@ export const EntryGate: React.FC<EntryGateProps> = ({ onEnter, isExiting }) => {
 
       <header className="entry-gate__brand">
         <div className="entry-gate__brand-mark" aria-hidden="true">
-          <BrandMark size={22} alt="" />
+          <BrandMark size={24} alt="" />
         </div>
-        <span>SUN-AGENT</span>
       </header>
 
       <main className="entry-gate__center">

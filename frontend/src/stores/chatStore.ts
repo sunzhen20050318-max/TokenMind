@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Message, Session } from '../types';
+import type { Message, MessageCitation, Session } from '../types';
 import { api } from '../services/api';
+import type { KnowledgeBase } from '../types/knowledge';
 
 export interface ToolCall {
   id: string;
@@ -47,6 +48,8 @@ interface ChatState {
   modelProviders: ModelProvider[];
   activeModelId: string | null;
   modelProvidersStatus: 'idle' | 'loading' | 'ready' | 'error';
+  availableKnowledgeBases: KnowledgeBase[];
+  linkedKnowledgeBaseIds: string[];
 
   // Actions
   setCurrentSession: (sessionId: string) => void;
@@ -73,10 +76,13 @@ interface ChatState {
   renameSession: (sessionId: string, title: string | null) => Promise<void>;
   startStreamingAssistant: () => void;
   appendStreamingAssistant: (chunk: string) => void;
-  finishStreamingAssistant: (content?: string) => void;
+  finishStreamingAssistant: (content?: string, citations?: MessageCitation[]) => void;
   fetchModelProviders: () => Promise<void>;
   setActiveModel: (providerId: string, model?: string) => Promise<void>;
   updateProviderConfig: (providerId: string, config: { apiKey: string; apiBase: string }) => Promise<void>;
+  loadKnowledgeBases: () => Promise<void>;
+  loadLinkedKnowledgeBases: (sessionId: string) => Promise<void>;
+  setLinkedKnowledgeBases: (knowledgeBaseIds: string[]) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -93,6 +99,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelProviders: [],
   activeModelId: null,
   modelProvidersStatus: 'idle',
+  availableKnowledgeBases: [],
+  linkedKnowledgeBaseIds: [],
 
   setCurrentTurnId: (turnId) => {
     set({ currentTurnId: turnId });
@@ -116,6 +124,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       toolCalls: [],
       timelineEvents: [],
       currentTurnId: null,
+      linkedKnowledgeBaseIds: [],
     });
     get().loadHistory(sessionId);
   },
@@ -354,7 +363,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  finishStreamingAssistant: (content) => {
+  finishStreamingAssistant: (content, citations) => {
     set((state) => {
       const messages = [...state.messages];
       for (let i = messages.length - 1; i >= 0; i--) {
@@ -363,6 +372,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...messages[i],
             content: content ?? messages[i].content,
             isStreaming: false,
+            citations: citations ?? messages[i].citations,
           };
           return { messages };
         }
@@ -376,6 +386,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               content,
               timestamp: new Date().toISOString(),
               isStreaming: false,
+              citations,
             },
           ],
         };
@@ -488,6 +499,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to update provider config' });
+    }
+  },
+
+  loadKnowledgeBases: async () => {
+    try {
+      const payload = await api.getKnowledgeOverview();
+      set({ availableKnowledgeBases: payload.items });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load knowledge bases' });
+    }
+  },
+
+  loadLinkedKnowledgeBases: async (sessionId) => {
+    try {
+      const payload = await api.getSessionKnowledgeLinks(sessionId);
+      set({ linkedKnowledgeBaseIds: payload.knowledge_base_ids });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load linked knowledge bases' });
+    }
+  },
+
+  setLinkedKnowledgeBases: async (knowledgeBaseIds) => {
+    const sessionId = get().currentSession;
+    if (!sessionId) {
+      return;
+    }
+    try {
+      await api.updateSessionKnowledgeLinks(sessionId, knowledgeBaseIds);
+      set({ linkedKnowledgeBaseIds: knowledgeBaseIds });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to update linked knowledge bases' });
     }
   },
 }));

@@ -1,7 +1,7 @@
-# sun-agent
+# TokenMind
 
 <p align="center">
-  <img src="sun-agent_logo.png" alt="sun-agent logo" width="920" />
+  <img src="tokenmind-logo.png" alt="TokenMind logo" width="920" />
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 ## 项目简介
 
-`sun-agent` 是一个以 Python Agent 运行时为核心、以 React Web UI 为控制台、并支持 Node 渠道桥接的 AI Agent 项目。
+`TokenMind` 是一个以 Python Agent 运行时为核心、以 React Web UI 为控制台、并支持 Node 渠道桥接的 AI Agent 项目。
 
 它的目标不是只做一个聊天机器人，而是提供一套可持续扩展的 Agent 基础设施：
 
@@ -41,7 +41,7 @@
 ## 架构概览
 
 <p align="center">
-  <img src="sun-agent_arch.png" alt="sun-agent architecture" width="920" />
+  <img src="tokenmind-arch.png" alt="TokenMind architecture" width="920" />
 </p>
 
 核心链路可以概括为：
@@ -66,7 +66,7 @@
 
 ```bash
 git clone https://gitee.com/sun124578963_0/sun-agent.git
-cd sun-agent
+cd sun-agent   # 仓库目录当前仍沿用历史名称
 ```
 
 ### 3. 安装后端依赖
@@ -78,19 +78,21 @@ pip install -e ".[dev]"
 ### 4. 初始化配置
 
 ```bash
-sun_agent onboard
+tokenmind onboard
 ```
 
 默认配置文件位于：
 
 ```text
-~/.sun_agent/config.json
+~/.tokenmind/config.json
 ```
 
 ### 5. 启动 Web 服务
 
+旧版 `~/.sun_agent/config.json` 如果存在，会在首次启动时自动迁移到 `~/.tokenmind/config.json`。
+
 ```bash
-sun_agent web --port 8080
+tokenmind web --port 8080
 ```
 
 ### 6. 启动前端开发环境
@@ -112,7 +114,7 @@ http://localhost:5173
 如果你要把 Agent 接到聊天渠道，而不只是本地 Web UI，可以继续启动：
 
 ```bash
-sun_agent gateway
+tokenmind gateway
 ```
 
 ## Web 控制台
@@ -130,7 +132,7 @@ sun_agent gateway
 如果你只想先把项目跑起来，最简单的方式就是：
 
 1. 配好模型 API Key
-2. 启动 `sun_agent web --port 8080`
+2. 启动 `tokenmind web --port 8080`
 3. 进入 `http://localhost:5173`
 4. 在“设置中心”里完成模型和工具配置
 
@@ -139,7 +141,7 @@ sun_agent gateway
 你可以通过两种方式配置模型：
 
 - 在 Web UI 的“设置中心”中直接填写 provider、API Key、默认模型等信息
-- 手动编辑 `~/.sun_agent/config.json`
+- 手动编辑 `~/.tokenmind/config.json`
 
 默认支持的模型提供商包括但不限于：
 
@@ -157,7 +159,7 @@ sun_agent gateway
 
 ## MCP 支持
 
-`sun-agent` 原生支持把 MCP 服务注册为 Agent 工具。
+`TokenMind` 原生支持把 MCP 服务注册为 Agent 工具。
 
 支持的接入方式：
 
@@ -182,7 +184,7 @@ mcp_minimax_understand_image
 ## 项目结构
 
 ```text
-sun-agent/
+tokenmind/
 ├─ sun_agent/
 │  ├─ agent/                 # Agent 主循环、上下文构建、工具系统
 │  ├─ bus/                   # 消息总线与队列
@@ -230,7 +232,7 @@ npm run build
 
 ## 适合什么场景
 
-`sun-agent` 适合这几类使用方式：
+`TokenMind` 适合这几类使用方式：
 
 - 想要一套能长期演进的个人 Agent 基础框架
 - 想把多模型、多渠道、多工具统一到一个运行时中
@@ -240,7 +242,7 @@ npm run build
 ## 文档
 
 - [架构说明](CLAUDE.md)
-- [Skills 说明](sun_agent/skills/README.md)
+- [TokenMind Skills 说明](sun_agent/skills/README.md)
 
 ## License
 

@@ -84,8 +84,14 @@ class OpenAICompatProvider(LLMProvider):
                 kwargs.update(overrides)
                 return
 
-    def _supports_cache_control(self) -> bool:
-        return bool(self.spec and self.spec.supports_prompt_caching)
+    def _supports_cache_control(self, resolved_model: str) -> bool:
+        if not self.spec or not self.spec.supports_prompt_caching:
+            return False
+        patterns = tuple(p.lower() for p in self.spec.prompt_caching_model_patterns if p)
+        if not patterns:
+            return True
+        model_lower = resolved_model.lower()
+        return any(pattern in model_lower for pattern in patterns)
 
     @staticmethod
     def _apply_cache_control(
@@ -135,7 +141,7 @@ class OpenAICompatProvider(LLMProvider):
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
         resolved_model = self._resolve_model(model or self.default_model)
-        if self._supports_cache_control():
+        if self._supports_cache_control(resolved_model):
             messages, tools = self._apply_cache_control(messages, tools)
 
         kwargs: dict[str, Any] = {

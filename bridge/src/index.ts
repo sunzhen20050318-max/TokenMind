@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * sun_agent WhatsApp Bridge
+ * TokenMind WhatsApp Bridge
  * 
- * This bridge connects WhatsApp Web to sun_agent's Python backend
+ * This bridge connects WhatsApp Web to TokenMind's Python backend
  * via WebSocket. It handles authentication, message forwarding,
  * and reconnection logic.
  * 
@@ -10,7 +10,7 @@
  *   npm run build && npm start
  *   
  * Or with custom settings:
- *   BRIDGE_PORT=3001 AUTH_DIR=~/.sun_agent/whatsapp npm start
+ *   BRIDGE_PORT=3001 AUTH_DIR=~/.tokenmind/whatsapp npm start
  */
 
 // Polyfill crypto for Baileys in ESM
@@ -24,10 +24,10 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 const PORT = parseInt(process.env.BRIDGE_PORT || '3001', 10);
-const AUTH_DIR = process.env.AUTH_DIR || join(homedir(), '.sun_agent', 'whatsapp-auth');
+const AUTH_DIR = process.env.AUTH_DIR || join(homedir(), '.tokenmind', 'whatsapp-auth');
 const TOKEN = process.env.BRIDGE_TOKEN || undefined;
 
-console.log('🐈 sun_agent WhatsApp Bridge');
+console.log('🐈 TokenMind WhatsApp Bridge');
 console.log('========================\n');
 
 const server = new BridgeServer(PORT, AUTH_DIR, TOKEN);

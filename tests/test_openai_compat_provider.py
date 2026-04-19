@@ -54,6 +54,60 @@ async def test_openrouter_keeps_model_name_intact() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openrouter_claude_models_apply_prompt_caching() -> None:
+    mock_create = AsyncMock(return_value=_fake_chat_response())
+    spec = find_by_name("openrouter")
+
+    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+        client_instance = mock_client.return_value
+        client_instance.chat.completions.create = mock_create
+
+        provider = OpenAICompatProvider(
+            api_key="sk-or-test-key",
+            api_base="https://openrouter.ai/api/v1",
+            default_model="anthropic/claude-sonnet-4-5",
+            spec=spec,
+        )
+        await provider.chat(
+            messages=[{"role": "system", "content": "system prompt"}, {"role": "user", "content": "hello"}],
+            tools=[{"type": "function", "function": {"name": "echo", "parameters": {"type": "object"}}}],
+            model="anthropic/claude-sonnet-4-5",
+        )
+
+    call_kwargs = mock_create.call_args.kwargs
+    system_message = call_kwargs["messages"][0]
+    assert system_message["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert call_kwargs["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_openrouter_non_claude_models_skip_prompt_caching() -> None:
+    mock_create = AsyncMock(return_value=_fake_chat_response())
+    spec = find_by_name("openrouter")
+
+    with patch("sun_agent.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+        client_instance = mock_client.return_value
+        client_instance.chat.completions.create = mock_create
+
+        provider = OpenAICompatProvider(
+            api_key="sk-or-test-key",
+            api_base="https://openrouter.ai/api/v1",
+            default_model="openai/gpt-4o-mini",
+            spec=spec,
+        )
+        await provider.chat(
+            messages=[{"role": "system", "content": "system prompt"}, {"role": "user", "content": "hello"}],
+            tools=[{"type": "function", "function": {"name": "echo", "parameters": {"type": "object"}}}],
+            model="openai/gpt-4o-mini",
+        )
+
+    call_kwargs = mock_create.call_args.kwargs
+    system_message = call_kwargs["messages"][0]
+    assert system_message["content"] == "system prompt"
+    assert "cache_control" not in call_kwargs["tools"][-1]
+
+
+@pytest.mark.asyncio
 async def test_aihubmix_strips_model_prefix() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("aihubmix")

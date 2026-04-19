@@ -31,10 +31,10 @@ RUN npm install && npm run build
 WORKDIR /app
 
 # Create config directory
-RUN mkdir -p /root/.sun_agent
+RUN mkdir -p /root/.tokenmind
 
 # Gateway default port
 EXPOSE 18790
 
-ENTRYPOINT ["sun_agent"]
+ENTRYPOINT ["tokenmind"]
 CMD ["status"]

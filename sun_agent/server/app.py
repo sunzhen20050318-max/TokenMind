@@ -1,4 +1,4 @@
-"""FastAPI application for sun_agent Web UI."""
+"""FastAPI application for TokenMind Web UI."""
 
 from __future__ import annotations
 
@@ -19,8 +19,11 @@ from loguru import logger
 from sun_agent.audit import AuditLogger
 from sun_agent.bus.events import InboundMessage, OutboundMessage
 from sun_agent.bus.queue import MessageBus
+from sun_agent.knowledge import KnowledgeService
 from sun_agent.config.loader import load_config
-from sun_agent.config.schema import UploadsConfig
+from sun_agent.config.schema import KnowledgeConfig, UploadsConfig
+from sun_agent.agent.memory import split_history_entries
+from sun_agent.agent.context import ContextBuilder
 from sun_agent.server.channel.web import WebChannel, WebChannelConfig
 from sun_agent.server.dependencies import (
     get_connection_manager,
@@ -34,6 +37,8 @@ from sun_agent.server.routes import (
     chat_router,
     config_router,
     cron_router,
+    knowledge_router,
+    memory_router,
     sessions_router,
     status_router,
     storage_router,
@@ -52,6 +57,7 @@ class ChatService:
     """
 
     default_upload_config = UploadsConfig()
+    default_knowledge_config = KnowledgeConfig()
 
     def __init__(
         self,
@@ -62,9 +68,25 @@ class ChatService:
         self.bus = bus
         self.agent_loop = agent_loop
         self.session_manager = session_manager
+        knowledge = self._load_knowledge_config()
+        self.knowledge = KnowledgeService(
+            session_manager.workspace,
+            vector_backend=knowledge.vector_backend,
+            chunk_size=knowledge.chunk_size,
+            chunk_overlap=knowledge.chunk_overlap,
+            top_k=knowledge.top_k,
+            embedding_model=knowledge.embedding_model,
+            embedding_api_key=knowledge.embedding_api_key,
+            embedding_api_base=knowledge.embedding_api_base,
+            rerank_model=knowledge.rerank_model,
+            rerank_api_key=knowledge.rerank_api_key,
+            rerank_api_base=knowledge.rerank_api_base,
+            rerank_top_n=knowledge.rerank_top_n,
+        )
         self.audit = AuditLogger(session_manager.workspace)
         self._response_futures: dict[str, asyncio.Future] = {}
         self._last_upload_cleanup_at: datetime | None = None
+        self._knowledge_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def uploads_dir(self) -> Path:
@@ -80,6 +102,14 @@ class ChatService:
             logger.exception("Failed to load upload settings, falling back to defaults")
             return self.default_upload_config.model_copy(deep=True)
 
+    def _load_knowledge_config(self) -> KnowledgeConfig:
+        try:
+            config = load_config()
+            return config.tools.knowledge
+        except Exception:
+            logger.exception("Failed to load knowledge settings, falling back to defaults")
+            return self.default_knowledge_config.model_copy(deep=True)
+
     def _upload_policy(self) -> dict[str, int | timedelta]:
         uploads = self._load_upload_config()
         return {
@@ -92,6 +122,33 @@ class ChatService:
             "retention": timedelta(days=uploads.retention_days),
             "cleanup_interval": timedelta(hours=uploads.cleanup_interval_hours),
         }
+
+    def _sync_knowledge_config(self) -> None:
+        config = self._load_knowledge_config()
+        self.knowledge.configure(
+            vector_backend=config.vector_backend,
+            chunk_size=config.chunk_size,
+            chunk_overlap=config.chunk_overlap,
+            top_k=config.top_k,
+            embedding_model=config.embedding_model,
+            embedding_api_key=config.embedding_api_key,
+            embedding_api_base=config.embedding_api_base,
+            rerank_model=config.rerank_model,
+            rerank_api_key=config.rerank_api_key,
+            rerank_api_base=config.rerank_api_base,
+            rerank_top_n=config.rerank_top_n,
+        )
+
+    def _schedule_knowledge_task(self, coro: Any) -> None:
+        task = asyncio.create_task(coro)
+        self._knowledge_tasks.add(task)
+        task.add_done_callback(self._knowledge_tasks.discard)
+
+    async def _process_knowledge_document(self, document_id: str) -> None:
+        try:
+            await asyncio.to_thread(self.knowledge.process_document, document_id)
+        except Exception:
+            logger.exception("Failed background processing for knowledge document {}", document_id)
 
     @staticmethod
     def _format_bytes(size: int) -> str:
@@ -143,36 +200,46 @@ class ChatService:
         for msg in session.messages:
             if msg.get("role") != "user":
                 continue
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                lines = [
-                    line.strip()
-                    for line in content.splitlines()
-                    if line.strip()
-                    and not line.startswith("[Attached Files")
-                    and line != "Attached files are available in the workspace:"
-                    and not line.startswith("- ")
-                    and not line.startswith("Use read_file for text-based files when possible.")
-                ]
-                return "\n".join(lines)[:50] if lines else None
-            if isinstance(content, list):
+            sanitized = ChatService._sanitize_message_content(msg.get("content", ""))
+            if isinstance(sanitized, str):
+                visible = sanitized.strip()
+                return visible[:50] if visible else None
+            if isinstance(sanitized, list):
                 text_blocks = [
-                    block.get("text", "")
-                    for block in content
-                    if isinstance(block, dict) and isinstance(block.get("text"), str)
+                    block.get("text", "").strip()
+                    for block in sanitized
+                    if isinstance(block, dict) and isinstance(block.get("text"), str) and block.get("text", "").strip()
                 ]
-                visible_lines = [
-                    line.strip()
-                    for text in text_blocks
-                    for line in text.splitlines()
-                    if line.strip()
-                    and not line.startswith("[Attached Files")
-                    and line != "Attached files are available in the workspace:"
-                    and not line.startswith("- ")
-                    and not line.startswith("Use read_file for text-based files when possible.")
-                ]
-                return "\n".join(visible_lines)[:50] if visible_lines else None
+                if text_blocks:
+                    return "\n".join(text_blocks)[:50]
         return None
+
+    @staticmethod
+    def _sanitize_message_content(content: Any) -> Any:
+        """Strip runtime/attachment/knowledge metadata from history-facing content."""
+        if isinstance(content, str):
+            return ContextBuilder.strip_metadata_prefix(content)
+        if isinstance(content, list):
+            sanitized_items: list[dict[str, Any]] = []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                next_item = dict(item)
+                if isinstance(next_item.get("text"), str):
+                    next_item["text"] = ContextBuilder.strip_metadata_prefix(next_item["text"])
+                    if not next_item["text"].strip() and next_item.get("type") == "text":
+                        continue
+                sanitized_items.append(next_item)
+            return sanitized_items
+        return content
+
+    @classmethod
+    def _serialize_history_message(cls, message: dict[str, Any]) -> dict[str, Any]:
+        """Return a UI-facing copy of a stored message with metadata stripped."""
+        serialized = dict(message)
+        if "content" in serialized:
+            serialized["content"] = cls._sanitize_message_content(serialized["content"])
+        return serialized
 
     def _session_display_label(self, session_key: str, session: Any, metadata: dict[str, Any] | None = None) -> str:
         title = getattr(session, "title", None) or (metadata or {}).get("title")
@@ -208,6 +275,123 @@ class ChatService:
                         })
                         seen_for_session.add(resolved)
         return references
+
+    def _memory_store(self) -> Any | None:
+        consolidator = getattr(self.agent_loop, "memory_consolidator", None)
+        return getattr(consolidator, "store", None)
+
+    def _memory_templates_enabled(self) -> bool:
+        templates = getattr(load_config(), "templates", None)
+        if templates is None:
+            return False
+        return bool(getattr(templates, "memory_system", None) or getattr(templates, "memory_prompt", None))
+
+    def _summarize_memory_settings(self) -> dict[str, Any]:
+        template_enabled = self._memory_templates_enabled()
+        return {
+            "auto_consolidation": self._memory_store() is not None,
+            "template_enabled": template_enabled,
+            "editable_long_term": True,
+            "summary": (
+                "长期记忆会跨会话保留，当前上下文展示正在参与推理的近期内容，近期归档保存已经从主上下文移出的历史片段。"
+            ),
+        }
+
+    def _build_current_context(self, session_id: str | None) -> dict[str, Any]:
+        if not session_id:
+            return {
+                "session_id": None,
+                "session_label": None,
+                "items": [],
+            }
+
+        session = self.session_manager.get_or_create(session_id)
+        visible_messages = session.messages[session.last_consolidated:]
+        items: list[dict[str, Any]] = []
+        for message in visible_messages:
+            content = self._sanitize_message_content(message.get("content"))
+            if not isinstance(content, str) or not content.strip():
+                continue
+            items.append(
+                {
+                    "role": message.get("role", "unknown"),
+                    "content": content,
+                    "timestamp": message.get("timestamp"),
+                }
+            )
+
+        return {
+            "session_id": session_id,
+            "session_label": self._session_display_label(session_id, session),
+            "items": items,
+        }
+
+    @staticmethod
+    def _archive_item_timestamp(content: str) -> str | None:
+        if content.startswith("[") and "]" in content:
+            return content[1 : content.index("]")]
+        return None
+
+    def _build_archive_items(self, archive_text: str, archive_query: str | None = None) -> dict[str, Any]:
+        query = (archive_query or "").strip()
+        query_lower = query.lower()
+        items = []
+        for index, block in enumerate(reversed(split_history_entries(archive_text))):
+            if query_lower and query_lower not in block.lower():
+                continue
+            items.append(
+                {
+                    "id": f"archive-{index}",
+                    "content": block,
+                    "timestamp": self._archive_item_timestamp(block),
+                }
+            )
+        return {
+            "query": query,
+            "total": len(items),
+            "items": items,
+        }
+
+    def get_memory_overview(self, session_id: str | None = None, archive_query: str | None = None) -> dict[str, Any]:
+        """Return Memory Center payload for the current workspace."""
+        store = self._memory_store()
+        long_term_content = store.read_long_term() if store else ""
+        archive_text = store.read_archive() if store else ""
+        updated_at = None
+        if store and store.memory_file.exists():
+            updated_at = datetime.fromtimestamp(store.memory_file.stat().st_mtime).isoformat()
+        return {
+            "long_term": {
+                "content": long_term_content,
+                "updated_at": updated_at,
+                "character_count": len(long_term_content),
+                "editable": True,
+            },
+            "current_context": self._build_current_context(session_id),
+            "archive": self._build_archive_items(archive_text, archive_query),
+            "settings": self._summarize_memory_settings(),
+        }
+
+    def update_long_term_memory(self, content: str) -> dict[str, Any]:
+        """Persist long-term memory content from the Memory Center."""
+        store = self._memory_store()
+        if store is None:
+            raise HTTPException(status_code=503, detail="Memory store is not available")
+        normalized = content.rstrip()
+        store.write_long_term(normalized)
+        updated_at = datetime.fromtimestamp(store.memory_file.stat().st_mtime).isoformat()
+        self.audit.record(
+            "memory.long_term.updated",
+            "success",
+            actor="web_user",
+            details={"character_count": len(normalized)},
+        )
+        return {
+            "content": normalized,
+            "updated_at": updated_at,
+            "character_count": len(normalized),
+            "editable": True,
+        }
 
     def _referenced_upload_paths(self) -> set[str]:
         return set(self._build_upload_reference_map())
@@ -489,6 +673,86 @@ class ChatService:
         )
         return result
 
+    def get_knowledge_overview(self) -> dict[str, Any]:
+        self._sync_knowledge_config()
+        return self.knowledge.get_knowledge_overview()
+
+    def create_knowledge_base(self, name: str, description: str) -> dict[str, Any]:
+        self._sync_knowledge_config()
+        return self.knowledge.create_knowledge_base(name, description).model_dump()
+
+    def get_knowledge_base_detail(self, knowledge_base_id: str) -> dict[str, Any]:
+        self._sync_knowledge_config()
+        return self.knowledge.get_knowledge_base_detail(knowledge_base_id)
+
+    def update_knowledge_base(
+        self,
+        knowledge_base_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        enabled: bool | None = None,
+    ) -> Any:
+        self._sync_knowledge_config()
+        return self.knowledge.update_knowledge_base(
+            knowledge_base_id,
+            name=name,
+            description=description,
+            enabled=enabled,
+        )
+
+    def delete_knowledge_base(self, knowledge_base_id: str) -> dict[str, Any]:
+        self._sync_knowledge_config()
+        result = self.knowledge.delete_knowledge_base(knowledge_base_id)
+        self.audit.record(
+            "knowledge.base.deleted",
+            "success",
+            actor="web_user",
+            details={"knowledge_base_id": knowledge_base_id},
+        )
+        return result
+
+    def get_session_knowledge_links(self, session_id: str) -> list[str]:
+        self._sync_knowledge_config()
+        return self.knowledge.get_session_links(session_id)
+
+    def set_session_knowledge_links(self, session_id: str, knowledge_base_ids: list[str]) -> None:
+        self._sync_knowledge_config()
+        self.knowledge.set_session_links(session_id, knowledge_base_ids)
+
+    async def upload_knowledge_documents(self, knowledge_base_id: str, files: list[Any]) -> dict[str, Any]:
+        self._sync_knowledge_config()
+        uploaded: list[dict[str, Any]] = []
+        temp_dir = self.session_manager.workspace / "tmp-knowledge"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        for file in files:
+            filename = safe_filename(getattr(file, "filename", "") or "upload.bin")
+            temp_path = temp_dir / filename
+            temp_path.write_bytes(await file.read())
+            document = self.knowledge.register_document_upload(
+                knowledge_base_id,
+                temp_path,
+                getattr(file, "filename", filename),
+            )
+            uploaded.append(document.model_dump())
+            self._schedule_knowledge_task(self._process_knowledge_document(document.id))
+            try:
+                temp_path.unlink()
+            except OSError:
+                logger.warning("Failed to remove temporary knowledge upload {}", temp_path)
+
+        return {"documents": uploaded}
+
+    def delete_knowledge_document(self, knowledge_base_id: str, document_id: str) -> dict[str, Any]:
+        self._sync_knowledge_config()
+        self.knowledge.delete_document(knowledge_base_id, document_id)
+        return {
+            "success": True,
+            "knowledge_base_id": knowledge_base_id,
+            "document_id": document_id,
+        }
+
     async def send_message(
         self,
         content: str,
@@ -550,7 +814,7 @@ class ChatService:
         """Get chat history for a session."""
         session = self.session_manager.get_or_create(session_id)
         return {
-            "messages": session.messages if session else [],
+            "messages": [self._serialize_history_message(message) for message in session.messages] if session else [],
             "timeline_events": session.timeline_events if session else [],
         }
 
@@ -711,8 +975,8 @@ def create_app(
 
     # Create FastAPI app
     app = FastAPI(
-        title="sun_agent Web UI",
-        description="Web UI for sun_agent AI assistant",
+        title="TokenMind Web UI",
+        description="Web UI for the TokenMind AI assistant",
         version="0.1.0",
         lifespan=lifespan,
     )
@@ -731,6 +995,8 @@ def create_app(
     app.include_router(chat_router)
     app.include_router(config_router)
     app.include_router(cron_router)
+    app.include_router(knowledge_router)
+    app.include_router(memory_router)
     app.include_router(sessions_router)
     app.include_router(status_router)
     app.include_router(storage_router)

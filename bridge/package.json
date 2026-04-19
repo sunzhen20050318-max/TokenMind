@@ -1,7 +1,7 @@
 {
-  "name": "sun_agent-whatsapp-bridge",
+  "name": "tokenmind-whatsapp-bridge",
   "version": "0.1.0",
-  "description": "WhatsApp bridge for sun_agent using Baileys",
+  "description": "WhatsApp bridge for TokenMind using Baileys",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

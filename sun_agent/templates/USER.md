@@ -46,4 +46,4 @@ Information about the user to help personalize interactions.
 
 ---
 
-*Edit this file to customize sun-agent's behavior for your needs.*
+*Edit this file to customize TokenMind's behavior for your needs.*
