@@ -25,5 +25,6 @@ nano.*.save
 uv.lock
 node_modules/
 frontend/.vite/
+tokenmind/webui/
 .claude/
 

@@ -47,6 +47,7 @@ from tokenmind.server.routes import (
 )
 from tokenmind.server.websocket.handler import websocket_handler
 from tokenmind.server.websocket.manager import ConnectionManager
+from tokenmind.server.frontend import register_frontend_routes, resolve_frontend_dist_dir
 from tokenmind.utils.helpers import safe_filename
 
 
@@ -1127,6 +1128,10 @@ def create_app(
 
     # Set WebChannel's ws manager
     web_channel.set_ws_manager(connection_manager)
+
+    frontend_dir = resolve_frontend_dist_dir()
+    if frontend_dir is not None:
+        register_frontend_routes(app, frontend_dir)
 
     # Return app without starting dispatcher - it will be started via lifespan
     return app

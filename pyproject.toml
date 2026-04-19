@@ -1,8 +1,8 @@
 [project]
 name = "tokenmind-ai"
-version = "0.1.4.post5"
+version = "0.1.4.post6"
 description = "A lightweight personal AI assistant framework"
-readme = { file = "README.md", content-type = "text/markdown" }
+readme = { file = "README_PYPI.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
@@ -13,6 +13,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
@@ -78,6 +79,11 @@ dev = [
 [project.scripts]
 tokenmind = "tokenmind.cli.commands:app"
 
+[project.urls]
+Homepage = "https://gitee.com/sun124578963_0/TokenMind"
+Repository = "https://gitee.com/sun124578963_0/TokenMind"
+Issues = "https://gitee.com/sun124578963_0/TokenMind/issues"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -88,6 +94,7 @@ allow-direct-references = true
 [tool.hatch.build]
 include = [
     "tokenmind/**/*.py",
+    "tokenmind/webui/**/*",
     "tokenmind/templates/**/*.md",
     "tokenmind/skills/**/*.md",
     "tokenmind/skills/**/*.sh",
@@ -105,10 +112,15 @@ packages = ["tokenmind"]
 [tool.hatch.build.targets.sdist]
 include = [
     "tokenmind/",
+    "hatch_build.py",
     "bridge/",
+    "frontend/",
     "README.md",
+    "README_PYPI.md",
     "LICENSE",
 ]
+
+[tool.hatch.build.hooks.custom]
 
 [tool.ruff]
 line-length = 100
