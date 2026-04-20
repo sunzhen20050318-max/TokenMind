@@ -172,6 +172,7 @@ class WebChannel(BaseChannel):
         # frontend can render a streaming-style reply incrementally.
         logger.info("Sending RESP: {}", msg.content[:50] if msg.content else "")
         citations = msg.metadata.get("_citations")
+        attachments = msg.metadata.get("_attachments")
         await self._ws_manager.send_to_session(
             session_key=msg.chat_id,
             message={
@@ -195,6 +196,7 @@ class WebChannel(BaseChannel):
                 "content": msg.content,
                 "channel": msg.channel,
                 "citations": citations,
+                "attachments": attachments,
             },
         )
 

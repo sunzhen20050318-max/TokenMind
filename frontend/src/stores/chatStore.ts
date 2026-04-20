@@ -86,7 +86,8 @@ interface ChatState {
   renameSession: (sessionId: string, title: string | null) => Promise<void>;
   startStreamingAssistant: () => void;
   appendStreamingAssistant: (chunk: string) => void;
-  finishStreamingAssistant: (content?: string, citations?: MessageCitation[]) => void;
+  finishStreamingAssistant: (content?: string, citations?: MessageCitation[], attachments?: Message['attachments']) => void;
+  updateAttachment: (attachmentId: string, nextAttachment: NonNullable<Message['attachments']>[number]) => void;
   fetchModelProviders: () => Promise<void>;
   setActiveModel: (providerId: string, model?: string) => Promise<void>;
   updateProviderConfig: (providerId: string, config: { apiKey: string; apiBase: string }) => Promise<void>;
@@ -512,7 +513,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  finishStreamingAssistant: (content, citations) => {
+  finishStreamingAssistant: (content, citations, attachments) => {
     set((state) => {
       const messages = [...state.messages];
       for (let i = messages.length - 1; i >= 0; i--) {
@@ -522,6 +523,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             content: content ?? messages[i].content,
             isStreaming: false,
             citations: citations ?? messages[i].citations,
+            attachments: attachments ?? messages[i].attachments,
           };
           return { messages };
         }
@@ -536,12 +538,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
               timestamp: new Date().toISOString(),
               isStreaming: false,
               citations,
+              attachments,
             },
           ],
         };
       }
       return state;
     });
+  },
+
+  updateAttachment: (attachmentId, nextAttachment) => {
+    set((state) => ({
+      messages: state.messages.map((message) => ({
+        ...message,
+        attachments: message.attachments?.map((attachment) =>
+          attachment.id === attachmentId ? { ...attachment, ...nextAttachment } : attachment
+        ),
+      })),
+    }));
   },
 
   fetchModelProviders: async () => {

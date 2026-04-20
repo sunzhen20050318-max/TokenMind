@@ -92,7 +92,8 @@ export function useWebSocket(sessionId: string) {
           // Reset current turn after response
           finishStreamingAssistant(
             msg.type === 'response_end' ? msg.content : msg.content,
-            msg.citations
+            msg.citations,
+            msg.attachments
           );
           setCurrentTurnId(null);
           void playReplyNotification();

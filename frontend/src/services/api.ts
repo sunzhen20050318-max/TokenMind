@@ -219,6 +219,22 @@ export const api = {
     });
   },
 
+  getAttachmentUrl(attachmentId: string): string {
+    return `${API_BASE}/chat/attachments/${encodeURIComponent(attachmentId)}`;
+  },
+
+  async retainAttachment(attachmentId: string): Promise<Attachment> {
+    const res = await fetch(`${API_BASE}/chat/attachments/${encodeURIComponent(attachmentId)}/retain`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to retain attachment: ${res.statusText}`);
+    }
+    const payload = await res.json();
+    return payload.attachment as Attachment;
+  },
+
   async listCronJobs(includeDisabled = true): Promise<CronJob[]> {
     const res = await fetch(`${API_BASE}/cron/jobs?include_disabled=${includeDisabled ? 'true' : 'false'}`);
     if (!res.ok) {

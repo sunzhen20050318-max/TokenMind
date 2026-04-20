@@ -43,6 +43,77 @@
   min-height: 0;
 }
 
+.chat-shell__surface.is-drop-active {
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.05), transparent 46%),
+    rgba(16, 16, 20, 0.66);
+}
+
+.chat-shell__surface.is-drop-active .chat-shell__scroll {
+  opacity: 0.18;
+  filter: saturate(0.72);
+}
+
+.chat-shell__surface.is-drop-active .chat-composer-dock {
+  opacity: 0.44;
+}
+
+.chat-shell__drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.chat-shell__drop-hero {
+  width: min(540px, calc(100% - 40px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.chat-shell__drop-icon {
+  width: 98px;
+  height: 98px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.28));
+}
+
+.chat-shell__drop-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.chat-shell__drop-title {
+  margin: 0;
+  color: #f5f6fb;
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.06;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.chat-shell__drop-copy {
+  margin: 0;
+  color: #d5d8e3;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.chat-shell__surface.is-drop-active .chat-thread,
+.chat-shell__surface.is-drop-active .chat-launch {
+  transform: scale(0.995);
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
 .chat-shell__scroll {
   height: 100%;
   overflow-y: auto;
@@ -213,6 +284,19 @@
 
   .chat-launch__chips {
     justify-content: flex-start;
+  }
+
+  .chat-shell__drop-icon {
+    width: 82px;
+    height: 82px;
+  }
+
+  .chat-shell__drop-title {
+    font-size: clamp(26px, 7vw, 34px);
+  }
+
+  .chat-shell__drop-copy {
+    font-size: 15px;
   }
 }
 

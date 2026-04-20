@@ -100,6 +100,36 @@ export function extractTextContent(
   attachments: Attachment[] | undefined
 ): string {
   const hidePlaceholderPaths = new Set((attachments || []).map((item) => item.path));
+  const attachmentNames = (attachments || [])
+    .map((item) => item.name?.trim())
+    .filter((item): item is string => !!item);
+
+  const isAttachmentPlaceholderLine = (trimmed: string) => {
+    if (!attachments?.length) {
+      return false;
+    }
+
+    const mentionsAttachmentName = attachmentNames.some((name) => trimmed.includes(name));
+    if (
+      /^(已发送|文件已发送|附件已发送|已为你发送|已创建文件|文件已创建|附件已创建)/.test(trimmed) &&
+      /(下载|文件|附件)/.test(trimmed)
+    ) {
+      return true;
+    }
+    if (
+      /点击.*(?:下载|打开|查看)/.test(trimmed) &&
+      (mentionsAttachmentName || /(文件|附件|链接)/.test(trimmed))
+    ) {
+      return true;
+    }
+    if (
+      /^(file|attachment)\s+(created|ready|sent)/i.test(trimmed) &&
+      /(download|open|attached)/i.test(trimmed)
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   const filterLine = (line: string) => {
     const trimmed = line.trim();
@@ -121,7 +151,13 @@ export function extractTextContent(
     if (trimmed.startsWith('Use read_file for text-based files when possible.')) {
       return false;
     }
-    if (trimmed.startsWith('- ') && attachments?.some((item) => trimmed.includes(item.path))) {
+    if (isAttachmentPlaceholderLine(trimmed)) {
+      return false;
+    }
+    if (
+      trimmed.startsWith('- ') &&
+      attachments?.some((item) => typeof item.path === 'string' && trimmed.includes(item.path))
+    ) {
       return false;
     }
     if (/^\[(image|file): .+\]$/.test(trimmed)) {
@@ -134,15 +170,16 @@ export function extractTextContent(
   };
 
   if (typeof content === 'string') {
-    return stripKnowledgeMetadata(content)
+    const extracted = stripKnowledgeMetadata(content)
       .split('\n')
       .filter(filterLine)
       .join('\n')
       .trim();
+    return extracted || (attachments?.length ? '\u200b' : '');
   }
 
   if (Array.isArray(content)) {
-    return content
+    const extracted = content
       .map((item) =>
         item && typeof item === 'object' && typeof item.text === 'string'
           ? stripKnowledgeMetadata(item.text)
@@ -152,6 +189,7 @@ export function extractTextContent(
       .filter(filterLine)
       .join('\n')
       .trim();
+    return extracted || (attachments?.length ? '\u200b' : '');
   }
 
   return '';

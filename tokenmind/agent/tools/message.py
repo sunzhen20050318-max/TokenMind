@@ -21,6 +21,8 @@ class MessageTool(Tool):
         self._default_chat_id = default_chat_id
         self._default_message_id = default_message_id
         self._sent_in_turn: bool = False
+        self._sent_media: list[str] = []
+        self._sent_content: str | None = None
 
     def set_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Set the current message context."""
@@ -35,6 +37,8 @@ class MessageTool(Tool):
     def start_turn(self) -> None:
         """Reset per-turn send tracking."""
         self._sent_in_turn = False
+        self._sent_media = []
+        self._sent_content = None
 
     @property
     def name(self) -> str:
@@ -100,9 +104,21 @@ class MessageTool(Tool):
         )
 
         try:
-            await self._send_callback(msg)
-            if channel == self._default_channel and chat_id == self._default_chat_id:
+            same_target = channel == self._default_channel and chat_id == self._default_chat_id
+            defer_to_current_web_turn = same_target and channel == "web" and bool(media)
+
+            if not defer_to_current_web_turn:
+                await self._send_callback(msg)
+
+            if same_target:
                 self._sent_in_turn = True
+                self._sent_media = list(media or [])
+                self._sent_content = content
+
+            if defer_to_current_web_turn:
+                media_info = f" with {len(media)} attachments" if media else ""
+                return f"Message prepared for current web chat{media_info}"
+
             media_info = f" with {len(media)} attachments" if media else ""
             return f"Message sent to {channel}:{chat_id}{media_info}"
         except Exception as e:

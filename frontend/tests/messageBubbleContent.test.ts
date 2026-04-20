@@ -1,5 +1,6 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
+
 import type { Message } from '../src/types';
 import {
   extractTextContent,
@@ -47,4 +48,38 @@ test('resolveVisibleCitations prefers structured citations when present', () => 
   const citations = resolveVisibleCitations(message, String(message.content));
   assert.equal(citations.length, 1);
   assert.equal(citations[0].document_name, '资料.pdf');
+});
+
+test('extractTextContent hides attachment helper copy when an attachment card exists', () => {
+  const rendered = extractTextContent(
+    '已发送！点击链接即可下载 empty_file.txt',
+    [
+      {
+        id: 'att_1',
+        name: 'empty_file.txt',
+        origin: 'assistant_generated',
+        status: 'temporary',
+        is_image: false,
+      },
+    ]
+  );
+
+  assert.equal(rendered, '\u200b');
+});
+
+test('extractTextContent keeps normal assistant text alongside attachment cards', () => {
+  const rendered = extractTextContent(
+    '我已经帮你整理好了，下面是文件。',
+    [
+      {
+        id: 'att_2',
+        name: 'report.csv',
+        origin: 'assistant_generated',
+        status: 'temporary',
+        is_image: false,
+      },
+    ]
+  );
+
+  assert.equal(rendered, '我已经帮你整理好了，下面是文件。');
 });

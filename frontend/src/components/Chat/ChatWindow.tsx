@@ -3,6 +3,7 @@ import { BrandMark } from '../BrandMark';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
 import { InputArea, type DraftAttachment, type ComposerReasoningOption } from './InputArea';
+import { hasFileTransfer } from './inputAreaDrag';
 import { ToolChain } from './ToolIndicator';
 import { ToolApprovalModal } from './ToolApprovalModal';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
@@ -275,12 +276,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     trustAndApprovePendingTool,
   } = useWebSocket(sessionId);
   const prevMessagesLenRef = useRef<number>(0);
+  const dragDepthRef = useRef(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<Array<{ id: string; file: File }>>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [reasoningEffort, setReasoningEffort] = useState<string>('');
+  const [isSurfaceDragActive, setIsSurfaceDragActive] = useState(false);
 
   useEffect(() => {
     setDraftMessage('');
@@ -326,7 +329,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           if (message.role === 'assistant' && message.tool_calls?.length) {
             return false;
           }
-          if (message.role === 'assistant' && typeof message.content === 'string' && !message.content.trim()) {
+          if (
+            message.role === 'assistant' &&
+            typeof message.content === 'string' &&
+            !message.content.trim() &&
+            !(message.attachments && message.attachments.length > 0)
+          ) {
             return false;
           }
           return true;
@@ -433,12 +441,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setInputFocusSignal((signal) => signal + 1);
   };
 
-  const handleSelectFiles = (files: FileList) => {
-    const nextFiles = Array.from(files).map((file) => ({
+  const appendPendingFiles = useCallback((files: File[]) => {
+    const nextFiles = files.map((file) => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       file,
     }));
     setPendingFiles((existing) => [...existing, ...nextFiles]);
+  }, []);
+
+  const handleSelectFiles = (files: FileList) => {
+    appendPendingFiles(Array.from(files));
   };
 
   const handleRemoveAttachment = (id: string) => {
@@ -460,6 +472,58 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     size: file.size,
     type: file.type,
   }));
+
+  const resetSurfaceDragState = useCallback(() => {
+    dragDepthRef.current = 0;
+    setIsSurfaceDragActive(false);
+  }, []);
+
+  const handleSurfaceDragEnter = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (isUploading || !hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current += 1;
+    setIsSurfaceDragActive(true);
+  }, [isUploading]);
+
+  const handleSurfaceDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (isUploading || !hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+    if (!isSurfaceDragActive) {
+      setIsSurfaceDragActive(true);
+    }
+  }, [isSurfaceDragActive, isUploading]);
+
+  const handleSurfaceDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setIsSurfaceDragActive(false);
+    }
+  }, []);
+
+  const handleSurfaceDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (isUploading || !hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const files = Array.from(event.dataTransfer?.files || []);
+    resetSurfaceDragState();
+    if (files.length > 0) {
+      appendPendingFiles(files);
+    }
+  }, [appendPendingFiles, isUploading, resetSurfaceDragState]);
 
   const composerModelOptions = modelProviders.map((provider) => ({
     id: provider.id,
@@ -607,7 +671,31 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         </button>
       </div>
 
-      <div className="chat-shell__surface">
+      <div
+        className={`chat-shell__surface ${isSurfaceDragActive ? 'is-drop-active' : ''}`}
+        onDragEnter={handleSurfaceDragEnter}
+        onDragOver={handleSurfaceDragOver}
+        onDragLeave={handleSurfaceDragLeave}
+        onDrop={handleSurfaceDrop}
+      >
+        {isSurfaceDragActive ? (
+          <div className="chat-shell__drop-overlay" aria-hidden="true">
+            <div className="chat-shell__drop-hero">
+              <div className="chat-shell__drop-icon">
+                <svg viewBox="0 0 64 64" fill="none">
+                  <rect x="6" y="12" width="22" height="28" rx="6" fill="#7f8cff" opacity="0.92" transform="rotate(-12 6 12)" />
+                  <rect x="36" y="10" width="22" height="30" rx="6" fill="#b5befd" opacity="0.92" transform="rotate(10 36 10)" />
+                  <rect x="20" y="28" width="24" height="24" rx="7" fill="#5662ff" />
+                  <path d="M27 44l4-5 4 3 4-5 5 7H27z" fill="#dfe3ff" />
+                  <circle cx="35.5" cy="35.5" r="2.5" fill="#dfe3ff" />
+                </svg>
+              </div>
+              <h2 className="chat-shell__drop-title">添加任意内容</h2>
+              <p className="chat-shell__drop-copy">将任意文件拖放到此处，以将其添加到对话中</p>
+            </div>
+          </div>
+        ) : null}
+
         <div className={`chat-shell__scroll ${hasConversation ? 'is-active' : 'is-launch'}`}>
           {!hasConversation ? (
             <section className="chat-launch">
@@ -641,6 +729,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             attachments={draftAttachments}
             onSelectFiles={handleSelectFiles}
             onRemoveAttachment={handleRemoveAttachment}
+            externalDragActive={isSurfaceDragActive}
             composerMode={hasConversation ? 'active' : 'launch'}
             modelOptions={composerModelOptions}
             activeModelId={activeModelId}

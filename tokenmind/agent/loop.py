@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import json
 import os
 import re
@@ -14,12 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
+from fastapi import HTTPException
 from loguru import logger
 
 from tokenmind.agent.context import ContextBuilder
 from tokenmind.agent.memory import MemoryConsolidator
 from tokenmind.agent.subagent import SubagentManager
 from tokenmind.agent.tools.cron import CronTool
+from tokenmind.agent.tools.deliver_attachment import DeliverAttachmentTool
 from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
 from tokenmind.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from tokenmind.agent.tools.message import MessageTool
@@ -32,6 +35,7 @@ from tokenmind.bus.events import InboundMessage, OutboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.knowledge import KnowledgeService
 from tokenmind.providers.base import LLMProvider
+from tokenmind.server.attachments import AttachmentStore
 from tokenmind.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
@@ -127,6 +131,7 @@ class AgentLoop:
         )
         self.template_renderer = TemplateRenderer()
         self.sessions = session_manager or SessionManager(workspace)
+        self.attachments = AttachmentStore(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
             provider=provider,
@@ -178,6 +183,7 @@ class AgentLoop:
         self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
+        self.tools.register(DeliverAttachmentTool(store=self.attachments, retention=timedelta(days=30)))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
@@ -251,10 +257,10 @@ class AgentLoop:
 
     def _set_tool_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron"):
+        for name in ("message", "spawn", "cron", "deliver_attachment"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
-                    tool.set_context(channel, chat_id, *([message_id] if name == "message" else []))
+                    tool.set_context(channel, chat_id, *([message_id] if name in {"message", "deliver_attachment"} else []))
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -835,6 +841,9 @@ class AgentLoop:
         if message_tool := self.tools.get("message"):
             if isinstance(message_tool, MessageTool):
                 message_tool.start_turn()
+        if attachment_tool := self.tools.get("deliver_attachment"):
+            if isinstance(attachment_tool, DeliverAttachmentTool):
+                attachment_tool.start_turn()
 
         history = session.get_history(max_messages=0)
         knowledge_chunks = self.knowledge.retrieve_for_session(key, msg.content)
@@ -890,6 +899,33 @@ class AgentLoop:
         final_content, tools_used, all_msgs = await self._run_agent_loop(
             initial_messages, msg=msg, on_progress=on_progress or _bus_progress,
         )
+        assistant_attachments: list[dict[str, Any]] = []
+        if attachment_tool := self.tools.get("deliver_attachment"):
+            if isinstance(attachment_tool, DeliverAttachmentTool):
+                assistant_attachments = attachment_tool.delivered
+        if message_tool := self.tools.get("message"):
+            if (
+                isinstance(message_tool, MessageTool)
+                and msg.channel == "web"
+                and message_tool._sent_media
+            ):
+                bridged_attachments: list[dict[str, Any]] = []
+                for media_path in message_tool._sent_media:
+                    try:
+                        bridged_attachments.append(
+                            self.attachments.create_local(
+                                key,
+                                source_path=media_path,
+                                retention=timedelta(days=30),
+                                message_id=msg.metadata.get("message_id"),
+                            )
+                        )
+                    except HTTPException:
+                        logger.warning("Failed to bridge message(media) attachment {}", media_path)
+                if bridged_attachments:
+                    assistant_attachments = [*assistant_attachments, *bridged_attachments]
+                if message_tool._sent_content:
+                    final_content = message_tool._sent_content
 
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
@@ -904,14 +940,32 @@ class AgentLoop:
                 updated_assistant = {**all_msgs[-1], "content": final_content}
                 if knowledge_citations:
                     updated_assistant["citations"] = knowledge_citations
+                if assistant_attachments:
+                    updated_assistant["attachments"] = assistant_attachments
                 all_msgs[-1] = updated_assistant
+
+        if assistant_attachments and (not all_msgs or all_msgs[-1].get("role") != "assistant"):
+            all_msgs = [
+                *all_msgs,
+                {
+                    "role": "assistant",
+                    "content": final_content or "",
+                    "attachments": assistant_attachments,
+                    **({"citations": knowledge_citations} if knowledge_citations else {}),
+                },
+            ]
 
         saved_entries = self._save_turn(session, all_msgs, 1 + len(history))
         self._save_timeline_events(session, saved_entries, raw_timeline_events)
         self.sessions.save(session)
         self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
 
-        if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
+        if (
+            (mt := self.tools.get("message"))
+            and isinstance(mt, MessageTool)
+            and mt._sent_in_turn
+            and not (msg.channel == "web" and mt._sent_media)
+        ):
             return None
 
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
@@ -919,6 +973,8 @@ class AgentLoop:
         metadata = dict(msg.metadata or {})
         if knowledge_citations:
             metadata["_citations"] = knowledge_citations
+        if assistant_attachments:
+            metadata["_attachments"] = assistant_attachments
         return OutboundMessage(
             channel=msg.channel, chat_id=msg.chat_id, content=final_content,
             metadata=metadata,
@@ -931,7 +987,7 @@ class AgentLoop:
         for m in messages[skip:]:
             entry = dict(m)
             role, content = entry.get("role"), entry.get("content")
-            if role == "assistant" and not content and not entry.get("tool_calls"):
+            if role == "assistant" and not content and not entry.get("tool_calls") and not entry.get("attachments"):
                 continue  # skip empty assistant messages — they poison session context
             if role == "tool" and isinstance(content, str) and len(content) > self._TOOL_RESULT_MAX_CHARS:
                 entry["content"] = content[:self._TOOL_RESULT_MAX_CHARS] + "\n... (truncated)"

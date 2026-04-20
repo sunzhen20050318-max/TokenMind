@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -39,6 +40,12 @@ class UploadFilesResponse(BaseModel):
 
     session_id: str
     attachments: list[dict[str, Any]]
+
+
+class RetainAttachmentResponse(BaseModel):
+    """Response model for retaining an assistant attachment."""
+
+    attachment: dict[str, Any]
 
 
 def get_chat_service():
@@ -106,5 +113,39 @@ async def get_chat_history(
             messages=history.get("messages", []),
             timeline_events=history.get("timeline_events", []),
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/attachments/{attachment_id}")
+async def download_attachment(
+    attachment_id: str,
+    service=Depends(get_chat_service),
+):
+    """Download or preview a stored chat attachment."""
+    try:
+        attachment = service.resolve_attachment(attachment_id)
+        return FileResponse(
+            attachment["storage_path"],
+            media_type=attachment.get("mime_type") or "application/octet-stream",
+            filename=attachment.get("name"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/attachments/{attachment_id}/retain", response_model=RetainAttachmentResponse)
+async def retain_attachment(
+    attachment_id: str,
+    service=Depends(get_chat_service),
+):
+    """Promote a temporary assistant attachment into saved storage."""
+    try:
+        attachment = service.retain_attachment(attachment_id)
+        return RetainAttachmentResponse(attachment=attachment)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

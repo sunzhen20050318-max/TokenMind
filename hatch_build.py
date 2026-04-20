@@ -60,6 +60,8 @@ class CustomBuildHook(BuildHookInterface):
         bundle_dir, generated = ensure_frontend_bundle(Path(self.root))
         self._bundle_dir = bundle_dir
         self._generated_bundle = generated
+        force_include = build_data.setdefault("force_include", {})
+        force_include[str(bundle_dir)] = "tokenmind/webui"
 
     def finalize(self, version: str, build_data: dict[str, object], artifact_path: str) -> None:
         if getattr(self, "_generated_bundle", False):

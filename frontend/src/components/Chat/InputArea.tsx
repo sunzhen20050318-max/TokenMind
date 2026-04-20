@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { UploadProgress } from '../../types';
+import { hasFileTransfer } from './inputAreaDrag';
 import './inputArea.css';
 
 export interface DraftAttachment {
@@ -50,6 +51,7 @@ interface InputAreaProps {
   knowledgeOptions?: ComposerKnowledgeOption[];
   linkedKnowledgeBaseIds?: string[];
   onUpdateLinkedKnowledgeBases?: (knowledgeBaseIds: string[]) => void;
+  externalDragActive?: boolean;
 }
 
 interface InlineSelectOption {
@@ -183,12 +185,17 @@ export const InputArea: React.FC<InputAreaProps> = ({
   knowledgeOptions = [],
   linkedKnowledgeBaseIds = [],
   onUpdateLinkedKnowledgeBases,
+  externalDragActive = false,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const knowledgeRef = useRef<HTMLDivElement>(null);
+  const dragDepthRef = useRef(0);
   const canSubmit = (!!value.trim() || attachments.length > 0) && !disabled && !isUploading;
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const effectiveDragActive = isDragActive || externalDragActive;
+  const showLocalDropIndicator = isDragActive && !externalDragActive;
 
   const availableModels = useMemo(
     () => modelOptions.filter((option) => option.configured || option.id === activeModelId),
@@ -275,6 +282,58 @@ export const InputArea: React.FC<InputAreaProps> = ({
     onUpdateLinkedKnowledgeBases?.(nextIds);
   };
 
+  const resetDragState = () => {
+    dragDepthRef.current = 0;
+    setIsDragActive(false);
+  };
+
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    if (disabled || isUploading || !hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (disabled || isUploading || !hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+    if (!isDragActive) {
+      setIsDragActive(true);
+    }
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (disabled || isUploading || !hasFileTransfer(event.dataTransfer?.types)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const files = event.dataTransfer?.files;
+    resetDragState();
+    if (files && files.length > 0) {
+      onSelectFiles?.(files);
+    }
+  };
+
   return (
     <form
       className={`composer composer--${composerMode} ${isUploading ? 'is-uploading' : ''}`}
@@ -320,7 +379,20 @@ export const InputArea: React.FC<InputAreaProps> = ({
         </div>
       ) : null}
 
-      <div className="composer__surface">
+      <div
+        className={`composer__surface ${effectiveDragActive ? 'is-drag-active' : ''}`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {showLocalDropIndicator ? (
+          <div className="composer__drop-indicator" aria-hidden="true">
+            <strong>松开以上传文件</strong>
+            <span>文件会直接加入当前输入框附件区</span>
+          </div>
+        ) : null}
+
         <input
           ref={fileInputRef}
           type="file"

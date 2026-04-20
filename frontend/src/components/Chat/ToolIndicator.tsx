@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+﻿import React, { memo, useEffect, useRef, useState } from 'react';
 import type { TimelineEvent, ToolCall } from '../../stores/chatStore';
 
 interface ToolChainProps {
@@ -94,7 +94,7 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
 
     const getTitle = () => {
       const count = displayCount !== undefined ? displayCount : toolCalls.length;
-      return count > 0 ? `执行时间线 (${count})` : '执行时间线';
+      return count > 0 ? `Exec (${count})` : 'Exec';
     };
 
     const getStatusText = () => {
@@ -319,3 +319,4 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
 );
 
 export const ToolIndicator = ToolChain;
+

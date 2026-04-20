@@ -6,6 +6,7 @@ import { SettingsModal } from '../../pages/Settings';
 import { CreateProjectModal } from '../Projects/CreateProjectModal';
 import { MoveSessionToProjectModal } from '../Projects/MoveSessionToProjectModal';
 import { ProjectConfirmModal } from '../Projects/ProjectConfirmModal';
+import { OverlayPortal } from '../Overlay/OverlayPortal';
 import { buildProjectConfirmContent } from '../Projects/projectConfirmState';
 import { buildProjectSidebarTree } from '../Projects/projectSidebarState';
 import './sidebar.css';
@@ -216,6 +217,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     [projects, activeProjectId, expandedProjectIds, projectSessions]
   );
   const isProjectViewActive = mainView === 'project-home' || mainView === 'project-chat';
+  const hasSidebarOverlay =
+    showSettings || showCreateProject || moveTargetSessionId !== null || confirmState !== null;
 
   const beginRename = (sessionId: string, currentTitle?: string, firstMessage?: string) => {
     setEditingSessionId(sessionId);
@@ -697,31 +700,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} /> : null}
-      {showCreateProject ? (
-        <CreateProjectModal
-          onClose={() => setShowCreateProject(false)}
-          onCreated={() => onSelectMainView('project-home')}
-        />
-      ) : null}
-      {moveTargetSessionId ? (
-        <MoveSessionToProjectModal
-          sessionId={moveTargetSessionId}
-          onClose={() => setMoveTargetSessionId(null)}
-          onMoved={() => onSelectMainView('project-home')}
-        />
-      ) : null}
-      {confirmState ? (
-        <ProjectConfirmModal
-          {...buildProjectConfirmContent(confirmState.kind, confirmState.targetName)}
-          busy={confirmBusy}
-          onClose={() => {
-            if (!confirmBusy) {
-              setConfirmState(null);
-            }
-          }}
-          onConfirm={handleConfirmDelete}
-        />
+      {hasSidebarOverlay ? (
+        <OverlayPortal>
+          {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} /> : null}
+          {showCreateProject ? (
+            <CreateProjectModal
+              onClose={() => setShowCreateProject(false)}
+              onCreated={() => onSelectMainView('project-home')}
+            />
+          ) : null}
+          {moveTargetSessionId ? (
+            <MoveSessionToProjectModal
+              sessionId={moveTargetSessionId}
+              onClose={() => setMoveTargetSessionId(null)}
+              onMoved={() => onSelectMainView('project-home')}
+            />
+          ) : null}
+          {confirmState ? (
+            <ProjectConfirmModal
+              {...buildProjectConfirmContent(confirmState.kind, confirmState.targetName)}
+              busy={confirmBusy}
+              onClose={() => {
+                if (!confirmBusy) {
+                  setConfirmState(null);
+                }
+              }}
+              onConfirm={handleConfirmDelete}
+            />
+          ) : null}
+        </OverlayPortal>
       ) : null}
     </aside>
   );

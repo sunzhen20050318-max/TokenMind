@@ -1,10 +1,14 @@
 export interface Attachment {
+  id?: string;
   name: string;
-  path: string;
+  path?: string;
   mime_type?: string;
   size?: number;
   category?: string;
   is_image?: boolean;
+  origin?: 'user_upload' | 'assistant_local' | 'assistant_remote' | 'assistant_generated';
+  status?: 'temporary' | 'saved' | 'expired';
+  preview_text?: string;
 }
 
 export interface MessageCitation {
@@ -113,10 +117,10 @@ export interface StatusResponse {
 export type WSMessageType =
   | { type: 'connected'; session_id: string }
   | { type: 'message'; content: string; session_id: string; attachments?: Attachment[] }
-  | { type: 'response'; content: string; channel: string; citations?: MessageCitation[] }
+  | { type: 'response'; content: string; channel: string; citations?: MessageCitation[]; attachments?: Attachment[] }
   | { type: 'response_start'; channel: string }
   | { type: 'response_delta'; content: string; channel: string }
-  | { type: 'response_end'; content: string; channel: string; citations?: MessageCitation[] }
+  | { type: 'response_end'; content: string; channel: string; citations?: MessageCitation[]; attachments?: Attachment[] }
   | { type: 'tool'; content: string; channel: string }
   | { type: 'tool_start'; content: string; tool_id: string; tool_name: string; channel: string }
   | { type: 'tool_end'; content: string; tool_id: string; tool_name: string; duration: number; channel: string }

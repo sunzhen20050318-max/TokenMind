@@ -48,6 +48,7 @@ from tokenmind.server.routes import (
 from tokenmind.server.websocket.handler import websocket_handler
 from tokenmind.server.websocket.manager import ConnectionManager
 from tokenmind.server.frontend import register_frontend_routes, resolve_frontend_dist_dir
+from tokenmind.server.attachments import AttachmentStore, categorize_attachment
 from tokenmind.utils.helpers import safe_filename
 
 
@@ -88,6 +89,7 @@ class ChatService:
         )
         self.projects = ProjectStore(session_manager.workspace)
         self.audit = AuditLogger(session_manager.workspace)
+        self.attachments = AttachmentStore(session_manager.workspace)
         self._response_futures: dict[str, asyncio.Future] = {}
         self._last_upload_cleanup_at: datetime | None = None
         self._knowledge_tasks: set[asyncio.Task[Any]] = set()
@@ -454,6 +456,7 @@ class ChatService:
         deleted_files = 0
         deleted_dirs = 0
         referenced = self._referenced_upload_paths()
+        managed_paths = self.attachments.managed_paths()
         cutoff = now - policy["retention"]
 
         for path in self._iter_upload_files():
@@ -462,6 +465,8 @@ class ChatService:
                 modified_at = datetime.fromtimestamp(path.stat().st_mtime)
             except OSError:
                 continue
+            if resolved in managed_paths:
+                continue
             if resolved in referenced or modified_at >= cutoff:
                 continue
             try:
@@ -469,6 +474,9 @@ class ChatService:
                 deleted_files += 1
             except OSError:
                 logger.warning("Failed to delete stale upload file {}", path)
+
+        attachment_cleanup = self.attachments.expire_stale(cutoff)
+        deleted_files += int(attachment_cleanup.get("deleted_files", 0))
 
         uploads_root = self.uploads_dir
         if uploads_root.exists():
@@ -500,21 +508,66 @@ class ChatService:
 
     @staticmethod
     def _categorize_upload(filename: str, mime_type: str | None) -> tuple[str, bool]:
-        suffix = Path(filename).suffix.lower()
-        mime = (mime_type or "").lower()
-        if mime.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}:
-            return "image", True
-        if suffix in {".md", ".markdown"}:
-            return "markdown", False
-        if suffix == ".pdf":
-            return "pdf", False
-        if suffix in {".ppt", ".pptx", ".key"}:
-            return "presentation", False
-        if suffix in {".xls", ".xlsx", ".csv"}:
-            return "spreadsheet", False
-        if suffix in {".txt", ".json", ".yaml", ".yml", ".xml"}:
-            return "text", False
-        return "document", False
+        return categorize_attachment(filename, mime_type)
+
+    def create_generated_attachment(
+        self,
+        session_id: str,
+        *,
+        filename: str,
+        content: str | bytes,
+        mime_type: str | None = None,
+        message_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.attachments.create_generated(
+            session_id,
+            filename=filename,
+            content=content,
+            mime_type=mime_type,
+            retention=self._upload_policy()["retention"],
+            message_id=message_id,
+        )
+
+    def create_local_attachment(
+        self,
+        session_id: str,
+        *,
+        source_path: str | Path,
+        message_id: str | None = None,
+        attachment_name: str | None = None,
+    ) -> dict[str, Any]:
+        return self.attachments.create_local(
+            session_id,
+            source_path=source_path,
+            retention=self._upload_policy()["retention"],
+            message_id=message_id,
+            attachment_name=attachment_name,
+        )
+
+    def create_remote_attachment(
+        self,
+        session_id: str,
+        *,
+        source_url: str,
+        message_id: str | None = None,
+        filename: str | None = None,
+    ) -> dict[str, Any]:
+        return self.attachments.create_remote(
+            session_id,
+            source_url=source_url,
+            retention=self._upload_policy()["retention"],
+            message_id=message_id,
+            filename=filename,
+        )
+
+    def get_attachment_record(self, attachment_id: str) -> dict[str, Any] | None:
+        return self.attachments.get_record(attachment_id)
+
+    def resolve_attachment(self, attachment_id: str) -> dict[str, Any]:
+        return self.attachments.resolve(attachment_id).to_dict()
+
+    def retain_attachment(self, attachment_id: str) -> dict[str, Any]:
+        return self.attachments.retain(attachment_id)
 
     async def save_uploads(self, session_id: str, files: list[Any]) -> list[dict[str, Any]]:
         """Persist uploaded files into the workspace and return attachment metadata."""
@@ -611,12 +664,15 @@ class ChatService:
     def list_upload_files(self) -> list[dict[str, Any]]:
         """List persisted uploads with reference metadata."""
         references = self._build_upload_reference_map()
+        managed_paths = self.attachments.managed_paths()
         files: list[dict[str, Any]] = []
         for path in sorted(self._iter_upload_files(), key=lambda item: item.stat().st_mtime, reverse=True):
             try:
                 stats = path.stat()
                 resolved = str(path.resolve())
             except OSError:
+                continue
+            if resolved in managed_paths:
                 continue
 
             session_refs = references.get(resolved, [])
@@ -859,9 +915,16 @@ class ChatService:
         """Get chat history for a session."""
         session = self.session_manager.get_or_create(session_id)
         return {
-            "messages": [self._serialize_history_message(message) for message in session.messages] if session else [],
+            "messages": [self._serialize_history_message_for_ui(message) for message in session.messages] if session else [],
             "timeline_events": session.timeline_events if session else [],
         }
+
+    def _serialize_history_message_for_ui(self, message: dict[str, Any]) -> dict[str, Any]:
+        serialized = self._serialize_history_message(message)
+        attachments = serialized.get("attachments")
+        if isinstance(attachments, list):
+            serialized["attachments"] = self.attachments.hydrate_refs(attachments)
+        return serialized
 
     async def list_sessions(self) -> list[dict]:
         """List all sessions."""
