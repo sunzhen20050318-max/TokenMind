@@ -25,6 +25,8 @@ def categorize_attachment(filename: str, mime_type: str | None) -> tuple[str, bo
     mime = (mime_type or "").lower()
     if mime.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}:
         return "image", True
+    if mime.startswith("audio/") or suffix in {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}:
+        return "audio", False
     if suffix in {".md", ".markdown"}:
         return "markdown", False
     if suffix == ".pdf":

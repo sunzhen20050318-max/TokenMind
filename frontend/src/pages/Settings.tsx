@@ -94,8 +94,15 @@ const CREATIVE_CAPABILITY_META: Record<
     label: '音乐',
     description: '用于独立音乐生成页的模型配置，当前版本先提供入口和状态。',
     defaultProvider: 'minimax',
-    defaultModel: 'music-01',
+    defaultModel: 'music-2.6',
     usage: '独立页面',
+  },
+  music_cover: {
+    label: '翻唱模型',
+    description: '上传参考音乐时使用的翻唱/参考音频模型，未启用时音乐页不能使用参考音乐。',
+    defaultProvider: 'minimax',
+    defaultModel: 'music-cover',
+    usage: '音乐页参考音乐',
   },
   voice_clone: {
     label: '声音克隆',

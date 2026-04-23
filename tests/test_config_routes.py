@@ -76,6 +76,8 @@ async def test_get_config_includes_creative_defaults_and_masks_keys(temp_config_
     assert response.creative["image"]["model"] == ""
     assert response.creative["image"]["extra_headers"] is None
     assert response.creative["music"]["api_key"] == "****9876"
+    assert response.creative["music_cover"]["enabled"] is False
+    assert response.creative["music_cover"]["model"] == ""
     assert response.creative["voice_clone"]["enabled"] is False
     assert response.creative["video"]["provider"] == ""
 
@@ -380,4 +382,3 @@ async def test_update_defaults_uses_provider_default_model_when_model_is_omitted
     updated = load_config(temp_config_path)
     assert updated.agents.defaults.provider == "minimax"
     assert updated.agents.defaults.model == "MiniMax-M2.7"
-

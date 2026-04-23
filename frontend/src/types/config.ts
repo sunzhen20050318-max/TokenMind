@@ -5,11 +5,12 @@ export interface ProviderSettings {
   default_model: string | null;
 }
 
-export type CreativeCapabilityKey = 'image' | 'music' | 'voice_clone' | 'video';
+export type CreativeCapabilityKey = 'image' | 'music' | 'music_cover' | 'voice_clone' | 'video';
 
 export const CREATIVE_CAPABILITY_KEYS: CreativeCapabilityKey[] = [
   'image',
   'music',
+  'music_cover',
   'voice_clone',
   'video',
 ];
@@ -26,6 +27,7 @@ export interface CreativeCapabilitySettings {
 export interface CreativeSettings {
   image: CreativeCapabilitySettings;
   music: CreativeCapabilitySettings;
+  music_cover: CreativeCapabilitySettings;
   voice_clone: CreativeCapabilitySettings;
   video: CreativeCapabilitySettings;
 }

@@ -8,6 +8,8 @@ import type {
   UploadFilesResponse,
   Attachment,
   UploadProgress,
+  MusicGenerateRequest,
+  MusicGenerateResponse,
 } from '../types';
 import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
 import type {
@@ -224,6 +226,19 @@ export const api = {
 
   getAttachmentUrl(attachmentId: string): string {
     return `${API_BASE}/chat/attachments/${encodeURIComponent(attachmentId)}`;
+  },
+
+  async generateMusic(payload: MusicGenerateRequest): Promise<MusicGenerateResponse> {
+    const res = await fetch(`${API_BASE}/creative/music/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to generate music: ${res.statusText}`);
+    }
+    return res.json();
   },
 
   async retainAttachment(attachmentId: string): Promise<Attachment> {

@@ -21,6 +21,7 @@ from tokenmind.bus.events import InboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.config.loader import load_config
 from tokenmind.config.schema import KnowledgeConfig, UploadsConfig
+from tokenmind.creative.music_generation import MusicGenerationService
 from tokenmind.knowledge import KnowledgeService
 from tokenmind.projects import ProjectStore
 from tokenmind.server.attachments import AttachmentStore, categorize_attachment
@@ -35,6 +36,7 @@ from tokenmind.server.frontend import register_frontend_routes, resolve_frontend
 from tokenmind.server.routes import (
     chat_router,
     config_router,
+    creative_router,
     cron_router,
     knowledge_router,
     memory_router,
@@ -564,6 +566,69 @@ class ChatService:
 
     def retain_attachment(self, attachment_id: str) -> dict[str, Any]:
         return self.attachments.retain(attachment_id)
+
+    async def generate_music(
+        self,
+        *,
+        prompt: str,
+        lyrics: str | None = None,
+        lyrics_optimizer: bool = False,
+        is_instrumental: bool = False,
+        count: int = 1,
+        reference_audio_base64: str | None = None,
+        reference_audio_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Generate music through the configured creative music capability."""
+        config = load_config()
+        has_reference_audio = bool((reference_audio_base64 or "").strip())
+        capability = config.creative.music_cover if has_reference_audio else config.creative.music
+        if not MusicGenerationService.is_configured(capability):
+            if has_reference_audio:
+                raise ValueError("Music cover generation is not configured or enabled")
+            raise ValueError("Music generation is not configured or enabled")
+
+        service = MusicGenerationService(capability)
+        normalized_count = max(1, min(4, int(count or 1)))
+        attachments: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
+
+        for _ in range(normalized_count):
+            result = await service.generate(
+                prompt=prompt,
+                lyrics=lyrics,
+                lyrics_optimizer=lyrics_optimizer,
+                is_instrumental=is_instrumental,
+                reference_audio_base64=reference_audio_base64,
+            )
+            attachment = self.create_generated_attachment(
+                "creative:music",
+                filename=result.filename,
+                content=result.data,
+                mime_type=result.mime_type,
+                message_id="creative-music",
+            )
+            attachments.append(attachment)
+            results.append(
+                {
+                    "filename": result.filename,
+                    "mime_type": result.mime_type,
+                    "model": result.model,
+                    "provider": result.provider,
+                    "duration_ms": result.duration_ms,
+                    "trace_id": result.trace_id,
+                    "reference_audio_name": reference_audio_name,
+                }
+            )
+
+        if not attachments or not results:
+            raise RuntimeError("Music generation returned no results")
+
+        return {
+            "attachment": attachments[0],
+            "result": results[0],
+            "attachments": attachments,
+            "results": results,
+        }
 
     async def save_uploads(self, session_id: str, files: list[Any]) -> list[dict[str, Any]]:
         """Persist uploaded files into the workspace and return attachment metadata."""
@@ -1163,6 +1228,7 @@ def create_app(
     # Include routers
     app.include_router(chat_router)
     app.include_router(config_router)
+    app.include_router(creative_router)
     app.include_router(cron_router)
     app.include_router(knowledge_router)
     app.include_router(memory_router)

@@ -96,6 +96,33 @@ export interface UploadProgress {
   percent: number;
 }
 
+export interface MusicGenerateRequest {
+  prompt: string;
+  lyrics?: string | null;
+  lyrics_optimizer?: boolean;
+  is_instrumental?: boolean;
+  count?: number;
+  reference_audio_base64?: string | null;
+  reference_audio_name?: string | null;
+}
+
+export interface MusicGenerateResult {
+  filename: string;
+  mime_type: string;
+  model: string;
+  provider: string;
+  duration_ms?: number | null;
+  trace_id?: string | null;
+  reference_audio_name?: string | null;
+}
+
+export interface MusicGenerateResponse {
+  attachment: Attachment;
+  result: MusicGenerateResult;
+  attachments?: Attachment[];
+  results?: MusicGenerateResult[];
+}
+
 export interface PendingToolApproval {
   approval_id: string;
   tool_id: string;

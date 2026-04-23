@@ -124,7 +124,10 @@ const App: React.FC = () => {
             {mainView === 'knowledge' ? (
               <KnowledgePage isActive />
             ) : mainView === 'music' ? (
-              <MusicPage capability={creativeCapabilities?.music} />
+              <MusicPage
+                capability={creativeCapabilities?.music}
+                coverCapability={creativeCapabilities?.music_cover}
+              />
             ) : mainView === 'voice-clone' ? (
               <VoiceClonePage capability={creativeCapabilities?.voice_clone} />
             ) : mainView === 'video' ? (
