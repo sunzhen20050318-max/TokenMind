@@ -45,7 +45,9 @@
       "Bash(python -m pytest tests/ -x -q --timeout=30)",
       "Bash(python -m pytest tests/ -x -q)",
       "Bash(python -m pytest tests/ -x -q --ignore=tests/test_matrix_channel.py)",
-      "Bash(python -c \"from sun_agent.agent.loop import AgentLoop; print\\(''OK''\\)\")"
+      "Bash(python -c \"from sun_agent.agent.loop import AgentLoop; print\\(''OK''\\)\")",
+      "Bash(grep -l \"def test_\\\\|async def test_\" /Users/ent/TokenMind/tests/*.py)",
+      "Bash(find /Users/ent/TokenMind/tests -type f -name \"*.py\" -exec grep -l \"mock\\\\|patch\\\\|Mock\\\\|Patch\" {} \\\\;)"
     ]
   }
 }

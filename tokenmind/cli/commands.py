@@ -380,6 +380,45 @@ def _onboard_plugins(config_path: Path) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+def _make_provider_for_web(config: Config):
+    """Create provider for web command, allowing missing API key."""
+    from tokenmind.providers.base import GenerationSettings
+    from tokenmind.providers.openai_compat_provider import OpenAICompatProvider
+    from tokenmind.providers.registry import find_by_name
+
+    model = config.agents.defaults.model
+    provider_name = config.get_provider_name(model)
+    p = config.get_provider(model)
+    spec = find_by_name(provider_name) if provider_name else None
+    has_key = p and p.api_key
+    needs_key = (
+        not model.startswith("bedrock/")
+        and not has_key
+        and not (spec and (spec.is_oauth or spec.is_local or spec.is_direct))
+    )
+
+    if needs_key:
+        console.print("[yellow]Warning: No API key configured. "
+                      "The Web UI will start, but chat will not work "
+                      "until you add an API key in Settings.[/yellow]")
+        provider = OpenAICompatProvider(
+            api_key=None,
+            api_base=None,
+            default_model=model,
+        )
+    else:
+        provider = _make_provider(config)
+        return provider
+
+    defaults = config.agents.defaults
+    provider.generation = GenerationSettings(
+        temperature=defaults.temperature,
+        max_tokens=defaults.max_tokens,
+        reasoning_effort=defaults.reasoning_effort,
+    )
+    return provider
+
+
 def _make_provider(config: Config):
     """Create the appropriate LLM provider from config."""
     from tokenmind.providers.anthropic_provider import AnthropicProvider
@@ -710,7 +749,7 @@ def web(
     sync_workspace_templates(config.workspace_path)
 
     bus = MessageBus()
-    provider = _make_provider(config)
+    provider = _make_provider_for_web(config)
     session_manager = SessionManager(config.workspace_path)
 
     # Create cron service
