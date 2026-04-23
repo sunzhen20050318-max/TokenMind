@@ -66,11 +66,39 @@ async def test_chat_service_save_uploads_persists_files(tmp_path: Path) -> None:
     attachments = await service.save_uploads("web:test-session", files)
 
     assert len(attachments) == 2
+    assert attachments[0]["id"].startswith("att_")
+    assert attachments[0]["origin"] == "user_upload"
     assert attachments[0]["category"] == "markdown"
     assert Path(attachments[0]["path"]).exists()
+    assert service.get_attachment_record(attachments[0]["id"]) is not None
+    assert service.get_attachment_record(attachments[0]["id"])["owner_role"] == "user"
     assert attachments[1]["category"] == "image"
     assert attachments[1]["is_image"] is True
     assert Path(attachments[1]["path"]).exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_uploads_preserves_referenced_user_uploads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = make_service(tmp_path)
+    override_upload_policy(monkeypatch, service, retention_days=0, cleanup_interval_hours=0)
+
+    attachments = await service.save_uploads(
+        "web:test-session",
+        [make_upload("figure.png", b"\x89PNG\r\n\x1a\nrest", "image/png")],
+    )
+    attachment = attachments[0]
+    upload_path = Path(attachment["path"])
+    stale = upload_path.stat().st_mtime - 3600
+    os.utime(upload_path, (stale, stale))
+
+    session = service.session_manager.get_or_create("web:test-session")
+    session.add_message("user", "look at this", attachments=[attachment])
+    service.session_manager.save(session)
+
+    result = service.cleanup_uploads(force=True)
+
+    assert result["deleted_files"] == 0
+    assert upload_path.exists()
 
 
 @pytest.mark.asyncio

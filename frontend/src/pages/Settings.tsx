@@ -5,8 +5,15 @@ import { BrandMark } from '../components/BrandMark';
 import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
 import { useChatStore } from '../stores/chatStore';
+import {
+  createEmptyCreativeCapabilitySettings,
+  isCreativeCapabilityConfigured,
+} from '../types/config';
 import type {
   AgentSettings,
+  CreativeCapabilityKey,
+  CreativeCapabilitySettings,
+  CreativeSettings,
   McpServerSettings,
   McpServerToolsState,
   ProviderSettings,
@@ -63,6 +70,46 @@ const PROVIDER_META: Record<
     label: 'GitHub Copilot',
     defaultModel: 'github-copilot/gpt-5.3-codex',
     mode: 'oauth',
+  },
+};
+
+const CREATIVE_CAPABILITY_META: Record<
+  CreativeCapabilityKey,
+  {
+    label: string;
+    description: string;
+    defaultProvider: string;
+    defaultModel: string;
+    usage: string;
+  }
+> = {
+  image: {
+    label: '生图',
+    description: '在普通对话中按需调用，为当前会话返回图片附件。',
+    defaultProvider: 'minimax',
+    defaultModel: 'image-01',
+    usage: '聊天内可用',
+  },
+  music: {
+    label: '音乐',
+    description: '用于独立音乐生成页的模型配置，当前版本先提供入口和状态。',
+    defaultProvider: 'minimax',
+    defaultModel: 'music-01',
+    usage: '独立页面',
+  },
+  voice_clone: {
+    label: '声音克隆',
+    description: '用于独立声音克隆页的模型配置，当前版本先提供入口和状态。',
+    defaultProvider: 'minimax',
+    defaultModel: 'voice-clone-01',
+    usage: '独立页面',
+  },
+  video: {
+    label: '视频',
+    description: '用于独立视频生成页的模型配置，当前版本先提供入口和状态。',
+    defaultProvider: 'minimax',
+    defaultModel: 'video-01',
+    usage: '独立页面',
   },
 };
 
@@ -133,6 +180,15 @@ interface ProviderFormState {
   apiBase: string;
   apiKey: string;
   defaultModel: string;
+  extraHeadersText: string;
+}
+
+interface CreativeCapabilityFormState {
+  enabled: boolean;
+  provider: string;
+  apiBase: string;
+  apiKey: string;
+  model: string;
   extraHeadersText: string;
 }
 
@@ -328,6 +384,22 @@ function buildProviderForm(providerId: string, provider?: ProviderSettings): Pro
   };
 }
 
+function buildCreativeCapabilityForm(
+  capabilityId: CreativeCapabilityKey,
+  capability?: CreativeCapabilitySettings | null
+): CreativeCapabilityFormState {
+  const fallback = createEmptyCreativeCapabilitySettings();
+  const resolved = capability || fallback;
+  return {
+    enabled: resolved.enabled,
+    provider: resolved.provider || CREATIVE_CAPABILITY_META[capabilityId].defaultProvider,
+    apiBase: resolved.api_base || '',
+    apiKey: '',
+    model: resolved.model || CREATIVE_CAPABILITY_META[capabilityId].defaultModel,
+    extraHeadersText: prettyJson(resolved.extra_headers),
+  };
+}
+
 function emptyMcpForm(): McpFormState {
   return {
     name: '',
@@ -519,6 +591,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     sessions,
     fetchModelProviders,
     loadSessions,
+    setCreativeCapabilities,
     setCurrentSession,
   } = useChatStore();
   const [selectedSection, setSelectedSection] = useState<SectionId>('models');
@@ -535,6 +608,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const [loading, setLoading] = useState(true);
   const [savingSection, setSavingSection] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [creativeDraft, setCreativeDraft] = useState<CreativeSettings | null>(null);
+  const [selectedCreativeId, setSelectedCreativeId] = useState<CreativeCapabilityKey>('image');
+  const [editingCreativeId, setEditingCreativeId] = useState<CreativeCapabilityKey | null>(null);
+  const [creativeForm, setCreativeForm] = useState<CreativeCapabilityFormState>(
+    buildCreativeCapabilityForm('image')
+  );
   const [mcpCatalog, setMcpCatalog] = useState<Record<string, McpServerToolsState>>({});
   const [loadingMcpCatalog, setLoadingMcpCatalog] = useState(false);
   const [memoryOverview, setMemoryOverview] = useState<MemoryOverviewResponse | null>(null);
@@ -570,6 +649,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         await loadSessions();
         const data = await api.getConfig();
         setProviders(data.providers);
+        setCreativeDraft(data.creative);
+        setCreativeCapabilities(data.creative);
         setAgentDraft(data.agent);
         setRuntimeDraft(data.runtime);
         setSearchApiKeyMasked(data.tools.web.search.api_key || '');
@@ -591,6 +672,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           providerKeys[0];
         setSelectedProviderId(nextProvider);
         setProviderForm(buildProviderForm(nextProvider, data.providers[nextProvider]));
+        setCreativeForm(buildCreativeCapabilityForm('image', data.creative.image));
 
         const mcpKeys = Object.keys(data.tools.mcp_servers);
         const firstMcp = mcpKeys[0] || null;
@@ -649,6 +731,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         return left.label.localeCompare(right.label);
       });
   }, [agentDraft?.provider, providers]);
+
+  const creativeCards = useMemo(() => {
+    return (Object.keys(CREATIVE_CAPABILITY_META) as CreativeCapabilityKey[]).map((id) => {
+      const capability = creativeDraft?.[id] || createEmptyCreativeCapabilitySettings();
+      return {
+        id,
+        label: CREATIVE_CAPABILITY_META[id].label,
+        description: CREATIVE_CAPABILITY_META[id].description,
+        usage: CREATIVE_CAPABILITY_META[id].usage,
+        enabled: capability.enabled,
+        configured: isCreativeCapabilityConfigured(capability),
+        provider: capability.provider || '未配置',
+        model: capability.model || '未配置',
+      };
+    });
+  }, [creativeDraft]);
 
   const mcpEntries = useMemo(
     () => Object.entries(toolsDraft?.mcp_servers || {}).sort(([a], [b]) => a.localeCompare(b)),
@@ -861,8 +959,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     setEditingProviderId(providerId);
   };
 
+  const openCreativeEditor = (capabilityId: CreativeCapabilityKey) => {
+    setSelectedCreativeId(capabilityId);
+    setEditingCreativeId(capabilityId);
+    setCreativeForm(buildCreativeCapabilityForm(capabilityId, creativeDraft?.[capabilityId]));
+  };
+
   const closeProviderEditor = () => {
     setEditingProviderId(null);
+  };
+
+  const closeCreativeEditor = () => {
+    setEditingCreativeId(null);
   };
 
   const handleActivateProvider = async (providerId: string) => {
@@ -912,11 +1020,97 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         apiKey: '',
         extraHeadersText: prettyJson(response.config.extra_headers),
       }));
+      setAgentDraft((current) =>
+        current
+          ? {
+              ...current,
+              provider: response.defaults.provider,
+              model: response.defaults.model,
+            }
+          : current
+      );
       setEditingProviderId(null);
       await fetchModelProviders();
       setSuccess(`${PROVIDER_META[selectedProviderId]?.label || selectedProviderId} 配置已保存`);
     } catch (error) {
       setFailure(error, '保存提供商配置失败');
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
+  const handleSaveCreativeCapability = async () => {
+    if (!editingCreativeId || !creativeDraft) {
+      return;
+    }
+
+    setSavingSection('creative');
+    setNotice(null);
+    try {
+      const response = await api.updateCreativeCapability(editingCreativeId, {
+        enabled: creativeForm.enabled,
+        provider: creativeForm.provider.trim(),
+        api_base: creativeForm.apiBase.trim() || null,
+        model: creativeForm.model.trim(),
+        extra_headers: parseJsonObject(creativeForm.extraHeadersText, 'Creative Extra Headers'),
+        ...(creativeForm.apiKey.trim() ? { api_key: creativeForm.apiKey.trim() } : {}),
+      });
+
+      setCreativeDraft((current) =>
+        current
+          ? {
+              ...current,
+              [editingCreativeId]: response.config,
+            }
+          : current
+      );
+      setCreativeCapabilities({
+        ...(creativeDraft || ({} as CreativeSettings)),
+        [editingCreativeId]: response.config,
+      } as CreativeSettings);
+      setCreativeForm((current) => ({
+        ...current,
+        apiKey: '',
+        extraHeadersText: prettyJson(response.config.extra_headers),
+      }));
+      setEditingCreativeId(null);
+      setSuccess(`${CREATIVE_CAPABILITY_META[editingCreativeId].label} 能力配置已保存`);
+    } catch (error) {
+      setFailure(error, '保存创作能力配置失败');
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
+  const handleToggleCreativeCapability = async (
+    capabilityId: CreativeCapabilityKey,
+    enabled: boolean
+  ) => {
+    if (!creativeDraft) {
+      return;
+    }
+
+    setSavingSection(`creative-${capabilityId}`);
+    setNotice(null);
+    try {
+      const response = await api.updateCreativeCapability(capabilityId, { enabled });
+      setCreativeDraft((current) =>
+        current
+          ? {
+              ...current,
+              [capabilityId]: response.config,
+            }
+          : current
+      );
+      setCreativeCapabilities({
+        ...(creativeDraft || ({} as CreativeSettings)),
+        [capabilityId]: response.config,
+      } as CreativeSettings);
+      setSuccess(
+        `${CREATIVE_CAPABILITY_META[capabilityId].label}${enabled ? ' 已启用' : ' 已停用'}`
+      );
+    } catch (error) {
+      setFailure(error, '更新创作能力状态失败');
     } finally {
       setSavingSection(null);
     }
@@ -1315,8 +1509,177 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           ))}
         </div>
       </div>
+
+      <div className="settings-panel">
+        <div className="settings-panel-header">
+          <h3>创作能力</h3>
+          <p>这里的能力模型不会覆盖默认聊天模型，只决定对应创作入口是否可用。</p>
+        </div>
+        <div className="settings-provider-grid">
+          {creativeCards.map((capability) => (
+            <div
+              className={`settings-provider-card ${selectedCreativeId === capability.id ? 'active' : ''}`}
+              key={capability.id}
+            >
+              <div className="settings-provider-head">
+                <div>
+                  <div className="settings-provider-name">{capability.label}</div>
+                  <div className="settings-badges">
+                    <span className="settings-badge">
+                      {capability.configured ? '已配置' : '未配置'}
+                    </span>
+                    <span className={`settings-badge ${capability.enabled ? 'active' : ''}`}>
+                      {capability.enabled ? '已启用' : '未启用'}
+                    </span>
+                    <span className="settings-badge">{capability.usage}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="settings-provider-desc">
+                <div>{capability.description}</div>
+                <div>{capability.provider} / {capability.model}</div>
+              </div>
+              <div className="settings-provider-actions">
+                <button
+                  className="settings-button-secondary"
+                  onClick={() => openCreativeEditor(capability.id)}
+                  type="button"
+                >
+                  配置能力
+                </button>
+                <button
+                  className="settings-button"
+                  disabled={savingSection === `creative-${capability.id}` || !capability.configured}
+                  onClick={() => void handleToggleCreativeCapability(capability.id, !capability.enabled)}
+                  type="button"
+                >
+                  {capability.enabled ? '停用' : '启用'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
+
+  const renderCreativeEditor = () => {
+    if (!editingCreativeId) {
+      return null;
+    }
+
+    const capabilityMeta = CREATIVE_CAPABILITY_META[editingCreativeId];
+    const currentCapability = creativeDraft?.[editingCreativeId] || createEmptyCreativeCapabilitySettings();
+
+    return (
+      <>
+        <div className="settings-provider-editor-backdrop" onClick={closeCreativeEditor} />
+        <aside className="settings-provider-editor">
+          <div className="settings-provider-editor-head">
+            <div>
+              <h3>{capabilityMeta.label}</h3>
+              <p>{capabilityMeta.description}</p>
+            </div>
+            <button
+              aria-label={`关闭 ${capabilityMeta.label} 配置面板`}
+              className="settings-close"
+              onClick={closeCreativeEditor}
+              type="button"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+          <div className="settings-provider-editor-body">
+            <div className="settings-panel">
+              <div className="settings-grid one">
+                <ToggleRow
+                  title="启用能力"
+                  copy={`当前入口：${capabilityMeta.usage}`}
+                  value={creativeForm.enabled}
+                  onToggle={() =>
+                    setCreativeForm((current) => ({
+                      ...current,
+                      enabled: !current.enabled,
+                    }))
+                  }
+                />
+                <Field label="Provider" copy="填写该能力使用的提供商标识。">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setCreativeForm((current) => ({ ...current, provider: event.target.value }))
+                    }
+                    placeholder={capabilityMeta.defaultProvider}
+                    type="text"
+                    value={creativeForm.provider}
+                  />
+                </Field>
+                <Field label="Model" copy="填写该能力要调用的模型名。">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setCreativeForm((current) => ({ ...current, model: event.target.value }))
+                    }
+                    placeholder={capabilityMeta.defaultModel}
+                    type="text"
+                    value={creativeForm.model}
+                  />
+                </Field>
+                <Field label="API Base" copy="可选，留空时由服务端使用默认地址。">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setCreativeForm((current) => ({ ...current, apiBase: event.target.value }))
+                    }
+                    placeholder="https://api.example.com"
+                    type="text"
+                    value={creativeForm.apiBase}
+                  />
+                </Field>
+                <Field
+                  label="API Key"
+                  copy={`当前显示：${currentCapability.api_key || '未配置'}。仅在输入新值时更新。`}
+                >
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setCreativeForm((current) => ({ ...current, apiKey: event.target.value }))
+                    }
+                    placeholder="输入新的 API Key"
+                    type="password"
+                    value={creativeForm.apiKey}
+                  />
+                </Field>
+                <Field label="Extra Headers" copy='示例：{"X-App":"TokenMind"}'>
+                  <textarea
+                    className="settings-textarea"
+                    onChange={(event) =>
+                      setCreativeForm((current) => ({
+                        ...current,
+                        extraHeadersText: event.target.value,
+                      }))
+                    }
+                    placeholder='{"X-App":"TokenMind"}'
+                    value={creativeForm.extraHeadersText}
+                  />
+                </Field>
+              </div>
+              <div className="settings-actions">
+                <button
+                  className="settings-button"
+                  disabled={savingSection === 'creative'}
+                  onClick={() => void handleSaveCreativeCapability()}
+                  type="button"
+                >
+                  保存创作能力配置
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </>
+    );
+  };
 
   const renderProviderEditor = () => {
     if (!editingProviderId) {
@@ -3984,7 +4347,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
           <div className="settings-content">
             {notice ? <div className={`settings-notice ${notice.tone}`}>{notice.text}</div> : null}
-            {loading || !agentDraft || !toolsDraft || !runtimeDraft ? (
+            {loading || !agentDraft || !toolsDraft || !runtimeDraft || !creativeDraft ? (
               <div className="settings-loading">正在加载配置...</div>
             ) : (
               renderSection()
@@ -3992,6 +4355,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           </div>
         </section>
 
+        {renderCreativeEditor()}
         {renderProviderEditor()}
       </div>
     </div>

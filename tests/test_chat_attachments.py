@@ -244,6 +244,25 @@ def test_attachment_download_route_returns_file(tmp_path: Path) -> None:
     assert response.text == "# hi"
 
 
+def test_user_upload_attachment_download_route_returns_file(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    client = build_chat_test_client(service)
+
+    upload_response = client.post(
+        "/api/chat/upload",
+        data={"session_id": "web:test-session"},
+        files={"files": ("image.png", b"\x89PNG\r\n\x1a\npayload", "image/png")},
+    )
+
+    assert upload_response.status_code == 200
+    attachment = upload_response.json()["attachments"][0]
+
+    response = client.get(f"/api/chat/attachments/{attachment['id']}")
+
+    assert response.status_code == 200
+    assert response.content == b"\x89PNG\r\n\x1a\npayload"
+
+
 def test_attachment_retain_route_updates_status(tmp_path: Path) -> None:
     service = make_service(tmp_path)
     ref = service.create_generated_attachment(

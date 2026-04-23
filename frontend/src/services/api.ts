@@ -19,6 +19,9 @@ import type { LongTermMemoryState, MemoryOverviewResponse } from '../types/memor
 import type {
   AgentSettingsUpdate,
   AppConfigResponse,
+  CreativeCapabilityKey,
+  CreativeCapabilitySettings,
+  CreativeCapabilitySettingsUpdate,
   McpServerSettingsUpdate,
   McpToolsResponse,
   ProviderSettingsUpdate,
@@ -408,7 +411,12 @@ export const api = {
   async updateProviderConfig(
     providerId: string,
     config: ProviderSettingsUpdate
-  ): Promise<{ success: boolean; provider: string; config: AppConfigResponse['providers'][string] }> {
+  ): Promise<{
+    success: boolean;
+    provider: string;
+    config: AppConfigResponse['providers'][string];
+    defaults: { model: string; provider: string };
+  }> {
     const res = await fetch(`${API_BASE}/config/providers/${encodeURIComponent(providerId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -416,6 +424,21 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Failed to update provider config: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateCreativeCapability(
+    capability: CreativeCapabilityKey,
+    config: CreativeCapabilitySettingsUpdate
+  ): Promise<{ success: boolean; capability: string; config: CreativeCapabilitySettings }> {
+    const res = await fetch(`${API_BASE}/config/creative/${encodeURIComponent(capability)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update creative capability: ${res.statusText}`);
     }
     return res.json();
   },

@@ -6,7 +6,10 @@ import { ChatWindow } from './components/Chat/ChatWindow';
 import { createProjectConversation } from './components/Projects/projectEntryFlow';
 import { EntryGate } from './components/EntryGate/EntryGate';
 import { KnowledgePage } from './pages/Knowledge';
+import { MusicPage } from './pages/Music';
 import { ProjectHome } from './pages/ProjectHome';
+import { VideoPage } from './pages/Video';
+import { VoiceClonePage } from './pages/VoiceClone';
 import { api } from './services/api';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
@@ -18,7 +21,9 @@ const SIDEBAR_COLLAPSED_KEY = 'tokenmind:sidebar-collapsed';
 const App: React.FC = () => {
   const {
     currentSession,
+    creativeCapabilities,
     fetchModelProviders,
+    loadCreativeCapabilities,
     setCurrentSession,
     activeProjectId,
     activeProject,
@@ -28,7 +33,9 @@ const App: React.FC = () => {
   const [gateDismissed, setGateDismissed] = useState(false);
   const [gateExiting, setGateExiting] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mainView, setMainView] = useState<'chat' | 'knowledge' | 'project-home' | 'project-chat'>('chat');
+  const [mainView, setMainView] = useState<
+    'chat' | 'knowledge' | 'music' | 'voice-clone' | 'video' | 'project-home' | 'project-chat'
+  >('chat');
   const enterTimerRef = useRef<number | null>(null);
   const appReady = gateDismissed || gateExiting;
 
@@ -46,7 +53,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     void fetchModelProviders();
-  }, [fetchModelProviders]);
+    void loadCreativeCapabilities();
+  }, [fetchModelProviders, loadCreativeCapabilities]);
 
   useEffect(() => {
     if (!currentSession) {
@@ -115,6 +123,12 @@ const App: React.FC = () => {
             <Header />
             {mainView === 'knowledge' ? (
               <KnowledgePage isActive />
+            ) : mainView === 'music' ? (
+              <MusicPage capability={creativeCapabilities?.music} />
+            ) : mainView === 'voice-clone' ? (
+              <VoiceClonePage capability={creativeCapabilities?.voice_clone} />
+            ) : mainView === 'video' ? (
+              <VideoPage capability={creativeCapabilities?.video} />
             ) : mainView === 'project-home' ? (
               <ProjectHome
                 onStartConversation={async (message) => {

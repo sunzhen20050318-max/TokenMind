@@ -56,6 +56,31 @@ async def test_get_config_returns_extended_sections(temp_config_path):
 
 
 @pytest.mark.asyncio
+async def test_get_config_includes_creative_defaults_and_masks_keys(temp_config_path):
+    """GET config should expose the creative branch with masked API keys."""
+    from tokenmind.config.loader import save_config
+    from tokenmind.config.schema import Config
+    from tokenmind.server.routes.config import get_config
+
+    config = Config()
+    config.creative.image.api_key = "creative-image-secret-1234"
+    config.creative.music.api_key = "music-secret-9876"
+    save_config(config, temp_config_path)
+
+    response = await get_config()
+
+    assert response.creative["image"]["enabled"] is False
+    assert response.creative["image"]["provider"] == ""
+    assert response.creative["image"]["api_key"] == "****1234"
+    assert response.creative["image"]["api_base"] is None
+    assert response.creative["image"]["model"] == ""
+    assert response.creative["image"]["extra_headers"] is None
+    assert response.creative["music"]["api_key"] == "****9876"
+    assert response.creative["voice_clone"]["enabled"] is False
+    assert response.creative["video"]["provider"] == ""
+
+
+@pytest.mark.asyncio
 async def test_get_mcp_tools_returns_discovered_catalog(temp_config_path, monkeypatch):
     """GET MCP tools should expose live discovered tool metadata for each server."""
     from tokenmind.config.loader import save_config
@@ -252,3 +277,107 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
 
     config = load_config(temp_config_path)
     assert "filesystem" not in config.tools.mcp_servers
+
+
+@pytest.mark.asyncio
+async def test_update_creative_capability_only_updates_target_branch(temp_config_path):
+    """Creative updates should stay within the targeted capability branch."""
+    from tokenmind.config.loader import load_config, save_config
+    from tokenmind.config.schema import Config
+    from tokenmind.server.routes.config import (
+        CreativeCapabilityUpdate,
+        update_creative_config,
+    )
+
+    config = Config()
+    config.agents.defaults.provider = "openai"
+    config.agents.defaults.model = "gpt-4.1"
+    config.providers.openai.default_model = "gpt-4.1"
+    config.creative.image.enabled = False
+    config.creative.image.provider = ""
+    config.creative.image.api_key = ""
+    save_config(config, temp_config_path)
+
+    await update_creative_config(
+        "image",
+        CreativeCapabilityUpdate(
+            enabled=True,
+            provider="openai",
+            api_key="creative-image-key",
+            api_base="https://creative.example/v1",
+            model="gpt-image-1",
+            extra_headers={"x-creative": "true"},
+        ),
+    )
+
+    updated = load_config(temp_config_path)
+    assert updated.creative.image.enabled is True
+    assert updated.creative.image.provider == "openai"
+    assert updated.creative.image.api_key == "creative-image-key"
+    assert updated.creative.image.api_base == "https://creative.example/v1"
+    assert updated.creative.image.model == "gpt-image-1"
+    assert updated.creative.image.extra_headers == {"x-creative": "true"}
+    assert updated.agents.defaults.provider == "openai"
+    assert updated.agents.defaults.model == "gpt-4.1"
+    assert updated.providers.openai.default_model == "gpt-4.1"
+
+
+@pytest.mark.asyncio
+async def test_update_creative_capability_rejects_invalid_name(temp_config_path):
+    """Unknown creative capabilities should return 404."""
+    from fastapi import HTTPException
+
+    from tokenmind.server.routes.config import CreativeCapabilityUpdate, update_creative_config
+
+    with pytest.raises(HTTPException) as exc_info:
+        await update_creative_config("podcast", CreativeCapabilityUpdate(enabled=True))
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_provider_config_syncs_active_agent_model(temp_config_path):
+    """Changing the active provider's default model should update agent defaults too."""
+    from tokenmind.config.loader import load_config, save_config
+    from tokenmind.config.schema import Config
+    from tokenmind.server.routes.config import ProviderConfigUpdate, update_provider_config
+
+    config = Config()
+    config.agents.defaults.provider = "minimax"
+    config.agents.defaults.model = "anthropic/claude-opus-4-5"
+    save_config(config, temp_config_path)
+
+    await update_provider_config(
+        "minimax",
+        ProviderConfigUpdate(
+            api_key="minimax-key",
+            default_model="MiniMax-M2.7",
+        ),
+    )
+
+    updated = load_config(temp_config_path)
+    assert updated.providers.minimax.default_model == "MiniMax-M2.7"
+    assert updated.agents.defaults.provider == "minimax"
+    assert updated.agents.defaults.model == "MiniMax-M2.7"
+
+
+@pytest.mark.asyncio
+async def test_update_defaults_uses_provider_default_model_when_model_is_omitted(temp_config_path):
+    """Activating a provider should adopt its saved default model when no model is passed."""
+    from tokenmind.config.loader import load_config, save_config
+    from tokenmind.config.schema import Config
+    from tokenmind.server.routes.config import DefaultsUpdate, update_defaults
+
+    config = Config()
+    config.agents.defaults.provider = "anthropic"
+    config.agents.defaults.model = "anthropic/claude-opus-4-5"
+    config.providers.minimax.api_key = "minimax-key"
+    config.providers.minimax.default_model = "MiniMax-M2.7"
+    save_config(config, temp_config_path)
+
+    await update_defaults(DefaultsUpdate(provider="minimax"))
+
+    updated = load_config(temp_config_path)
+    assert updated.agents.defaults.provider == "minimax"
+    assert updated.agents.defaults.model == "MiniMax-M2.7"
+

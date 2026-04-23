@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
 import json
 import mimetypes
-from pathlib import Path
 import secrets
 import shutil
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable
 from urllib.request import Request, urlopen
 
 from fastapi import HTTPException
 
 from tokenmind.utils.helpers import safe_filename
-
 
 AttachmentDownloader = Callable[[str], tuple[bytes, str | None]]
 
@@ -330,6 +329,42 @@ class AttachmentStore:
         )
         return self._write_record(record)
 
+    def create_user_upload(
+        self,
+        session_id: str,
+        *,
+        filename: str,
+        content: bytes,
+        mime_type: str | None,
+        retention: timedelta,
+        message_id: str | None = None,
+    ) -> tuple[dict[str, Any], Path]:
+        safe_name = safe_filename(filename or "upload.bin")
+        resolved_mime = mime_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+        attachment_id = f"att_{secrets.token_hex(8)}"
+        directory = self._session_root(session_id) / "user" / "uploads" / attachment_id
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = directory / safe_name
+        destination.write_bytes(content)
+        record = AttachmentRecord(
+            id=attachment_id,
+            session_id=session_id,
+            message_id=message_id,
+            owner_role="user",
+            origin="user_upload",
+            status="saved",
+            name=safe_name,
+            mime_type=resolved_mime,
+            size=len(content),
+            category=categorize_attachment(safe_name, resolved_mime)[0],
+            is_image=categorize_attachment(safe_name, resolved_mime)[1],
+            storage_path=str(destination),
+            created_at=datetime.now().isoformat(),
+            expires_at=(datetime.now() + retention).isoformat(),
+            preview_text=self._preview_text(content, resolved_mime),
+        )
+        return self._write_record(record), destination
+
     def get_record(self, attachment_id: str) -> dict[str, Any] | None:
         record = self._record_from_index(attachment_id)
         return record.to_dict() if record else None
@@ -446,12 +481,17 @@ class AttachmentStore:
             if not record:
                 hydrated.append(dict(attachment))
                 continue
+            if record.status != "expired" and not Path(record.storage_path).exists():
+                self.mark_expired(str(attachment_id))
+                record = self._record_from_index(str(attachment_id)) or record
             hydrated.append({**dict(attachment), **record.to_message_ref()})
         return hydrated
 
     def managed_paths(self) -> set[str]:
         paths = {str(self.index_path.resolve())}
         for payload in self._load_index().values():
+            if payload.get("owner_role") == "user":
+                continue
             storage_path = payload.get("storage_path")
             if isinstance(storage_path, str) and storage_path:
                 try:

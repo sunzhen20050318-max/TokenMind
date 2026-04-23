@@ -3,37 +3,35 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
+import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-import mimetypes
 from pathlib import Path
-import secrets
-import shutil
 from typing import Any
 
-from fastapi import HTTPException
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
+from tokenmind.agent.context import ContextBuilder
+from tokenmind.agent.memory import split_history_entries
 from tokenmind.audit import AuditLogger
-from tokenmind.bus.events import InboundMessage, OutboundMessage
+from tokenmind.bus.events import InboundMessage
 from tokenmind.bus.queue import MessageBus
-from tokenmind.knowledge import KnowledgeService
-from tokenmind.projects import ProjectStore
 from tokenmind.config.loader import load_config
 from tokenmind.config.schema import KnowledgeConfig, UploadsConfig
-from tokenmind.agent.memory import split_history_entries
-from tokenmind.agent.context import ContextBuilder
-from tokenmind.server.channel.web import WebChannel, WebChannelConfig
+from tokenmind.knowledge import KnowledgeService
+from tokenmind.projects import ProjectStore
+from tokenmind.server.attachments import AttachmentStore, categorize_attachment
+from tokenmind.server.channel.web import WebChannel
 from tokenmind.server.dependencies import (
-    get_connection_manager,
-    set_cron_service,
-    get_inbound_queue,
     set_chat_service,
     set_connection_manager,
+    set_cron_service,
     set_inbound_queue,
 )
+from tokenmind.server.frontend import register_frontend_routes, resolve_frontend_dist_dir
 from tokenmind.server.routes import (
     chat_router,
     config_router,
@@ -47,8 +45,6 @@ from tokenmind.server.routes import (
 )
 from tokenmind.server.websocket.handler import websocket_handler
 from tokenmind.server.websocket.manager import ConnectionManager
-from tokenmind.server.frontend import register_frontend_routes, resolve_frontend_dist_dir
-from tokenmind.server.attachments import AttachmentStore, categorize_attachment
 from tokenmind.utils.helpers import safe_filename
 
 
@@ -621,16 +617,18 @@ class ChatService:
                 ),
             )
 
-        session_dir = self._session_upload_dir(session_id)
-        session_dir.mkdir(parents=True, exist_ok=True)
-
         attachments: list[dict[str, Any]] = []
         for item in pending_uploads:
-            stored_name = f"{secrets.token_hex(6)}_{item['filename']}"
-            destination = session_dir / stored_name
-            destination.write_bytes(item["content"])
+            attachment_ref, destination = self.attachments.create_user_upload(
+                session_id,
+                filename=item["filename"],
+                content=item["content"],
+                mime_type=item["mime_type"],
+                retention=policy["retention"],
+            )
             attachments.append(
                 {
+                    **attachment_ref,
                     "name": item["filename"],
                     "path": str(destination),
                     "mime_type": item["mime_type"],

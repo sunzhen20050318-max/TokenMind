@@ -1,11 +1,11 @@
 """CLI commands for TokenMind."""
 
 import asyncio
-from contextlib import contextmanager, nullcontext
 import os
 import select
 import signal
 import sys
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -332,22 +332,14 @@ def onboard(
 
     sync_workspace_templates(workspace_path)
 
-    agent_cmd = 'tokenmind agent -m "Hello!"'
-    gateway_cmd = "tokenmind gateway"
+    web_cmd = "tokenmind web --port 8080"
     if config:
-        agent_cmd += f" --config {config_path}"
-        gateway_cmd += f" --config {config_path}"
+        web_cmd += f" --config {config_path}"
 
     console.print(f"\n{__logo__} TokenMind is ready!")
     console.print("\nNext steps:")
-    if wizard:
-        console.print(f"  1. Chat: [cyan]{agent_cmd}[/cyan]")
-        console.print(f"  2. Start gateway: [cyan]{gateway_cmd}[/cyan]")
-    else:
-        console.print(f"  1. Add your API key to [cyan]{config_path}[/cyan]")
-        console.print("     Get one at: https://openrouter.ai/keys")
-        console.print(f"  2. Chat: [cyan]{agent_cmd}[/cyan]")
-    console.print("\n[dim]Want Telegram/WhatsApp? See the chat app setup section in README.[/dim]")
+    console.print(f"  1. Start Web UI: [cyan]{web_cmd}[/cyan]")
+    console.print("  2. Open [cyan]http://localhost:8080[/cyan], add your API key in Settings, and enable the model you want to use.")
 
 
 def _merge_missing_defaults(existing: Any, defaults: Any) -> Any:
@@ -479,6 +471,7 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
 def _warn_deprecated_config_keys(config_path: Path | None) -> None:
     """Hint users to remove obsolete keys from their config file."""
     import json
+
     from tokenmind.config.loader import get_config_path
 
     path = config_path or get_config_path()
@@ -553,6 +546,7 @@ def gateway(
         channels_config=config.channels,
         templates_config=config.templates,
         config_path=get_config_path(),
+        creative_config=config.creative,
     )
 
     # Set cron callback (needs agent)
@@ -697,20 +691,19 @@ def web(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
 ):
     """Start the TokenMind Web UI server."""
-    from loguru import logger
     import uvicorn
+    from loguru import logger
+
     from tokenmind.agent.loop import AgentLoop
     from tokenmind.bus.queue import MessageBus
-    from tokenmind.channels.manager import ChannelManager
     from tokenmind.config.loader import get_config_path
     from tokenmind.config.paths import get_cron_dir
     from tokenmind.cron.service import CronService
     from tokenmind.cron.types import CronJob
-    from tokenmind.heartbeat.service import HeartbeatService
-    from tokenmind.session.manager import SessionManager
     from tokenmind.server.app import create_app
     from tokenmind.server.channel.web import WebChannel, WebChannelConfig
     from tokenmind.server.websocket.manager import ConnectionManager
+    from tokenmind.session.manager import SessionManager
 
     config = _load_runtime_config(config, workspace)
     console.print(f"{__logo__} Starting TokenMind Web UI on port {port}...")
@@ -743,13 +736,14 @@ def web(
         channels_config=config.channels,
         templates_config=config.templates,
         config_path=get_config_path(),
+        creative_config=config.creative,
     )
 
     # Set cron callback
     async def on_cron_job(job: CronJob) -> str | None:
         from tokenmind.agent.tools.cron import CronTool
-        from tokenmind.cron.delivery import persist_task_result
         from tokenmind.agent.tools.message import MessageTool
+        from tokenmind.cron.delivery import persist_task_result
 
         reminder_note = (
             "[Scheduled Task] Timer finished.\n\n"
@@ -922,6 +916,7 @@ def agent(
         channels_config=config.channels,
         templates_config=config.templates,
         config_path=get_config_path(),
+        creative_config=config.creative,
     )
 
     # Shared reference for progress callbacks

@@ -83,6 +83,26 @@ class ProvidersConfig(Base):
     github_copilot: ProviderConfig = Field(default_factory=ProviderConfig)  # Github Copilot (OAuth)
 
 
+class CreativeCapabilityConfig(Base):
+    """Configuration for a creative capability provider."""
+
+    enabled: bool = False
+    provider: str = ""
+    api_key: str = ""
+    api_base: str | None = None
+    model: str = ""
+    extra_headers: dict[str, str] | None = None
+
+
+class CreativeConfig(Base):
+    """Configuration for creative capabilities."""
+
+    image: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
+    music: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
+    voice_clone: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
+    video: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
+
+
 class HeartbeatConfig(Base):
     """Heartbeat service configuration."""
 
@@ -187,6 +207,7 @@ class Config(BaseSettings):
 
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+    creative: CreativeConfig = Field(default_factory=CreativeConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)

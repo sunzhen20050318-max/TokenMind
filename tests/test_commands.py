@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,11 +17,6 @@ runner = CliRunner()
 
 class _StopGatewayError(RuntimeError):
     pass
-
-
-import shutil
-
-import pytest
 
 
 @pytest.fixture
@@ -66,6 +62,11 @@ def test_onboard_fresh_install(mock_paths):
     assert "Created config" in result.stdout
     assert "Created workspace" in result.stdout
     assert "TokenMind is ready" in result.stdout
+    assert "tokenmind web --port 8080" in result.stdout
+    assert "Open http://localhost:8080" in result.stdout
+    assert "Add your API key" not in result.stdout
+    assert 'tokenmind agent -m "Hello!"' not in result.stdout
+    assert "Want Telegram/WhatsApp" not in result.stdout
     assert config_file.exists()
     assert (workspace_dir / "AGENTS.md").exists()
     assert (workspace_dir / "memory" / "MEMORY.md").exists()
@@ -194,8 +195,10 @@ def test_onboard_wizard_preserves_explicit_config_in_next_steps(tmp_path, monkey
     stripped_output = _strip_ansi(result.stdout)
     compact_output = stripped_output.replace("\n", "")
     resolved_config = str(config_path.resolve())
-    assert f'tokenmind agent -m "Hello!" --config {resolved_config}' in compact_output
-    assert f"tokenmind gateway --config {resolved_config}" in compact_output
+    assert f"tokenmind web --port 8080 --config {resolved_config}" in compact_output
+    assert "Open http://localhost:8080" in compact_output
+    assert 'tokenmind agent -m "Hello!"' not in compact_output
+    assert "tokenmind gateway" not in compact_output
 
 
 def test_config_matches_github_copilot_codex_with_hyphen_prefix():

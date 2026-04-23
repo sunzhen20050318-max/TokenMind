@@ -136,7 +136,8 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
 
         lines.append(
             "Use read_file for text-based files when possible. "
-            "For binary formats like pdf, pptx, xlsx, or images, use the available tools to inspect or extract content."
+            "For binary formats like pdf, pptx, xlsx, or images, use the available tools to inspect or extract content. "
+            "If the user explicitly asks to reference an attached image when generating a new image, pass that image path to generate_image."
         )
         lines.append(ContextBuilder._ATTACHMENTS_CONTEXT_END_TAG)
         return "\n".join(lines)

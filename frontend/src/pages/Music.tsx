@@ -1,0 +1,17 @@
+import React from 'react';
+import type { CreativeCapabilitySettings } from '../types/config';
+import { CreativeWorkspacePage } from './CreativeWorkspacePage';
+
+export const MusicPage: React.FC<{ capability: CreativeCapabilitySettings | null | undefined }> = ({
+  capability,
+}) => (
+  <CreativeWorkspacePage
+    capability={capability}
+    eyebrow="创作能力"
+    title="音乐"
+    description="这里会承载独立的音乐生成入口，和普通聊天能力分开。"
+    configuredCopy="还没有配置音乐模型，请先到设置中心的创作能力里完成配置。"
+    disabledCopy="音乐模型已经配置完成，但当前还没有启用。"
+    enabledCopy="音乐能力已经就绪，后续版本会在这里接入实际生成流程。"
+  />
+);

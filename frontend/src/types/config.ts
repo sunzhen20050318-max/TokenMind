@@ -5,6 +5,51 @@ export interface ProviderSettings {
   default_model: string | null;
 }
 
+export type CreativeCapabilityKey = 'image' | 'music' | 'voice_clone' | 'video';
+
+export const CREATIVE_CAPABILITY_KEYS: CreativeCapabilityKey[] = [
+  'image',
+  'music',
+  'voice_clone',
+  'video',
+];
+
+export interface CreativeCapabilitySettings {
+  enabled: boolean;
+  provider: string;
+  api_key: string;
+  api_base: string | null;
+  model: string;
+  extra_headers: Record<string, string> | null;
+}
+
+export interface CreativeSettings {
+  image: CreativeCapabilitySettings;
+  music: CreativeCapabilitySettings;
+  voice_clone: CreativeCapabilitySettings;
+  video: CreativeCapabilitySettings;
+}
+
+export function createEmptyCreativeCapabilitySettings(): CreativeCapabilitySettings {
+  return {
+    enabled: false,
+    provider: '',
+    api_key: '',
+    api_base: null,
+    model: '',
+    extra_headers: null,
+  };
+}
+
+export function isCreativeCapabilityConfigured(
+  capability: CreativeCapabilitySettings | null | undefined
+): boolean {
+  if (!capability) {
+    return false;
+  }
+  return Boolean(capability.provider.trim() && capability.model.trim());
+}
+
 export interface AgentSettings {
   workspace: string;
   model: string;
@@ -110,6 +155,7 @@ export interface RuntimeSettings {
 
 export interface AppConfigResponse {
   providers: Record<string, ProviderSettings>;
+  creative: CreativeSettings;
   defaults: AgentSettings;
   agent: AgentSettings;
   tools: ToolsSettings;
@@ -125,6 +171,15 @@ export interface ProviderSettingsUpdate {
   api_base?: string | null;
   extra_headers?: Record<string, string> | null;
   default_model?: string | null;
+}
+
+export interface CreativeCapabilitySettingsUpdate {
+  enabled?: boolean;
+  provider?: string;
+  api_key?: string;
+  api_base?: string | null;
+  model?: string;
+  extra_headers?: Record<string, string> | null;
 }
 
 export interface AgentSettingsUpdate {

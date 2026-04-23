@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import json
 import os
 import re
@@ -12,6 +11,7 @@ import time
 import weakref
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
@@ -20,11 +20,12 @@ from loguru import logger
 
 from tokenmind.agent.context import ContextBuilder
 from tokenmind.agent.memory import MemoryConsolidator
+from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
 from tokenmind.agent.subagent import SubagentManager
 from tokenmind.agent.tools.cron import CronTool
 from tokenmind.agent.tools.deliver_attachment import DeliverAttachmentTool
-from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
 from tokenmind.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+from tokenmind.agent.tools.generate_image import GenerateImageTool
 from tokenmind.agent.tools.message import MessageTool
 from tokenmind.agent.tools.registry import ToolRegistry
 from tokenmind.agent.tools.shell import ExecTool
@@ -33,13 +34,21 @@ from tokenmind.agent.tools.web import WebFetchTool, WebSearchTool
 from tokenmind.audit import AuditLogger
 from tokenmind.bus.events import InboundMessage, OutboundMessage
 from tokenmind.bus.queue import MessageBus
+from tokenmind.creative.image_generation import ImageGenerationService
 from tokenmind.knowledge import KnowledgeService
 from tokenmind.providers.base import LLMProvider
 from tokenmind.server.attachments import AttachmentStore
 from tokenmind.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from tokenmind.config.schema import ChannelsConfig, ExecToolConfig, KnowledgeConfig, TemplatesConfig, WebSearchConfig
+    from tokenmind.config.schema import (
+        ChannelsConfig,
+        CreativeConfig,
+        ExecToolConfig,
+        KnowledgeConfig,
+        TemplatesConfig,
+        WebSearchConfig,
+    )
     from tokenmind.cron.service import CronService
 
 
@@ -93,15 +102,23 @@ class AgentLoop:
         channels_config: ChannelsConfig | None = None,
         templates_config: TemplatesConfig | None = None,
         config_path: Path | None = None,
+        creative_config: CreativeConfig | None = None,
     ):
-        from tokenmind.config.schema import ExecToolConfig, KnowledgeConfig, TemplatesConfig, WebSearchConfig
+        from tokenmind.config.loader import load_config
+        from tokenmind.config.schema import (
+            CreativeConfig,
+            ExecToolConfig,
+            KnowledgeConfig,
+            TemplatesConfig,
+            WebSearchConfig,
+        )
         from tokenmind.templates_engine import TemplateRenderer
 
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
         self._config_path = config_path
-        self._config_mtime = config_path.stat().st_mtime if config_path and config_path.exists() else None
+        self._config_mtime = config_path.stat().st_mtime_ns if config_path and config_path.exists() else None
         self.workspace = workspace
         self.model = model or provider.get_default_model()
         self.max_iterations = max_iterations
@@ -113,6 +130,15 @@ class AgentLoop:
         self.templates_config = templates_config or TemplatesConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        if creative_config is not None:
+            self.creative_config = creative_config
+        elif config_path and config_path.exists():
+            try:
+                self.creative_config = load_config(config_path).creative
+            except Exception:
+                self.creative_config = CreativeConfig()
+        else:
+            self.creative_config = CreativeConfig()
 
         self.context = ContextBuilder(workspace)
         self.knowledge = KnowledgeService(
@@ -166,6 +192,7 @@ class AgentLoop:
             template_renderer=self.template_renderer,
         )
         self._register_default_tools()
+        self._sync_creative_tools()
 
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
@@ -188,19 +215,33 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
+    def _sync_creative_tools(self) -> None:
+        """Register or remove creative tools based on current config."""
+        image_capability = getattr(self.creative_config, "image", None)
+        if ImageGenerationService.is_configured(image_capability):
+            self.tools.register(
+                GenerateImageTool(
+                    service=ImageGenerationService(image_capability),
+                    store=self.attachments,
+                    retention=timedelta(days=30),
+                )
+            )
+            return
+        self.tools.unregister("generate_image")
+
     def _ensure_current_provider(self) -> None:
         """Reload config and recreate provider if the config file changed on disk."""
         if not self._config_path or not self._config_path.exists():
             return
         try:
-            current_mtime = self._config_path.stat().st_mtime
+            current_mtime = self._config_path.stat().st_mtime_ns
         except OSError:
             return
         if current_mtime == self._config_mtime:
             return
 
-        from tokenmind.config.loader import load_config
         from tokenmind.cli.commands import _make_provider
+        from tokenmind.config.loader import load_config
 
         logger.info("Config file changed, reloading provider...")
         cfg = load_config()
@@ -215,6 +256,7 @@ class AgentLoop:
         self.subagents.provider = new_provider
         self.memory_consolidator.provider = new_provider
         self.knowledge_config = cfg.tools.knowledge
+        self.creative_config = cfg.creative
         self.knowledge.configure(
             vector_backend=cfg.tools.knowledge.vector_backend,
             chunk_size=cfg.tools.knowledge.chunk_size,
@@ -230,6 +272,7 @@ class AgentLoop:
         )
         self.templates_config = cfg.templates
         self.memory_consolidator.templates_config = cfg.templates
+        self._sync_creative_tools()
 
         logger.info("Provider reloaded: {} / {}", cfg.agents.defaults.provider, cfg.agents.defaults.model)
 
@@ -257,10 +300,14 @@ class AgentLoop:
 
     def _set_tool_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron", "deliver_attachment"):
+        for name in ("message", "spawn", "cron", "deliver_attachment", "generate_image"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
-                    tool.set_context(channel, chat_id, *([message_id] if name in {"message", "deliver_attachment"} else []))
+                    tool.set_context(
+                        channel,
+                        chat_id,
+                        *([message_id] if name in {"message", "deliver_attachment", "generate_image"} else []),
+                    )
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -844,6 +891,10 @@ class AgentLoop:
         if attachment_tool := self.tools.get("deliver_attachment"):
             if isinstance(attachment_tool, DeliverAttachmentTool):
                 attachment_tool.start_turn()
+        if image_tool := self.tools.get("generate_image"):
+            if isinstance(image_tool, GenerateImageTool):
+                image_tool.start_turn()
+                image_tool.set_available_attachments(msg.metadata.get("attachments") if msg.metadata else None)
 
         history = session.get_history(max_messages=0)
         knowledge_chunks = self.knowledge.retrieve_for_session(key, msg.content)
@@ -903,6 +954,9 @@ class AgentLoop:
         if attachment_tool := self.tools.get("deliver_attachment"):
             if isinstance(attachment_tool, DeliverAttachmentTool):
                 assistant_attachments = attachment_tool.delivered
+        if image_tool := self.tools.get("generate_image"):
+            if isinstance(image_tool, GenerateImageTool) and image_tool.delivered:
+                assistant_attachments = [*assistant_attachments, *image_tool.delivered]
         if message_tool := self.tools.get("message"):
             if (
                 isinstance(message_tool, MessageTool)

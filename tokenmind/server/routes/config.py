@@ -9,9 +9,45 @@ from pydantic import BaseModel
 
 from tokenmind.agent.tools.mcp import inspect_mcp_servers
 from tokenmind.config.loader import load_config, save_config
-from tokenmind.config.schema import MCPServerConfig
+from tokenmind.config.schema import Config, MCPServerConfig
 
 router = APIRouter(prefix="/api/config", tags=["config"])
+
+_PROVIDER_DEFAULT_MODELS: dict[str, str] = {
+    "custom": "default",
+    "azure_openai": "gpt-5.2-chat",
+    "anthropic": "claude-sonnet-4-5",
+    "openai": "gpt-4o",
+    "openrouter": "anthropic/claude-sonnet-4-5",
+    "deepseek": "deepseek-chat",
+    "groq": "llama-3.3-70b-versatile",
+    "zhipu": "glm-4",
+    "dashscope": "qwen-max",
+    "vllm": "llama-3.1-8b-instruct",
+    "ollama": "llama3.2",
+    "gemini": "gemini-2.0-flash",
+    "moonshot": "kimi-k2.5",
+    "minimax": "MiniMax-M2.7",
+    "aihubmix": "anthropic/claude-sonnet-4-5",
+    "siliconflow": "Qwen/Qwen2.5-7B-Instruct",
+    "volcengine": "doubao-1-5-pro-32k",
+    "volcengine_coding_plan": "doubao-seed-1-6",
+    "byteplus": "doubao-1-5-pro-32k",
+    "byteplus_coding_plan": "doubao-seed-1-6",
+    "openai_codex": "openai-codex/gpt-5.1-codex",
+    "github_copilot": "github-copilot/gpt-5.3-codex",
+}
+
+
+def _resolve_provider_default_model(
+    config: Config,
+    provider: str,
+    current_model: str | None = None,
+) -> str:
+    provider_config = getattr(config.providers, provider, None)
+    if provider_config and provider_config.default_model:
+        return provider_config.default_model
+    return _PROVIDER_DEFAULT_MODELS.get(provider) or current_model or config.agents.defaults.model
 
 
 class ProviderConfigUpdate(BaseModel):
@@ -21,6 +57,17 @@ class ProviderConfigUpdate(BaseModel):
     api_base: str | None = None
     extra_headers: dict[str, str] | None = None
     default_model: str | None = None
+
+
+class CreativeCapabilityUpdate(BaseModel):
+    """Request model for updating a creative capability config."""
+
+    enabled: bool | None = None
+    provider: str | None = None
+    api_key: str | None = None
+    api_base: str | None = None
+    model: str | None = None
+    extra_headers: dict[str, str] | None = None
 
 
 class DefaultsUpdate(BaseModel):
@@ -158,6 +205,7 @@ class ConfigResponse(BaseModel):
     """Response model for GET /api/config."""
 
     providers: dict[str, dict[str, Any]]
+    creative: dict[str, dict[str, Any]]
     defaults: dict[str, Any]
     agent: dict[str, Any]
     tools: dict[str, Any]
@@ -210,6 +258,18 @@ def _provider_config_to_dict(provider_config: object) -> dict[str, Any]:
     }
 
 
+def _creative_capability_to_dict(capability_config: object) -> dict[str, Any]:
+    """Convert a creative capability config to dict with masked secrets."""
+    return {
+        "enabled": getattr(capability_config, "enabled", False),
+        "provider": getattr(capability_config, "provider", ""),
+        "api_key": _mask_api_key(getattr(capability_config, "api_key", "")),
+        "api_base": getattr(capability_config, "api_base", None),
+        "model": getattr(capability_config, "model", ""),
+        "extra_headers": getattr(capability_config, "extra_headers", None),
+    }
+
+
 def _web_search_to_dict(search_config: object) -> dict[str, Any]:
     """Convert a web search config to serializable dict with masked secret."""
     return {
@@ -243,6 +303,12 @@ def _build_config_response() -> ConfigResponse:
         provider_config = getattr(config.providers, provider_name, None)
         if provider_config is not None:
             providers_dict[provider_name] = _provider_config_to_dict(provider_config)
+
+    creative_dict: dict[str, dict[str, Any]] = {}
+    for capability_name in type(config.creative).model_fields:
+        capability_config = getattr(config.creative, capability_name, None)
+        if capability_config is not None:
+            creative_dict[capability_name] = _creative_capability_to_dict(capability_config)
 
     agent_dict = config.agents.defaults.model_dump()
     tools_dict = {
@@ -279,6 +345,7 @@ def _build_config_response() -> ConfigResponse:
 
     return ConfigResponse(
         providers=providers_dict,
+        creative=creative_dict,
         defaults=agent_dict.copy(),
         agent=agent_dict,
         tools=tools_dict,
@@ -328,17 +395,65 @@ async def update_provider_config(provider: str, update: ProviderConfigUpdate):
         if "default_model" in update.model_fields_set:
             provider_config.default_model = update.default_model or None
 
+        if provider == config.agents.defaults.provider and "default_model" in update.model_fields_set:
+            config.agents.defaults.model = _resolve_provider_default_model(
+                config,
+                provider,
+                current_model=config.agents.defaults.model,
+            )
+
         save_config(config)
 
         return {
             "success": True,
             "provider": provider,
             "config": _provider_config_to_dict(provider_config),
+            "defaults": {
+                "model": config.agents.defaults.model,
+                "provider": config.agents.defaults.provider,
+            },
         }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update provider: {e}") from e
+
+
+@router.put("/creative/{capability}")
+async def update_creative_config(capability: str, update: CreativeCapabilityUpdate):
+    """Update a specific creative capability configuration."""
+    try:
+        config = load_config()
+
+        if not hasattr(config.creative, capability):
+            raise HTTPException(status_code=404, detail=f"Creative capability '{capability}' not found")
+
+        capability_config = getattr(config.creative, capability)
+
+        if "enabled" in update.model_fields_set:
+            capability_config.enabled = bool(update.enabled)
+        if "provider" in update.model_fields_set:
+            capability_config.provider = update.provider or ""
+        if "api_key" in update.model_fields_set:
+            capability_config.api_key = update.api_key or ""
+        if "api_base" in update.model_fields_set:
+            capability_config.api_base = update.api_base
+        if "model" in update.model_fields_set:
+            capability_config.model = update.model or ""
+        if "extra_headers" in update.model_fields_set:
+            capability_config.extra_headers = update.extra_headers or None
+
+        save_config(config)
+
+        return {
+            "success": True,
+            "capability": capability,
+            "config": _creative_capability_to_dict(capability_config),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update creative capability: {e}") from e
 
 
 @router.put("/defaults")
@@ -347,10 +462,16 @@ async def update_defaults(update: DefaultsUpdate):
     try:
         config = load_config()
 
-        if update.model is not None:
-            config.agents.defaults.model = update.model
         if update.provider is not None:
             config.agents.defaults.provider = update.provider
+        if update.model is not None:
+            config.agents.defaults.model = update.model
+        elif update.provider is not None:
+            config.agents.defaults.model = _resolve_provider_default_model(
+                config,
+                update.provider,
+                current_model=config.agents.defaults.model,
+            )
 
         save_config(config)
 
@@ -374,10 +495,16 @@ async def update_agent_config(update: AgentConfigUpdate):
 
         if "workspace" in update.model_fields_set:
             defaults.workspace = update.workspace
-        if "model" in update.model_fields_set:
-            defaults.model = update.model
         if "provider" in update.model_fields_set:
             defaults.provider = update.provider
+            if "model" not in update.model_fields_set and update.provider:
+                defaults.model = _resolve_provider_default_model(
+                    config,
+                    update.provider,
+                    current_model=defaults.model,
+                )
+        if "model" in update.model_fields_set:
+            defaults.model = update.model
         if "max_tokens" in update.model_fields_set:
             defaults.max_tokens = update.max_tokens
         if "context_window_tokens" in update.model_fields_set:

@@ -77,11 +77,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
 
   const renderAttachment = (attachment: Attachment) => {
     const attachmentHref = attachment.id ? api.getAttachmentUrl(attachment.id) : attachment.path;
+    const isUserUpload = attachment.origin === 'user_upload';
     const isExpired = attachment.status === 'expired';
-    const isSaved = attachment.status === 'saved';
+    const isSaved = attachment.status === 'saved' && !isUserUpload;
     const isRetaining = !!attachment.id && retainingAttachmentId === attachment.id;
-    const canRetain = !!attachment.id && attachment.status === 'temporary';
+    const canRetain = !!attachment.id && !isUserUpload && attachment.status === 'temporary';
     const canDownload = !!attachmentHref && !isExpired;
+    const showStatus = !!attachment.status && (!isUserUpload || isExpired);
     const metaParts = [attachment.category, formatAttachmentSize(attachment.size)].filter(Boolean);
 
     return (
@@ -122,7 +124,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
                   ) : null}
                   <span className="message-bubble__attachment-name">{attachment.name}</span>
                 </div>
-                {attachment.status ? (
+                {showStatus ? (
                   <span className={`message-bubble__attachment-status is-${attachment.status}`}>
                     {attachment.status === 'temporary'
                       ? '临时'
@@ -152,7 +154,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
                   ) : null}
                   <span className="message-bubble__attachment-name">{attachment.name}</span>
                 </div>
-                {attachment.status ? (
+                {showStatus ? (
                   <span className={`message-bubble__attachment-status is-${attachment.status}`}>
                     {attachment.status === 'temporary'
                       ? '临时'

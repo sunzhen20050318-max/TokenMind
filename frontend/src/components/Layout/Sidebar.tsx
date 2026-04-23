@@ -14,8 +14,10 @@ import './sidebar.css';
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
-  mainView: 'chat' | 'knowledge' | 'project-home' | 'project-chat';
-  onSelectMainView: (view: 'chat' | 'knowledge' | 'project-home' | 'project-chat') => void;
+  mainView: 'chat' | 'knowledge' | 'music' | 'voice-clone' | 'video' | 'project-home' | 'project-chat';
+  onSelectMainView: (
+    view: 'chat' | 'knowledge' | 'music' | 'voice-clone' | 'video' | 'project-home' | 'project-chat'
+  ) => void;
 }
 
 function formatSessionTime(value?: string): string {
@@ -34,7 +36,17 @@ function formatSessionTime(value?: string): string {
 function SidebarIcon({
   id,
 }: {
-  id: 'settings' | 'search' | 'plus' | 'collapse' | 'chats' | 'knowledge' | 'project';
+  id:
+    | 'settings'
+    | 'search'
+    | 'plus'
+    | 'collapse'
+    | 'chats'
+    | 'knowledge'
+    | 'music'
+    | 'voice'
+    | 'video'
+    | 'project';
 }) {
   if (id === 'settings') {
     return (
@@ -85,6 +97,35 @@ function SidebarIcon({
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+      </svg>
+    );
+  }
+
+  if (id === 'music') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M9 18V6.5L19 4v11.5" />
+        <circle cx="7" cy="18" r="2.5" />
+        <circle cx="17" cy="15.5" r="2.5" />
+      </svg>
+    );
+  }
+
+  if (id === 'voice') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3Z" />
+        <path d="M18 11a6 6 0 0 1-12 0" />
+        <path d="M12 17v3" />
+      </svg>
+    );
+  }
+
+  if (id === 'video') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="3" y="5" width="14" height="14" rx="3" />
+        <path d="m17 10 4-2v8l-4-2" />
       </svg>
     );
   }
@@ -470,6 +511,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>知识库</span>
             </button>
 
+            <button
+              className={`shell-sidebar__nav-item ${mainView === 'music' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onSelectMainView('music')}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="music" />
+              </span>
+              <span>音乐</span>
+            </button>
+
+            <button
+              className={`shell-sidebar__nav-item ${mainView === 'voice-clone' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onSelectMainView('voice-clone')}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="voice" />
+              </span>
+              <span>声音克隆</span>
+            </button>
+
+            <button
+              className={`shell-sidebar__nav-item ${mainView === 'video' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onSelectMainView('video')}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="video" />
+              </span>
+              <span>视频</span>
+            </button>
+
             <div className={`shell-sidebar__project-shell ${projectsExpanded ? 'is-open' : ''} ${isProjectViewActive ? 'is-active' : ''}`}>
               <button
                 className={`shell-sidebar__group-toggle ${projectsExpanded ? 'is-open' : ''} ${
@@ -621,6 +695,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="shell-sidebar__icon">
                 <SidebarIcon id="project" />
+              </span>
+            </button>
+
+            <button
+              className={`shell-sidebar__collapsed-button ${mainView === 'music' ? 'is-active' : ''}`}
+              type="button"
+              title="音乐"
+              onClick={() => {
+                onSelectMainView('music');
+                setSessionMenuOpen(false);
+              }}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="music" />
+              </span>
+            </button>
+
+            <button
+              className={`shell-sidebar__collapsed-button ${mainView === 'voice-clone' ? 'is-active' : ''}`}
+              type="button"
+              title="声音克隆"
+              onClick={() => {
+                onSelectMainView('voice-clone');
+                setSessionMenuOpen(false);
+              }}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="voice" />
+              </span>
+            </button>
+
+            <button
+              className={`shell-sidebar__collapsed-button ${mainView === 'video' ? 'is-active' : ''}`}
+              type="button"
+              title="视频"
+              onClick={() => {
+                onSelectMainView('video');
+                setSessionMenuOpen(false);
+              }}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="video" />
               </span>
             </button>
 
