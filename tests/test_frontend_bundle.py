@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tokenmind.server.frontend import register_frontend_routes
+from tokenmind.server.frontend import register_frontend_routes, register_missing_frontend_routes
 
 
 def _make_dist(root: Path) -> Path:
@@ -55,3 +55,18 @@ def test_register_frontend_routes_preserves_api_404s_and_missing_assets(tmp_path
 
     assert api_response.status_code == 404
     assert asset_response.status_code == 404
+
+
+def test_register_missing_frontend_routes_explains_source_setup() -> None:
+    app = FastAPI()
+    register_missing_frontend_routes(app)
+    client = TestClient(app)
+
+    index_response = client.get("/")
+    api_response = client.get("/api/unknown")
+
+    assert index_response.status_code == 503
+    assert "TokenMind Web UI has not been built yet" in index_response.text
+    assert "npm run build" in index_response.text
+    assert "http://localhost:5173" in index_response.text
+    assert api_response.status_code == 404

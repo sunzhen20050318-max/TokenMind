@@ -1,8 +1,11 @@
 from typing import Any
+from datetime import timedelta
 
+from tokenmind.agent.tools.deliver_attachment import DeliverAttachmentTool
 from tokenmind.agent.tools.base import Tool
 from tokenmind.agent.tools.registry import ToolRegistry
 from tokenmind.agent.tools.shell import ExecTool
+from tokenmind.server.attachments import AttachmentStore
 
 
 class SampleTool(Tool):
@@ -82,11 +85,63 @@ def test_validate_params_ignores_unknown_fields() -> None:
     assert errors == []
 
 
+def test_deliver_attachment_schema_does_not_advertise_nullable_source_fields(tmp_path) -> None:
+    tool = DeliverAttachmentTool(AttachmentStore(tmp_path), retention=timedelta(days=1))
+    props = tool.parameters["properties"]
+
+    for field in ("path", "url", "filename", "content", "mime_type"):
+        assert props[field]["type"] == "string"
+
+
 async def test_registry_returns_validation_error() -> None:
     reg = ToolRegistry()
     reg.register(SampleTool())
     result = await reg.execute("sample", {"query": "hi"})
     assert "Invalid parameters" in result
+
+
+async def test_deliver_attachment_rejects_local_file_without_path(tmp_path) -> None:
+    reg = ToolRegistry()
+    tool = DeliverAttachmentTool(AttachmentStore(tmp_path), retention=timedelta(days=1))
+    tool.set_context("web", "web:test")
+    reg.register(tool)
+
+    result = await reg.execute("deliver_attachment", {"source_type": "local_file", "path": None})
+
+    assert "Invalid parameters" in result
+    assert "local_file requires non-empty path" in result
+
+
+async def test_deliver_attachment_rejects_inline_content_without_filename_or_content(tmp_path) -> None:
+    reg = ToolRegistry()
+    tool = DeliverAttachmentTool(AttachmentStore(tmp_path), retention=timedelta(days=1))
+    tool.set_context("web", "web:test")
+    reg.register(tool)
+
+    result = await reg.execute(
+        "deliver_attachment",
+        {"source_type": "inline_content", "filename": None, "content": None},
+    )
+
+    assert "Invalid parameters" in result
+    assert "inline_content requires a real filename" in result
+    assert "inline_content requires content" in result
+
+
+async def test_deliver_attachment_rejects_literal_null_inline_content(tmp_path) -> None:
+    reg = ToolRegistry()
+    tool = DeliverAttachmentTool(AttachmentStore(tmp_path), retention=timedelta(days=1))
+    tool.set_context("web", "web:test")
+    reg.register(tool)
+
+    result = await reg.execute(
+        "deliver_attachment",
+        {"source_type": "inline_content", "filename": "null", "content": "null"},
+    )
+
+    assert "Invalid parameters" in result
+    assert "inline_content requires a real filename" in result
+    assert "inline_content requires real content" in result
 
 
 def test_exec_extract_absolute_paths_keeps_full_windows_path() -> None:

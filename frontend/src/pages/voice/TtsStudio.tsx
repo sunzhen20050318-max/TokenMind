@@ -4,11 +4,12 @@ import type { CreativeCapabilitySettings } from '../../types/config';
 import { isCreativeCapabilityConfigured } from '../../types/config';
 import type { TtsVoiceListResponse, TtsVoiceOption } from '../../types';
 import {
-  EMOTIONS,
   TTS_MODELS,
   TTS_TEXT_LIMIT,
   appendTtsHistory,
+  getEmotionOptionsForModel,
   groupVoiceOptions,
+  isTtsEmotionSupported,
   loadTtsHistory,
   makeHistoryId,
   saveTtsHistory,
@@ -147,6 +148,13 @@ export function TtsPage({ capability }: TtsPageProps) {
     () => allVoices.find((voice) => voice.voice_id === voiceId) ?? null,
     [allVoices, voiceId],
   );
+  const emotionOptions = useMemo(() => getEmotionOptionsForModel(model), [model]);
+
+  useEffect(() => {
+    if (!isTtsEmotionSupported(model, emotion)) {
+      setEmotion('');
+    }
+  }, [emotion, model]);
 
   const canSubmit =
     ready && text.trim().length > 0 && voiceId.trim().length > 0 && submit !== 'running';
@@ -311,7 +319,7 @@ export function TtsPage({ capability }: TtsPageProps) {
               <label>
                 <span>情绪</span>
                 <select value={emotion} onChange={(event) => setEmotion(event.target.value)}>
-                  {EMOTIONS.map((item) => (
+                  {emotionOptions.map((item) => (
                     <option key={item.value || 'default'} value={item.value}>
                       {item.label}
                     </option>

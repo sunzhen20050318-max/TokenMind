@@ -36,7 +36,11 @@ from tokenmind.server.dependencies import (
     set_cron_service,
     set_inbound_queue,
 )
-from tokenmind.server.frontend import register_frontend_routes, resolve_frontend_dist_dir
+from tokenmind.server.frontend import (
+    register_frontend_routes,
+    register_missing_frontend_routes,
+    resolve_frontend_dist_dir,
+)
 from tokenmind.server.routes import (
     chat_router,
     config_router,
@@ -1536,6 +1540,13 @@ def create_app(
     frontend_dir = resolve_frontend_dist_dir()
     if frontend_dir is not None:
         register_frontend_routes(app, frontend_dir)
+    else:
+        logger.warning(
+            "TokenMind Web UI bundle not found. Source checkouts must run "
+            "`cd frontend && npm install && npm run build` before opening the backend port, "
+            "or use `npm run dev` and open http://localhost:5173."
+        )
+        register_missing_frontend_routes(app)
 
     # Return app without starting dispatcher - it will be started via lifespan
     return app

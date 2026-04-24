@@ -87,15 +87,44 @@ tokenmind onboard
 
 ### 4. 启动 Web UI
 
+如果你是通过 `pip install tokenmind-ai` 安装，或使用未来的桌面安装包，Web UI 已经随程序打包，可以直接启动：
+
 ```bash
 tokenmind web --port 8080
 ```
+
+然后打开 `http://localhost:8080`。
+
+如果你是通过 `git clone` 运行源码，仓库里通常不会包含前端构建产物。此时需要选择下面其中一种方式：
+
+**源码生产模式：先构建前端，再用 8080 打开**
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+tokenmind web --port 8080
+```
+
+然后打开 `http://localhost:8080`。
+
+**源码开发模式：后端 8080 + 前端 5173**
+
+```bash
+tokenmind web --port 8080
+cd frontend
+npm install
+npm run dev
+```
+
+然后打开 `http://localhost:5173`。Vite 开发服务器会自动代理 API 请求到后端 8080 端口。
 
 如果还没有配置 API Key，服务仍然会正常启动，但聊天功能暂不可用。
 
 ### 5. 配置模型 API Key
 
-打开 `http://localhost:8080`，进入**设置中心**：
+打开上一步对应的地址（pip/生产模式为 `http://localhost:8080`，源码开发模式为 `http://localhost:5173`），进入**设置中心**：
 
 1. 在 **Providers** 区域选择你要使用的模型提供商（如 OpenAI、Anthropic、DeepSeek 等）
 2. 填入对应的 API Key
@@ -104,17 +133,14 @@ tokenmind web --port 8080
 
 > 也可以直接编辑 `~/.tokenmind/config.json`，在 `providers` 下对应的提供商字段中填入 `api_key`。
 
-### 6. 可选：前端开发模式
+### 6. 可选：前端构建
 
-如果你需要修改前端代码，可以启动 Vite 开发服务器：
+修改前端后，如果想让后端 8080 直接提供最新页面，请重新构建：
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm run build
 ```
-
-开发服务器默认运行在 `http://localhost:5173`，会自动代理 API 请求到后端 8080 端口。
 
 ### 7. 可选：启动网关
 

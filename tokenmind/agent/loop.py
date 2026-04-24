@@ -495,6 +495,7 @@ class AgentLoop:
         iteration = 0
         final_content = None
         tools_used: list[str] = []
+        repeated_tool_errors: dict[str, int] = {}
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -615,18 +616,49 @@ class AgentLoop:
                             "duration_s": round(duration, 3),
                         },
                     )
-                    # Send tool_end event
                     if on_progress:
-                        await on_progress(
-                            f"{tool_call.name} completed",
-                            tool_end=True,
-                            tool_id=tool_call.id,
-                            tool_name=tool_call.name,
-                            duration=duration,
-                        )
+                        if outcome == "error":
+                            await on_progress(
+                                full_command,
+                                tool_error=True,
+                                tool_id=tool_call.id,
+                                tool_name=tool_call.name,
+                                detail=result,
+                            )
+                        else:
+                            await on_progress(
+                                f"{tool_call.name} completed",
+                                tool_end=True,
+                                tool_id=tool_call.id,
+                                tool_name=tool_call.name,
+                                duration=duration,
+                            )
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
+                    if outcome == "error":
+                        error_signature = json.dumps(
+                            {
+                                "name": tool_call.name,
+                                "arguments": tool_call.arguments,
+                                "result": result,
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        repeated_tool_errors[error_signature] = repeated_tool_errors.get(error_signature, 0) + 1
+                        if repeated_tool_errors[error_signature] >= 2:
+                            final_content = (
+                                f"{tool_call.name} was called repeatedly with invalid parameters, "
+                                "so I stopped this tool loop. For an existing local file, attach it with "
+                                'source_type="local_file" and a real path instead of inline null content.'
+                            )
+                            logger.warning(
+                                "Stopping repeated invalid tool loop: {}({})",
+                                tool_call.name,
+                                args_str[:200],
+                            )
+                            return final_content, tools_used, messages
             else:
                 clean = self._strip_think(response.content)
                 # Don't persist error responses to session history — they can

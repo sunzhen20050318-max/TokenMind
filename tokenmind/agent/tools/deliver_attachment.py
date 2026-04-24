@@ -26,7 +26,12 @@ class DeliverAttachmentTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Create a downloadable or previewable attachment for the current web chat reply."
+        return (
+            "Attach a downloadable or previewable file to the current web chat reply. "
+            "If the file already exists on disk, always use source_type=local_file with its exact path; "
+            "do not read the file and resend it as inline_content. "
+            "Use inline_content only for newly generated short text that does not already exist as a file."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -39,23 +44,29 @@ class DeliverAttachmentTool(Tool):
                     "description": "How the attachment source should be interpreted.",
                 },
                 "path": {
-                    "type": ["string", "null"],
-                    "description": "Local workspace path for source_type=local_file.",
+                    "type": "string",
+                    "description": (
+                        "Existing local file path for source_type=local_file. "
+                        "Required when attaching a file that was read, created, or found on disk."
+                    ),
                 },
                 "url": {
-                    "type": ["string", "null"],
+                    "type": "string",
                     "description": "Remote URL for source_type=remote_url.",
                 },
                 "filename": {
-                    "type": ["string", "null"],
+                    "type": "string",
                     "description": "Target display filename. Required for inline_content and recommended elsewhere.",
                 },
                 "content": {
-                    "type": ["string", "null"],
-                    "description": "Inline text content to write into a generated file when source_type=inline_content.",
+                    "type": "string",
+                    "description": (
+                        "Inline text content for source_type=inline_content. "
+                        "Do not use this for an existing local file; use path instead."
+                    ),
                 },
                 "mime_type": {
-                    "type": ["string", "null"],
+                    "type": "string",
                     "description": "Optional MIME type override.",
                 },
             },
@@ -73,6 +84,31 @@ class DeliverAttachmentTool(Tool):
     @property
     def delivered(self) -> list[dict[str, Any]]:
         return list(self._delivered)
+
+    @staticmethod
+    def _is_blankish(value: Any) -> bool:
+        if value is None:
+            return True
+        if not isinstance(value, str):
+            return False
+        return value.strip().lower() in {"", "null", "none"}
+
+    def validate_params(self, params: dict[str, Any]) -> list[str]:
+        errors = super().validate_params(params)
+
+        source_type = params.get("source_type")
+        if source_type == "local_file" and self._is_blankish(params.get("path")):
+            errors.append("local_file requires non-empty path")
+        elif source_type == "remote_url" and self._is_blankish(params.get("url")):
+            errors.append("remote_url requires non-empty url")
+        elif source_type == "inline_content":
+            if self._is_blankish(params.get("filename")):
+                errors.append("inline_content requires a real filename")
+            if params.get("content") is None:
+                errors.append("inline_content requires content")
+            elif isinstance(params.get("content"), str) and params["content"].strip().lower() in {"null", "none"}:
+                errors.append("inline_content requires real content")
+        return errors
 
     async def execute(
         self,

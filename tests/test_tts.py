@@ -123,6 +123,17 @@ async def test_synthesize_rejects_unsupported_emotion() -> None:
 
 
 @pytest.mark.asyncio
+async def test_synthesize_rejects_emotion_not_supported_by_model() -> None:
+    service = TtsService(_tts_capability())
+    with pytest.raises(ValueError, match="does not support emotion"):
+        await service.synthesize(
+            text="hi",
+            voice_id="clone_abcdefgh",
+            emotion="whisper",
+        )
+
+
+@pytest.mark.asyncio
 async def test_synthesize_propagates_minimax_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeAsyncClient:
         def __init__(self, **kwargs: Any) -> None:

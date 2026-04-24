@@ -32,6 +32,21 @@ export const EMOTIONS: EmotionOption[] = [
   { value: 'whisper', label: '耳语' },
 ];
 
+const MODEL_UNSUPPORTED_EMOTIONS: Record<string, readonly string[]> = {
+  'speech-2.8-hd': ['whisper'],
+  'speech-2.8-turbo': ['whisper'],
+};
+
+export function isTtsEmotionSupported(model: string, emotion: string): boolean {
+  if (!emotion) return true;
+  const unsupported = MODEL_UNSUPPORTED_EMOTIONS[model.trim().toLowerCase()] ?? [];
+  return !unsupported.includes(emotion.trim().toLowerCase());
+}
+
+export function getEmotionOptionsForModel(model: string): EmotionOption[] {
+  return EMOTIONS.filter((emotion) => isTtsEmotionSupported(model, emotion.value));
+}
+
 export interface TtsHistoryItem {
   id: string;
   attachment_id: string;

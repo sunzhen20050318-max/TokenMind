@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   appendTtsHistory,
+  getEmotionOptionsForModel,
   groupVoiceOptions,
+  isTtsEmotionSupported,
   loadTtsHistory,
   makeHistoryId,
   saveTtsHistory,
@@ -102,6 +104,16 @@ test('voiceOptionLabel hides voice_id and uses friendly names', () => {
   assert.equal(
     voiceOptionLabel({ kind: 'cloned', voice_id: 'clone_b', label: 'clone B' }),
     '我的克隆音色',
+  );
+});
+
+test('speech 2.8 hides whisper emotion because MiniMax rejects it', () => {
+  assert.equal(isTtsEmotionSupported('speech-2.8-hd', 'whisper'), false);
+  assert.equal(isTtsEmotionSupported('speech-2.8-turbo', 'whisper'), false);
+  assert.equal(isTtsEmotionSupported('speech-2.6-hd', 'whisper'), true);
+  assert.equal(
+    getEmotionOptionsForModel('speech-2.8-hd').some((item) => item.value === 'whisper'),
+    false,
   );
 });
 

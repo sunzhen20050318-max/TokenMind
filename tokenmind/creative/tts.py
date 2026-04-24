@@ -46,6 +46,11 @@ SUPPORTED_EMOTIONS: tuple[str, ...] = (
     "whisper",
 )
 
+_MODEL_UNSUPPORTED_EMOTIONS: dict[str, frozenset[str]] = {
+    "speech-2.8-hd": frozenset({"whisper"}),
+    "speech-2.8-turbo": frozenset({"whisper"}),
+}
+
 
 @dataclass(frozen=True)
 class SystemVoice:
@@ -160,6 +165,12 @@ class TtsService:
         normalized_emotion = (emotion or "").strip().lower()
         if normalized_emotion and normalized_emotion not in SUPPORTED_EMOTIONS:
             raise ValueError(f"Unsupported emotion: {emotion}")
+        if normalized_emotion and not _is_emotion_supported_by_model(
+            requested_model, normalized_emotion
+        ):
+            raise ValueError(
+                f"Model {requested_model} does not support emotion: {normalized_emotion}"
+            )
 
         voice_setting: dict[str, Any] = {
             "voice_id": cleaned_voice_id,
@@ -231,6 +242,15 @@ def _raise_for_minimax_error(data: dict[str, Any], fallback: str) -> None:
     status_code = base_resp.get("status_code")
     if status_code not in (None, 0):
         raise RuntimeError(base_resp.get("status_msg") or fallback)
+
+
+def _is_emotion_supported_by_model(model: str, emotion: str) -> bool:
+    normalized_model = (model or "").strip().lower()
+    normalized_emotion = (emotion or "").strip().lower()
+    if not normalized_emotion:
+        return True
+    unsupported = _MODEL_UNSUPPORTED_EMOTIONS.get(normalized_model, frozenset())
+    return normalized_emotion not in unsupported
 
 
 def _extract_audio_hex(data: dict[str, Any]) -> str | None:

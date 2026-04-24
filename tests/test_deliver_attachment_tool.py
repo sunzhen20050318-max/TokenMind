@@ -110,3 +110,61 @@ async def test_message_tool_media_is_bridged_into_web_attachments(tmp_path: Path
     assert assistant_messages
     assert assistant_messages[-1]["content"] == "Here is the chart."
     assert assistant_messages[-1]["attachments"][0]["origin"] == "assistant_local"
+
+
+@pytest.mark.asyncio
+async def test_invalid_deliver_attachment_call_persists_tool_error(tmp_path: Path) -> None:
+    loop = _make_loop(tmp_path)
+    tool_call = ToolCallRequest(
+        id="call3",
+        name="deliver_attachment",
+        arguments={"source_type": "local_file", "path": None, "filename": None},
+    )
+    calls = iter(
+        [
+            LLMResponse(content="", tool_calls=[tool_call]),
+            LLMResponse(content="I need a file path before I can attach it.", tool_calls=[]),
+        ]
+    )
+    loop.provider.chat_with_retry = AsyncMock(side_effect=lambda *args, **kwargs: next(calls))
+    loop.tools.get_definitions = MagicMock(return_value=[])
+
+    msg = InboundMessage(
+        channel="web",
+        sender_id="web_user",
+        chat_id="web:test-session",
+        content="Send the file",
+    )
+    result = await loop._process_message(msg)
+
+    assert result is not None
+    saved_session = loop.sessions.get_or_create(msg.session_key)
+    assert any(event["type"] == "tool_error" for event in saved_session.timeline_events)
+    assert not any(event["type"] == "tool_end" for event in saved_session.timeline_events)
+
+
+@pytest.mark.asyncio
+async def test_repeated_invalid_deliver_attachment_call_stops_tool_loop(tmp_path: Path) -> None:
+    loop = _make_loop(tmp_path)
+    loop.max_iterations = 10
+    tool_call = ToolCallRequest(
+        id="call4",
+        name="deliver_attachment",
+        arguments={"source_type": "inline_content", "filename": None, "content": None},
+    )
+    loop.provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(content="", tool_calls=[tool_call])
+    )
+    loop.tools.get_definitions = MagicMock(return_value=[])
+
+    msg = InboundMessage(
+        channel="web",
+        sender_id="web_user",
+        chat_id="web:test-session",
+        content="Send SOUL.md",
+    )
+    result = await loop._process_message(msg)
+
+    assert result is not None
+    assert "deliver_attachment was called repeatedly with invalid parameters" in result.content
+    assert loop.provider.chat_with_retry.await_count == 2
