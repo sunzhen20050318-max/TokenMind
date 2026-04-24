@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { shouldRestoreLastSession } from './app/sessionRestoreState';
+import { AttachmentPreview } from './components/AttachmentPreview/AttachmentPreview';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
@@ -182,6 +183,7 @@ const App: React.FC = () => {
           </main>
         </div>
       </div>
+      <AttachmentPreview />
     </div>
   );
 };

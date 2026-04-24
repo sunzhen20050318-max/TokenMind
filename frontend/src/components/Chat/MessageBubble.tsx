@@ -5,6 +5,7 @@ import type { Attachment, Message, MessageCitation } from '../../types';
 import { api } from '../../services/api';
 import { useChatStore } from '../../stores/chatStore';
 import { BrandMark } from '../BrandMark';
+import { AttachmentIcon } from './AttachmentIcon';
 import { extractTextContent, resolveVisibleCitations } from './messageBubbleContent';
 import './messageBubble.css';
 
@@ -29,6 +30,7 @@ function formatAttachmentSize(size?: number): string | null {
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedToolChain }) => {
   const isUser = message.role === 'user';
   const updateAttachment = useChatStore((state) => state.updateAttachment);
+  const openAttachmentPreview = useChatStore((state) => state.openAttachmentPreview);
   const renderedContent = extractTextContent(message.content, message.attachments);
   const visibleCitations = useMemo(
     () => resolveVisibleCitations(message, renderedContent),
@@ -86,125 +88,102 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
     const showStatus = !!attachment.status && (!isUserUpload || isExpired);
     const metaParts = [attachment.category, formatAttachmentSize(attachment.size)].filter(Boolean);
 
+    const openPreview = () => {
+      if (!isExpired) {
+        openAttachmentPreview(attachment);
+      }
+    };
+
+    const mainContent = (
+      <>
+        {attachment.is_image && canDownload ? (
+          <img
+            src={attachmentHref}
+            alt={attachment.name}
+            className="message-bubble__attachment-image"
+          />
+        ) : (
+          <span className="message-bubble__attachment-fileicon" aria-hidden="true">
+            <AttachmentIcon attachment={attachment} size={26} />
+          </span>
+        )}
+
+        <div className="message-bubble__attachment-text">
+          <div className="message-bubble__attachment-name">{attachment.name}</div>
+          <div className="message-bubble__attachment-subrow">
+            {metaParts.length > 0 ? (
+              <span className="message-bubble__attachment-type">{metaParts.join(' · ')}</span>
+            ) : null}
+            {showStatus ? (
+              <span className={`message-bubble__attachment-status is-${attachment.status}`}>
+                {attachment.status === 'temporary'
+                  ? '临时'
+                  : attachment.status === 'saved'
+                    ? '已保留'
+                    : '已过期'}
+              </span>
+            ) : null}
+          </div>
+          {attachment.preview_text ? (
+            <div className="message-bubble__attachment-preview-text">
+              {attachment.preview_text}
+            </div>
+          ) : null}
+        </div>
+      </>
+    );
+
     return (
       <div
         key={`${attachment.id || attachment.path || attachment.name}-${attachment.name}`}
         className={`message-bubble__attachment ${isUser ? 'is-user' : 'is-assistant'} ${attachment.is_image ? 'is-image' : ''} ${isExpired ? 'is-expired' : ''}`}
       >
-        {attachment.is_image && canDownload ? (
-          <a
-            href={attachmentHref}
-            target="_blank"
-            rel="noreferrer"
-            className="message-bubble__attachment-preview"
+        {!isExpired ? (
+          <button
+            type="button"
+            className="message-bubble__attachment-main"
+            onClick={openPreview}
+            aria-label={`预览 ${attachment.name}`}
           >
-            <img
-              src={attachmentHref}
-              alt={attachment.name}
-              className="message-bubble__attachment-image"
-            />
-          </a>
-        ) : null}
+            {mainContent}
+          </button>
+        ) : (
+          <div className="message-bubble__attachment-main is-static">{mainContent}</div>
+        )}
 
-        <div className="message-bubble__attachment-main">
+        <div className="message-bubble__attachment-actions">
           {canDownload ? (
             <a
               href={attachmentHref}
               target="_blank"
               rel="noreferrer"
               download={attachment.name}
-              className="message-bubble__attachment-body-link"
+              className="message-bubble__attachment-action"
+              onClick={(event) => event.stopPropagation()}
             >
-              <div className="message-bubble__attachment-header">
-                <div className="message-bubble__attachment-titlewrap">
-                  {!attachment.is_image ? (
-                    <span className="message-bubble__attachment-fileicon" aria-hidden="true">
-                      📄
-                    </span>
-                  ) : null}
-                  <span className="message-bubble__attachment-name">{attachment.name}</span>
-                </div>
-                {showStatus ? (
-                  <span className={`message-bubble__attachment-status is-${attachment.status}`}>
-                    {attachment.status === 'temporary'
-                      ? '临时'
-                      : attachment.status === 'saved'
-                        ? '已保留'
-                        : '已过期'}
-                  </span>
-                ) : null}
-              </div>
-
-              {metaParts.length > 0 ? (
-                <span className="message-bubble__attachment-type">{metaParts.join(' · ')}</span>
-              ) : null}
-
-              {attachment.preview_text ? (
-                <div className="message-bubble__attachment-preview-text">{attachment.preview_text}</div>
-              ) : null}
+              下载
             </a>
           ) : (
-            <>
-              <div className="message-bubble__attachment-header">
-                <div className="message-bubble__attachment-titlewrap">
-                  {!attachment.is_image ? (
-                    <span className="message-bubble__attachment-fileicon" aria-hidden="true">
-                      📄
-                    </span>
-                  ) : null}
-                  <span className="message-bubble__attachment-name">{attachment.name}</span>
-                </div>
-                {showStatus ? (
-                  <span className={`message-bubble__attachment-status is-${attachment.status}`}>
-                    {attachment.status === 'temporary'
-                      ? '临时'
-                      : attachment.status === 'saved'
-                        ? '已保留'
-                        : '已过期'}
-                  </span>
-                ) : null}
-              </div>
-
-              {metaParts.length > 0 ? (
-                <span className="message-bubble__attachment-type">{metaParts.join(' · ')}</span>
-              ) : null}
-
-              {attachment.preview_text ? (
-                <div className="message-bubble__attachment-preview-text">{attachment.preview_text}</div>
-              ) : null}
-            </>
+            <span className="message-bubble__attachment-action is-disabled">已过期</span>
           )}
 
-          <div className="message-bubble__attachment-actions">
-            {canDownload ? (
-              <a
-                href={attachmentHref}
-                target="_blank"
-                rel="noreferrer"
-                download={attachment.name}
-                className="message-bubble__attachment-action"
-              >
-                下载
-              </a>
-            ) : (
-              <span className="message-bubble__attachment-action is-disabled">已过期</span>
-            )}
+          {canRetain ? (
+            <button
+              type="button"
+              className="message-bubble__attachment-action"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleRetainAttachment(attachment.id!);
+              }}
+              disabled={isRetaining}
+            >
+              {isRetaining ? '保留中' : '保留'}
+            </button>
+          ) : null}
 
-            {canRetain ? (
-              <button
-                type="button"
-                className="message-bubble__attachment-action"
-                onClick={() => handleRetainAttachment(attachment.id!)}
-                disabled={isRetaining}
-              >
-                {isRetaining ? '保留中' : '保留'}
-              </button>
-            ) : null}
-
-            {isSaved ? (
-              <span className="message-bubble__attachment-action is-muted">已转正</span>
-            ) : null}
-          </div>
+          {isSaved ? (
+            <span className="message-bubble__attachment-action is-muted">已转正</span>
+          ) : null}
         </div>
       </div>
     );

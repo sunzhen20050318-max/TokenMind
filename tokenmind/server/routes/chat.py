@@ -120,14 +120,25 @@ async def get_chat_history(
 @router.get("/attachments/{attachment_id}")
 async def download_attachment(
     attachment_id: str,
+    disposition: str = "attachment",
     service=Depends(get_chat_service),
 ):
-    """Download or preview a stored chat attachment."""
+    """Download or preview a stored chat attachment.
+
+    ``disposition=inline`` serves the file for in-browser preview (PDF viewer,
+    <img>, <audio>, etc.). The default ``attachment`` triggers a browser
+    download via ``Content-Disposition: attachment``.
+    """
     try:
         attachment = service.resolve_attachment(attachment_id)
+        mime = attachment.get("mime_type") or "application/octet-stream"
+        if disposition == "inline":
+            # Omit filename so Starlette does not emit an "attachment" Content-Disposition.
+            # Browsers will render the file inline based on the Content-Type header.
+            return FileResponse(attachment["storage_path"], media_type=mime)
         return FileResponse(
             attachment["storage_path"],
-            media_type=attachment.get("mime_type") or "application/octet-stream",
+            media_type=mime,
             filename=attachment.get("name"),
         )
     except HTTPException:

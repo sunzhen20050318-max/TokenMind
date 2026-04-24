@@ -552,19 +552,33 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       }
 
       return (
-        <ToolChain
+        <div
+          className="message-row is-assistant"
           key={`toolchain-standalone-${keySeed}`}
-          toolCalls={pendingArtifacts.toolCalls}
-          isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
-          isDone={
-            !pendingIsCurrentTurn ||
-            !isLoading ||
-            !pendingArtifacts.toolCalls.some((toolCall) => toolCall.status === 'running')
-          }
-          displayCount={pendingArtifacts.toolCalls.length}
-          activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
-          timelineEvents={pendingArtifacts.timelineEvents}
-        />
+        >
+          <div className="message-row__avatar is-assistant">
+            <BrandMark
+              size={24}
+              alt=""
+              className="message-row__assistant-mark"
+              variant="icon"
+            />
+          </div>
+          <div className="message-row__body">
+            <ToolChain
+              toolCalls={pendingArtifacts.toolCalls}
+              isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
+              isDone={
+                !pendingIsCurrentTurn ||
+                !isLoading ||
+                !pendingArtifacts.toolCalls.some((toolCall) => toolCall.status === 'running')
+              }
+              displayCount={pendingArtifacts.toolCalls.length}
+              activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
+              timelineEvents={pendingArtifacts.timelineEvents}
+            />
+          </div>
+        </div>
       );
     };
 

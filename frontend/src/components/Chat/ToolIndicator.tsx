@@ -44,8 +44,22 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
     displayCount,
     variant = 'standalone',
   }) => {
-    const [isExpanded, setIsExpanded] = useState(true);
+    // Default expanded only for tool chains that are still running. Historical
+    // chains (loaded from session history) start collapsed so the chat does
+    // not overflow with old Exec details.
+    const [isExpanded, setIsExpanded] = useState(isActive);
     const [now, setNow] = useState(() => Date.now());
+
+    // When a tool chain transitions from idle → active (a fresh answer kicks off
+    // Exec after the component is already mounted), auto-expand so the user can
+    // follow the live execution without needing to click.
+    const wasActiveRef = useRef<boolean>(isActive);
+    useEffect(() => {
+      if (isActive && !wasActiveRef.current) {
+        setIsExpanded(true);
+      }
+      wasActiveRef.current = isActive;
+    }, [isActive]);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const hasRunning = toolCalls.some((toolCall) => toolCall.status === 'running');

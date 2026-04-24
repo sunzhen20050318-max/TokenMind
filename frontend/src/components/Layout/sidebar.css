@@ -252,18 +252,18 @@
 }
 
 .shell-sidebar__project-shell {
-  margin-top: 6px;
-  border: 1px solid transparent;
-  border-radius: 16px;
+  margin-top: 4px;
+  border: none;
+  border-radius: 0;
   background: transparent;
-  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
+/* Highlight only the toggle when the project view is active; no outer box. */
 .shell-sidebar__project-shell.is-open,
 .shell-sidebar__project-shell.is-active {
-  border-color: rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.026);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .shell-sidebar__group-toggle {
@@ -340,63 +340,62 @@
 
 .shell-sidebar__project-directory {
   display: grid;
-  gap: 6px;
+  gap: 1px;
   margin-top: 2px;
-  padding: 0 8px 8px;
+  padding: 0 0 4px 10px;
 }
 
 .shell-sidebar__project-directory-head {
-  margin: 0 -8px;
-  padding: 0 0 2px;
+  margin: 0;
+  padding: 0 0 4px;
 }
 
 .shell-sidebar__project-create {
   width: 100%;
   min-width: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  padding: 10px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.022);
-  color: #cdd1d9;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a8d95;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .shell-sidebar__project-create:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #f4f5f7;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f0f1f3;
 }
 
 .shell-sidebar__project-create.is-quiet {
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .shell-sidebar__project-node {
   display: grid;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid transparent;
-  border-radius: 16px;
-  transition: background-color 0.16s ease, border-color 0.16s ease;
+  gap: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .shell-sidebar__project-node.is-open {
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.025);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.015);
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .shell-sidebar__project-head {
   display: flex;
   align-items: stretch;
-  gap: 4px;
+  gap: 2px;
 }
 
 .shell-sidebar__project-row {
@@ -406,56 +405,48 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px 8px 14px;
-  border: 1px solid transparent;
-  border-radius: 12px;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
   background: transparent;
-  color: #d2d5dd;
-  font-size: 12px;
+  color: #c6c8ce;
+  font-size: 12.5px;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .shell-sidebar__project-row:hover {
-  background: rgba(255, 255, 255, 0.028);
-  border-color: rgba(255, 255, 255, 0.03);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f0f1f3;
 }
 
 .shell-sidebar__project-row.is-active {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
 }
 
 .shell-sidebar__project-node.is-open .shell-sidebar__project-row {
-  background: rgba(255, 255, 255, 0.025);
+  background: transparent;
+  color: #f0f1f3;
 }
 
 .shell-sidebar__project-node.is-open .shell-sidebar__project-row:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .shell-sidebar__project-row.is-active::before {
-  content: '';
-  position: absolute;
-  left: 6px;
-  top: 7px;
-  bottom: 7px;
-  width: 2px;
-  border-radius: 999px;
-  background: #f3f4f6;
+  content: none;
 }
 
 .shell-sidebar__project-row-icon {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #8d93a0;
+  color: #7d818b;
   flex: 0 0 auto;
 }
 
@@ -503,35 +494,35 @@
 }
 
 .shell-sidebar__project-action {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 10px;
+  border-radius: 6px;
   background: transparent;
   color: #848893;
   cursor: pointer;
-  transition: background-color 0.16s ease, color 0.16s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .shell-sidebar__project-action:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #f4f5f7;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f0f1f3;
 }
 
 .shell-sidebar__project-action svg {
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
 }
 
 .shell-sidebar__project-session-list {
   display: grid;
-  gap: 4px;
-  margin: 2px 0 2px;
-  padding: 0;
-  border-left: none;
+  gap: 1px;
+  margin: 2px 0 2px 14px;
+  padding: 0 0 2px 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .shell-sidebar__project-node.is-open .shell-sidebar__project-session-list {
@@ -541,40 +532,40 @@
 .shell-sidebar__project-session-item {
   display: flex;
   align-items: stretch;
-  gap: 4px;
+  gap: 2px;
 }
 
 .shell-sidebar__project-session {
   flex: 1;
   width: auto;
   min-width: 0;
-  padding: 8px 12px 8px 14px;
+  padding: 5px 10px;
   border: none;
-  border-radius: 12px;
+  border-radius: 6px;
   background: transparent;
-  color: #9ea4b0;
-  font-size: 12px;
+  color: #9094a0;
+  font-size: 12.5px;
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: background-color 0.16s ease, color 0.16s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .shell-sidebar__project-session:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   color: #eceef2;
 }
 
 .shell-sidebar__project-session.is-active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
 }
 
 .shell-sidebar__project-empty {
-  padding: 8px 12px 4px;
-  color: #717580;
+  padding: 6px 10px 2px;
+  color: #6d7078;
   font-size: 12px;
 }
 

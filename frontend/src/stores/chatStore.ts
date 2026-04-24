@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Message, MessageCitation, Project, Session } from '../types';
+import type { Attachment, Message, MessageCitation, Project, Session } from '../types';
 import { api } from '../services/api';
 import type { CreativeSettings } from '../types/config';
 import type { KnowledgeBase } from '../types/knowledge';
@@ -57,6 +57,7 @@ interface ChatState {
   availableKnowledgeBases: KnowledgeBase[];
   linkedKnowledgeBaseIds: string[];
   pendingSessionStarter: { sessionId: string; message: string } | null;
+  previewAttachment: Attachment | null;
 
   // Actions
   setCurrentSession: (sessionId: string) => void;
@@ -100,6 +101,8 @@ interface ChatState {
   setLinkedKnowledgeBases: (knowledgeBaseIds: string[]) => Promise<void>;
   queuePendingSessionStarter: (sessionId: string, message: string) => void;
   clearPendingSessionStarter: (sessionId?: string) => void;
+  openAttachmentPreview: (attachment: Attachment) => void;
+  closeAttachmentPreview: () => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -124,9 +127,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   availableKnowledgeBases: [],
   linkedKnowledgeBaseIds: [],
   pendingSessionStarter: null,
+  previewAttachment: null,
 
   setCurrentTurnId: (turnId) => {
     set({ currentTurnId: turnId });
+  },
+
+  openAttachmentPreview: (attachment) => {
+    set({ previewAttachment: attachment });
+  },
+
+  closeAttachmentPreview: () => {
+    set({ previewAttachment: null });
   },
 
   queuePendingSessionStarter: (sessionId, message) => {
