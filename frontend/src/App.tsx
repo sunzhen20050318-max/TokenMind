@@ -9,7 +9,9 @@ import { KnowledgePage } from './pages/Knowledge';
 import { MusicPage } from './pages/Music';
 import { ProjectHome } from './pages/ProjectHome';
 import { VideoPage } from './pages/Video';
-import { VoiceClonePage } from './pages/VoiceClone';
+import { VoiceClonePage } from './pages/voice/VoiceCloneStudio';
+import { TtsPage } from './pages/voice/TtsStudio';
+import { VoiceDesignPage } from './pages/voice/VoiceDesignStudio';
 import { api } from './services/api';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
@@ -34,7 +36,15 @@ const App: React.FC = () => {
   const [gateExiting, setGateExiting] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mainView, setMainView] = useState<
-    'chat' | 'knowledge' | 'music' | 'voice-clone' | 'video' | 'project-home' | 'project-chat'
+    | 'chat'
+    | 'knowledge'
+    | 'music'
+    | 'voice-clone'
+    | 'tts'
+    | 'voice-design'
+    | 'video'
+    | 'project-home'
+    | 'project-chat'
   >('chat');
   const enterTimerRef = useRef<number | null>(null);
   const appReady = gateDismissed || gateExiting;
@@ -130,6 +140,10 @@ const App: React.FC = () => {
               />
             ) : mainView === 'voice-clone' ? (
               <VoiceClonePage capability={creativeCapabilities?.voice_clone} />
+            ) : mainView === 'tts' ? (
+              <TtsPage capability={creativeCapabilities?.tts} />
+            ) : mainView === 'voice-design' ? (
+              <VoiceDesignPage capability={creativeCapabilities?.voice_design} />
             ) : mainView === 'video' ? (
               <VideoPage capability={creativeCapabilities?.video} />
             ) : mainView === 'project-home' ? (

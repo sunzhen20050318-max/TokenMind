@@ -123,6 +123,119 @@ export interface MusicGenerateResponse {
   results?: MusicGenerateResult[];
 }
 
+export interface VoiceCloneUploadResponse {
+  file_id: number;
+  filename: string;
+  bytes: number;
+  created_at?: number | null;
+}
+
+export interface VoiceCloneCreateRequest {
+  file_id: number;
+  voice_id?: string | null;
+  preview_text?: string | null;
+  need_noise_reduction?: boolean;
+  need_volume_normalization?: boolean;
+  language_boost?: string | null;
+  source_filename?: string | null;
+}
+
+export interface VoiceCloneRecord {
+  voice_id: string;
+  model: string;
+  provider: string;
+  created_at: string;
+  preview_text?: string | null;
+  source_filename?: string | null;
+  demo_audio_url?: string | null;
+  demo_attachment_id?: string | null;
+  last_kept_alive_at?: string | null;
+  notes?: string | null;
+  source?: string;
+  display_name?: string | null;
+}
+
+export interface VoiceDesignCreateRequest {
+  prompt: string;
+  preview_text: string;
+  voice_id?: string | null;
+  display_name?: string | null;
+}
+
+export interface VoiceDesignCreateResponse extends VoiceCloneRecord {
+  trace_id?: string | null;
+}
+
+export interface SkillSummary {
+  name: string;
+  description: string;
+  source: 'workspace' | 'builtin';
+  path: string;
+  enabled: boolean;
+  available: boolean;
+  missing_requirements?: string | null;
+  always?: boolean;
+  emoji?: string | null;
+}
+
+export interface SkillListResponse {
+  items: SkillSummary[];
+}
+
+export interface VoiceCloneCreateResponse extends VoiceCloneRecord {
+  input_sensitive?: boolean;
+  input_sensitive_type?: number | null;
+  trace_id?: string | null;
+}
+
+export interface VoiceCloneListResponse {
+  items: VoiceCloneRecord[];
+}
+
+export interface TtsSynthesizeRequest {
+  text: string;
+  voice_id: string;
+  model?: string | null;
+  speed?: number;
+  volume?: number;
+  pitch?: number;
+  emotion?: string | null;
+}
+
+export interface TtsSynthesizeResponse {
+  voice_id: string;
+  model: string;
+  provider: string;
+  filename: string;
+  mime_type: string;
+  usage_characters?: number | null;
+  trace_id?: string | null;
+  attachment_id: string;
+  attachment: Attachment;
+}
+
+export interface TtsVoiceOption {
+  kind: 'cloned' | 'system';
+  voice_id: string;
+  label: string;
+  gender?: string | null;
+  description?: string | null;
+  created_at?: string | null;
+  model?: string | null;
+  provider?: string | null;
+  last_kept_alive_at?: string | null;
+  demo_attachment_id?: string | null;
+  demo_audio_url?: string | null;
+  source_filename?: string | null;
+  source?: string | null; // "clone" | "design" | ...
+  display_name?: string | null;
+}
+
+export interface TtsVoiceListResponse {
+  cloned: TtsVoiceOption[];
+  system: TtsVoiceOption[];
+}
+
 export interface PendingToolApproval {
   approval_id: string;
   tool_id: string;

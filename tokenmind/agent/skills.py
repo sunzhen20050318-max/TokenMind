@@ -18,43 +18,61 @@ class SkillsLoader:
     specific tools or perform certain tasks.
     """
 
-    def __init__(self, workspace: Path, builtin_skills_dir: Path | None = None):
+    def __init__(
+        self,
+        workspace: Path,
+        builtin_skills_dir: Path | None = None,
+        disabled_skills: list[str] | None = None,
+    ):
         self.workspace = workspace
         self.workspace_skills = workspace / "skills"
         self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
+        self._disabled_skills = set(disabled_skills or [])
 
-    def list_skills(self, filter_unavailable: bool = True) -> list[dict[str, str]]:
-        """
-        List all available skills.
-
-        Args:
-            filter_unavailable: If True, filter out skills with unmet requirements.
-
-        Returns:
-            List of skill info dicts with 'name', 'path', 'source'.
-        """
-        skills = []
-
-        # Workspace skills (highest priority)
+    def _discover_skills(self) -> list[dict[str, str]]:
+        """Scan workspace + built-in directories for every available skill, without filtering."""
+        skills: list[dict[str, str]] = []
         if self.workspace_skills.exists():
             for skill_dir in self.workspace_skills.iterdir():
                 if skill_dir.is_dir():
                     skill_file = skill_dir / "SKILL.md"
                     if skill_file.exists():
-                        skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "workspace"})
+                        skills.append(
+                            {"name": skill_dir.name, "path": str(skill_file), "source": "workspace"}
+                        )
 
-        # Built-in skills
         if self.builtin_skills and self.builtin_skills.exists():
             for skill_dir in self.builtin_skills.iterdir():
                 if skill_dir.is_dir():
                     skill_file = skill_dir / "SKILL.md"
-                    if skill_file.exists() and not any(s["name"] == skill_dir.name for s in skills):
-                        skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "builtin"})
+                    if skill_file.exists() and not any(
+                        s["name"] == skill_dir.name for s in skills
+                    ):
+                        skills.append(
+                            {"name": skill_dir.name, "path": str(skill_file), "source": "builtin"}
+                        )
+        return skills
 
-        # Filter by requirements
+    def list_skills(self, filter_unavailable: bool = True) -> list[dict[str, str]]:
+        """
+        List skills that should be exposed to the agent.
+
+        Disabled skills (via config) are always excluded. When ``filter_unavailable``
+        is true, skills with unmet requirements are also dropped.
+        """
+        skills = [
+            skill for skill in self._discover_skills() if skill["name"] not in self._disabled_skills
+        ]
         if filter_unavailable:
             return [s for s in skills if self._check_requirements(self._get_skill_meta(s["name"]))]
         return skills
+
+    def list_all_skills(self) -> list[dict[str, str]]:
+        """Return every installed skill, ignoring disabled / unavailable filters.
+
+        This is the view the Settings UI uses to render toggles.
+        """
+        return self._discover_skills()
 
     def load_skill(self, name: str) -> str | None:
         """
@@ -108,6 +126,7 @@ class SkillsLoader:
         Returns:
             XML-formatted skills summary.
         """
+        # Respect the user's disabled list so the agent only sees skills it may use.
         all_skills = self.list_skills(filter_unavailable=False)
         if not all_skills:
             return ""

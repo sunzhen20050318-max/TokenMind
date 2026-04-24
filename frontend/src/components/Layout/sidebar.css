@@ -307,6 +307,37 @@
   transform: rotate(180deg);
 }
 
+.shell-sidebar__voice-list {
+  display: grid;
+  gap: 2px;
+  padding: 4px 8px 8px 40px;
+}
+
+.shell-sidebar__nav-sub {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #c6c8ce;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.shell-sidebar__nav-sub:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f0f1f3;
+}
+
+.shell-sidebar__nav-sub.is-active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
 .shell-sidebar__project-directory {
   display: grid;
   gap: 6px;

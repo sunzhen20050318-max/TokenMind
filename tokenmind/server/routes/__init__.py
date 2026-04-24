@@ -8,6 +8,7 @@ from tokenmind.server.routes.knowledge import router as knowledge_router
 from tokenmind.server.routes.memory import router as memory_router
 from tokenmind.server.routes.projects import router as projects_router
 from tokenmind.server.routes.sessions import router as sessions_router
+from tokenmind.server.routes.skills import router as skills_router
 from tokenmind.server.routes.status import router as status_router
 from tokenmind.server.routes.storage import router as storage_router
 
@@ -20,6 +21,7 @@ __all__ = [
     "memory_router",
     "projects_router",
     "sessions_router",
+    "skills_router",
     "status_router",
     "storage_router",
 ]

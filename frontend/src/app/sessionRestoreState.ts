@@ -2,7 +2,16 @@ interface SessionRestoreStateOptions {
   appReady: boolean;
   currentSession: string | null;
   sessionCount: number;
-  mainView: 'chat' | 'knowledge' | 'music' | 'voice-clone' | 'video' | 'project-home' | 'project-chat';
+  mainView:
+    | 'chat'
+    | 'knowledge'
+    | 'music'
+    | 'voice-clone'
+    | 'tts'
+    | 'voice-design'
+    | 'video'
+    | 'project-home'
+    | 'project-chat';
   activeProjectId: string | null;
 }
 

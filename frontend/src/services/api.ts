@@ -10,6 +10,18 @@ import type {
   UploadProgress,
   MusicGenerateRequest,
   MusicGenerateResponse,
+  SkillListResponse,
+  SkillSummary,
+  TtsSynthesizeRequest,
+  TtsSynthesizeResponse,
+  TtsVoiceListResponse,
+  VoiceCloneCreateRequest,
+  VoiceCloneCreateResponse,
+  VoiceCloneListResponse,
+  VoiceCloneRecord,
+  VoiceCloneUploadResponse,
+  VoiceDesignCreateRequest,
+  VoiceDesignCreateResponse,
 } from '../types';
 import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
 import type {
@@ -237,6 +249,161 @@ export const api = {
     if (!res.ok) {
       const error = await res.json().catch(() => null);
       throw new Error(error?.detail || `Failed to generate music: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async uploadVoiceCloneAudio(file: File): Promise<VoiceCloneUploadResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('purpose', 'voice_clone');
+    const res = await fetch(`${API_BASE}/creative/voice/clone/upload`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to upload clone audio: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async createVoiceClone(payload: VoiceCloneCreateRequest): Promise<VoiceCloneCreateResponse> {
+    const res = await fetch(`${API_BASE}/creative/voice/clone/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to create voice clone: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listVoiceClones(options: { source?: 'clone' | 'design' } = {}): Promise<VoiceCloneRecord[]> {
+    const url = new URL(`${API_BASE}/creative/voice/clone/list`, window.location.origin);
+    if (options.source) {
+      url.searchParams.set('source', options.source);
+    }
+    const res = await fetch(url.toString().replace(window.location.origin, ''));
+    if (!res.ok) {
+      throw new Error(`Failed to load voice clones: ${res.statusText}`);
+    }
+    const payload = (await res.json()) as VoiceCloneListResponse;
+    return payload.items ?? [];
+  },
+
+  async designVoice(payload: VoiceDesignCreateRequest): Promise<VoiceDesignCreateResponse> {
+    const res = await fetch(`${API_BASE}/creative/voice/design/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to design voice: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async keepAliveVoiceClone(voiceId: string): Promise<VoiceCloneRecord> {
+    const res = await fetch(
+      `${API_BASE}/creative/voice/clone/${encodeURIComponent(voiceId)}/keep-alive`,
+      { method: 'POST' },
+    );
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to keep voice alive: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async deleteVoiceClone(voiceId: string): Promise<VoiceCloneRecord> {
+    const res = await fetch(`${API_BASE}/creative/voice/clone/${encodeURIComponent(voiceId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to delete voice clone: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  getVoiceCloneDemoUrl(attachmentId: string): string {
+    return `${API_BASE}/chat/attachments/${encodeURIComponent(attachmentId)}`;
+  },
+
+  async synthesizeVoice(payload: TtsSynthesizeRequest): Promise<TtsSynthesizeResponse> {
+    const res = await fetch(`${API_BASE}/creative/voice/tts/synthesize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to synthesize speech: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listSkills(): Promise<SkillSummary[]> {
+    const res = await fetch(`${API_BASE}/skills/list`);
+    if (!res.ok) {
+      throw new Error(`Failed to load skills: ${res.statusText}`);
+    }
+    const payload = (await res.json()) as SkillListResponse;
+    return payload.items ?? [];
+  },
+
+  async setSkillEnabled(name: string, enabled: boolean): Promise<SkillSummary> {
+    const res = await fetch(
+      `${API_BASE}/skills/${encodeURIComponent(name)}/enabled`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      },
+    );
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to update skill: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listTtsVoices(): Promise<TtsVoiceListResponse> {
+    const res = await fetch(`${API_BASE}/creative/voice/tts/voices`);
+    if (!res.ok) {
+      throw new Error(`Failed to load voices: ${res.statusText}`);
     }
     return res.json();
   },

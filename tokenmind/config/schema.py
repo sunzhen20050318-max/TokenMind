@@ -101,6 +101,8 @@ class CreativeConfig(Base):
     music: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
     music_cover: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
     voice_clone: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
+    tts: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
+    voice_design: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
     video: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
 
 
@@ -203,6 +205,17 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
+class SkillsConfig(Base):
+    """Skills configuration.
+
+    Skills are opt-out: by default every installed skill is enabled. The
+    ``disabled`` list captures skills the user explicitly turned off so new
+    built-ins automatically become available.
+    """
+
+    disabled: list[str] = Field(default_factory=list)
+
+
 class Config(BaseSettings):
     """Root configuration for tokenmind."""
 
@@ -213,6 +226,7 @@ class Config(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
 
     @property
     def workspace_path(self) -> Path:

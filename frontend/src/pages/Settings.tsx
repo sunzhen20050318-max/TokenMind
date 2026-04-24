@@ -23,6 +23,7 @@ import type {
 import type { CronJob, CronStatus, CreateCronJobPayload } from '../types/cron';
 import type { MemoryOverviewResponse } from '../types/memory';
 import type { StorageFileItem, StorageOverviewResponse } from '../types/storage';
+import type { SkillSummary } from '../types';
 import './settings.css';
 
 const PROVIDER_META: Record<
@@ -106,10 +107,24 @@ const CREATIVE_CAPABILITY_META: Record<
   },
   voice_clone: {
     label: '声音克隆',
-    description: '用于独立声音克隆页的模型配置，当前版本先提供入口和状态。',
+    description: '从音频样本克隆出专属音色，可用于后续的语音合成。',
     defaultProvider: 'minimax',
-    defaultModel: 'voice-clone-01',
-    usage: '独立页面',
+    defaultModel: 'speech-2.8-hd',
+    usage: '声音工程 · 声音克隆',
+  },
+  tts: {
+    label: '语音合成',
+    description: '文字转语音（TTS），支持使用系统、克隆或设计出来的音色。',
+    defaultProvider: 'minimax',
+    defaultModel: 'speech-2.8-hd',
+    usage: '声音工程 · 语音合成',
+  },
+  voice_design: {
+    label: '音色设计',
+    description: '用文字描述生成全新音色，无需上传参考音频。',
+    defaultProvider: 'minimax',
+    defaultModel: 'speech-2.8-hd',
+    usage: '声音工程 · 音色设计',
   },
   video: {
     label: '视频',
@@ -145,6 +160,7 @@ const SECTION_META = [
   { id: 'agent', title: '智能体', copy: '管理默认模型参数、工作目录和工具预算。', group: 'core' },
   { id: 'tools', title: '工具', copy: '管理搜索、命令执行、上传和安全边界。', group: 'core' },
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。', group: 'core' },
+  { id: 'skills', title: '技能', copy: '启用或停用已安装的智能体技能。', group: 'core' },
   { id: 'runtime', title: '运行时', copy: '管理进度推送、网关和心跳设置。', group: 'core' },
   { id: 'memory', title: '记忆中心', copy: '查看长期记忆、当前上下文和近期归档。', group: 'workspace' },
   { id: 'automation', title: '定时任务', copy: '统一管理自动化任务、结果投递和失败状态。', group: 'workspace' },
@@ -550,6 +566,13 @@ function SettingsNavIcon({ section }: { section: SectionId }) {
       </svg>
     );
   }
+  if (section === 'skills') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M12 2l2.5 5 5.5.8-4 3.9 1 5.5L12 14.8 7 17.2l1-5.5-4-3.9 5.5-.8z" />
+      </svg>
+    );
+  }
   if (section === 'memory') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -623,6 +646,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   );
   const [mcpCatalog, setMcpCatalog] = useState<Record<string, McpServerToolsState>>({});
   const [loadingMcpCatalog, setLoadingMcpCatalog] = useState(false);
+  const [skills, setSkills] = useState<SkillSummary[] | null>(null);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [togglingSkill, setTogglingSkill] = useState<string | null>(null);
   const [memoryOverview, setMemoryOverview] = useState<MemoryOverviewResponse | null>(null);
   const [memoryDraft, setMemoryDraft] = useState('');
   const [memoryArchiveQuery, setMemoryArchiveQuery] = useState('');
@@ -848,6 +875,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
       text: error instanceof Error ? error.message : fallback,
     });
 
+  const loadSkills = async () => {
+    setSkillsLoading(true);
+    setSkillsError(null);
+    try {
+      const items = await api.listSkills();
+      setSkills(items);
+    } catch (error) {
+      setSkillsError(error instanceof Error ? error.message : '加载技能失败');
+    } finally {
+      setSkillsLoading(false);
+    }
+  };
+
+  const toggleSkillEnabled = async (skill: SkillSummary, next: boolean) => {
+    setTogglingSkill(skill.name);
+    try {
+      const updated = await api.setSkillEnabled(skill.name, next);
+      setSkills((prev) =>
+        prev ? prev.map((item) => (item.name === updated.name ? updated : item)) : prev,
+      );
+      setNotice({
+        tone: 'success',
+        text: next ? `已启用 ${skill.name}` : `已停用 ${skill.name}`,
+      });
+    } catch (error) {
+      setFailure(error, '切换技能状态失败');
+    } finally {
+      setTogglingSkill(null);
+    }
+  };
+
   const loadMemoryOverview = async (query = memoryArchiveQuery, syncDraft = false) => {
     setMemoryLoading(true);
     try {
@@ -938,6 +996,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     if (selectedSection === 'storage' && !storageOverview && !storageLoading) {
       void loadStorageData();
     }
+
+    if (selectedSection === 'skills' && !skills && !skillsLoading) {
+      void loadSkills();
+    }
   }, [
     selectedSection,
     loading,
@@ -948,6 +1010,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     cronLoading,
     storageOverview,
     storageLoading,
+    skills,
+    skillsLoading,
   ]);
 
   useEffect(() => {
@@ -4259,6 +4323,111 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     );
   };
 
+  const renderSkills = () => {
+    if (skillsLoading && !skills) {
+      return <div className="settings-loading">正在加载技能…</div>;
+    }
+    if (skillsError) {
+      return <div className="settings-notice error">{skillsError}</div>;
+    }
+    const items = skills ?? [];
+    if (items.length === 0) {
+      return (
+        <div className="settings-panel">
+          <div className="settings-panel-header">
+            <h3>还没有安装技能</h3>
+            <p>
+              在工作区的 <code>skills/</code> 目录下放入带有 SKILL.md 的文件夹后，它会自动出现在这里。
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    const enabledCount = items.filter((item) => item.enabled).length;
+    return (
+      <div className="settings-section">
+        <div className="settings-panel">
+          <div className="settings-panel-header">
+            <h3>已安装技能</h3>
+            <p>
+              共 {items.length} 个技能，当前启用 {enabledCount} 个。停用后智能体不会在系统提示里看到这个技能，也不会主动调用。
+            </p>
+          </div>
+          <div className="settings-list">
+            {items.map((item) => {
+              const busy = togglingSkill === item.name;
+              return (
+                <div key={item.name} className="settings-list-item">
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      gap: 14,
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          marginBottom: 4,
+                        }}
+                      >
+                        {item.emoji ? <span style={{ fontSize: 14 }}>{item.emoji}</span> : null}
+                        <strong
+                          style={{
+                            color: 'var(--text)',
+                            fontSize: 13,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {item.name}
+                        </strong>
+                        <span className={`settings-badge ${item.source === 'workspace' ? 'active' : ''}`}>
+                          {item.source === 'workspace' ? '工作区' : '内置'}
+                        </span>
+                        {item.always ? (
+                          <span className="settings-badge">始终加载</span>
+                        ) : null}
+                        {!item.available ? (
+                          <span className="settings-badge error">
+                            缺少依赖{item.missing_requirements ? ` · ${item.missing_requirements}` : ''}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div
+                        style={{
+                          color: 'var(--muted)',
+                          fontSize: 12,
+                          lineHeight: 1.55,
+                          wordBreak: 'break-word',
+                        }}
+                      >
+                        {item.description}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`settings-toggle ${item.enabled ? 'on' : ''}`}
+                      onClick={() => void toggleSkillEnabled(item, !item.enabled)}
+                      disabled={busy}
+                      style={{ flexShrink: 0 }}
+                    >
+                      {busy ? '处理中…' : item.enabled ? '已启用' : '已停用'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderSection = () => {
     switch (selectedSection) {
       case 'models':
@@ -4275,6 +4444,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         return renderStorageWorkspaceV2();
       case 'mcp':
         return renderMcpPanel();
+      case 'skills':
+        return renderSkills();
       case 'runtime':
         return renderRuntime();
       default:

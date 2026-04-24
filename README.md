@@ -59,41 +59,54 @@
 ### 1. 环境要求
 
 - Python `3.11+`
-- Node.js `20+`
+- Node.js `20+`（仅前端开发或 WhatsApp Bridge 需要）
 - 推荐使用独立虚拟环境
 
-### 2. 克隆项目
+### 2. 克隆并安装
 
 ```bash
 git clone https://gitee.com/sun124578963_0/TokenMind.git
 cd TokenMind
+pip install -e .
 ```
 
-### 3. 安装后端依赖
+> 如果遇到 `python-olm` 编译失败（CMake 报错），说明系统缺少 libolm 或 CMake 版本不兼容。这是可选的 Matrix 加密依赖，不影响核心功能。可以只安装基础包：
+>
+> ```bash
+> pip install -e .
+> pip install pytest pytest-asyncio ruff   # 开发工具单独装
+> ```
 
-```bash
-pip install -e ".[dev]"
-```
-
-### 4. 初始化配置
+### 3. 初始化配置
 
 ```bash
 tokenmind onboard
 ```
 
-默认配置文件位于：
+这一步会在 `~/.tokenmind/config.json` 生成默认配置文件。
 
-```text
-~/.tokenmind/config.json
-```
-
-### 5. 启动 Web 服务
+### 4. 启动 Web UI
 
 ```bash
 tokenmind web --port 8080
 ```
 
-### 6. 启动前端开发环境
+如果还没有配置 API Key，服务仍然会正常启动，但聊天功能暂不可用。
+
+### 5. 配置模型 API Key
+
+打开 `http://localhost:8080`，进入**设置中心**：
+
+1. 在 **Providers** 区域选择你要使用的模型提供商（如 OpenAI、Anthropic、DeepSeek 等）
+2. 填入对应的 API Key
+3. 在 **Model** 下拉框选择并启用模型
+4. 返回聊天页面，即可开始对话
+
+> 也可以直接编辑 `~/.tokenmind/config.json`，在 `providers` 下对应的提供商字段中填入 `api_key`。
+
+### 6. 可选：前端开发模式
+
+如果你需要修改前端代码，可以启动 Vite 开发服务器：
 
 ```bash
 cd frontend
@@ -101,39 +114,39 @@ npm install
 npm run dev
 ```
 
-默认访问地址：
-
-```text
-http://localhost:5173
-```
+开发服务器默认运行在 `http://localhost:5173`，会自动代理 API 请求到后端 8080 端口。
 
 ### 7. 可选：启动网关
 
-如果你想把 Agent 接到聊天渠道，而不只是使用本地 Web UI，可以继续启动：
+如果你想把 Agent 接到 Telegram、Discord、飞书等聊天渠道：
 
 ```bash
 tokenmind gateway
 ```
 
+### 8. 可选：WhatsApp Bridge
+
+```bash
+cd bridge
+npm install
+npm run build
+```
+
+启动后会显示二维码，用 WhatsApp 扫码登录。
+
 ## Web 控制台
 
-当前 Web UI 已经覆盖了日常使用的核心能力：
+Web UI 覆盖了日常使用的核心能力：
 
 - 最近会话列表、搜索、重命名、删除
 - 流式回复与停止生成
 - 工具执行时间线与审批
-- 设置中心
+- 设置中心（模型、提供商、API Key、运行时参数）
+- 项目工作区（按项目组织会话）
 - 记忆中心
 - 定时任务
 - 文件中心
 - 知识库总览、详情、资料上传、检索配置
-
-如果你只是想先把项目跑起来，最简单的流程是：
-
-1. 完成模型 API Key 配置
-2. 启动 `tokenmind web --port 8080`
-3. 打开 `http://localhost:5173`
-4. 在设置中心里完成模型和运行时配置
 
 ## 知识库
 

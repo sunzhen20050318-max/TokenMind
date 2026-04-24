@@ -11,13 +11,24 @@ import { buildProjectConfirmContent } from '../Projects/projectConfirmState';
 import { buildProjectSidebarTree } from '../Projects/projectSidebarState';
 import './sidebar.css';
 
+export type SidebarMainView =
+  | 'chat'
+  | 'knowledge'
+  | 'music'
+  | 'voice-clone'
+  | 'tts'
+  | 'voice-design'
+  | 'video'
+  | 'project-home'
+  | 'project-chat';
+
+const VOICE_VIEWS: SidebarMainView[] = ['voice-clone', 'tts', 'voice-design'];
+
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
-  mainView: 'chat' | 'knowledge' | 'music' | 'voice-clone' | 'video' | 'project-home' | 'project-chat';
-  onSelectMainView: (
-    view: 'chat' | 'knowledge' | 'music' | 'voice-clone' | 'video' | 'project-home' | 'project-chat'
-  ) => void;
+  mainView: SidebarMainView;
+  onSelectMainView: (view: SidebarMainView) => void;
 }
 
 function formatSessionTime(value?: string): string {
@@ -194,6 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [editingTitle, setEditingTitle] = useState('');
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [voiceExpanded, setVoiceExpanded] = useState(() => VOICE_VIEWS.includes(mainView));
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
   const [confirmState, setConfirmState] = useState<{
     kind: 'delete-project' | 'delete-project-session';
@@ -522,16 +534,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>音乐</span>
             </button>
 
-            <button
-              className={`shell-sidebar__nav-item ${mainView === 'voice-clone' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => onSelectMainView('voice-clone')}
+            <div
+              className={`shell-sidebar__project-shell ${voiceExpanded ? 'is-open' : ''} ${
+                VOICE_VIEWS.includes(mainView) ? 'is-active' : ''
+              }`}
             >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="voice" />
-              </span>
-              <span>声音克隆</span>
-            </button>
+              <button
+                className={`shell-sidebar__group-toggle ${voiceExpanded ? 'is-open' : ''} ${
+                  VOICE_VIEWS.includes(mainView) ? 'is-active' : ''
+                }`}
+                type="button"
+                onClick={() => setVoiceExpanded((value) => !value)}
+              >
+                <span className="shell-sidebar__group-label">
+                  <span className="shell-sidebar__icon">
+                    <SidebarIcon id="voice" />
+                  </span>
+                  <span>声音工程</span>
+                </span>
+                <span className={`shell-sidebar__group-caret ${voiceExpanded ? 'is-open' : ''}`}>▾</span>
+              </button>
+
+              {voiceExpanded ? (
+                <div className="shell-sidebar__voice-list">
+                  <button
+                    className={`shell-sidebar__nav-sub ${mainView === 'voice-clone' ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => onSelectMainView('voice-clone')}
+                  >
+                    声音克隆
+                  </button>
+                  <button
+                    className={`shell-sidebar__nav-sub ${mainView === 'tts' ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => onSelectMainView('tts')}
+                  >
+                    语音合成
+                  </button>
+                  <button
+                    className={`shell-sidebar__nav-sub ${mainView === 'voice-design' ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => onSelectMainView('voice-design')}
+                  >
+                    音色设计
+                  </button>
+                </div>
+              ) : null}
+            </div>
 
             <button
               className={`shell-sidebar__nav-item ${mainView === 'video' ? 'is-active' : ''}`}
@@ -713,9 +762,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
 
             <button
-              className={`shell-sidebar__collapsed-button ${mainView === 'voice-clone' ? 'is-active' : ''}`}
+              className={`shell-sidebar__collapsed-button ${
+                VOICE_VIEWS.includes(mainView) ? 'is-active' : ''
+              }`}
               type="button"
-              title="声音克隆"
+              title="声音工程"
               onClick={() => {
                 onSelectMainView('voice-clone');
                 setSessionMenuOpen(false);

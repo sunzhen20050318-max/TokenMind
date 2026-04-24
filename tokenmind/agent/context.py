@@ -25,13 +25,23 @@ class ContextBuilder:
     _KNOWLEDGE_CONTEXT_END_TAG = "[/Linked Knowledge]"
     _KNOWLEDGE_CONTEXT_TRAILER = "If the retrieved context is not relevant, say so instead of forcing it into the answer."
 
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, disabled_skills: list[str] | None = None):
         self.workspace = workspace
         self.memory = MemoryStore(workspace)
-        self.skills = SkillsLoader(workspace)
+        self.skills = SkillsLoader(workspace, disabled_skills=disabled_skills)
 
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills."""
+        # Refresh the skills loader so Settings toggles take effect on the next turn
+        # without needing an agent restart. load_config() is a small JSON read.
+        try:
+            from tokenmind.config.loader import load_config
+
+            disabled = list(load_config().skills.disabled)
+        except Exception:
+            disabled = []
+        self.skills = SkillsLoader(self.workspace, disabled_skills=disabled)
+
         parts = [self._get_identity()]
 
         bootstrap = self._load_bootstrap_files()
