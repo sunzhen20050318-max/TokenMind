@@ -191,6 +191,9 @@ class TemplatesConfigUpdate(BaseModel):
 class MCPServerConfigUpdate(BaseModel):
     """Create or update an MCP server configuration."""
 
+    enabled: bool | None = None
+    notes: str | None = None
+    icon: str | None = None
     type: Literal["stdio", "sse", "streamableHttp"] | None = None
     command: str | None = None
     args: list[str] | None = None
@@ -283,6 +286,9 @@ def _web_search_to_dict(search_config: object) -> dict[str, Any]:
 def _mcp_server_to_dict(server_config: MCPServerConfig) -> dict[str, Any]:
     """Convert an MCP server config to a plain dict."""
     return {
+        "enabled": server_config.enabled,
+        "notes": server_config.notes,
+        "icon": server_config.icon,
         "type": server_config.type,
         "command": server_config.command,
         "args": server_config.args,
@@ -675,6 +681,12 @@ async def upsert_mcp_server(server_name: str, update: MCPServerConfigUpdate):
         config = load_config()
         server = config.tools.mcp_servers.get(normalized_name, MCPServerConfig())
 
+        if "enabled" in update.model_fields_set:
+            server.enabled = bool(update.enabled)
+        if "notes" in update.model_fields_set:
+            server.notes = update.notes or ""
+        if "icon" in update.model_fields_set:
+            server.icon = update.icon or ""
         if "type" in update.model_fields_set:
             server.type = update.type
         if "command" in update.model_fields_set:
@@ -729,3 +741,128 @@ async def delete_mcp_server(server_name: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete MCP server: {e}") from e
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# External chat channels (Chinese-app focused: Feishu / DingTalk / WeCom / QQ / Mochat)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+_CHANNEL_REGISTRY: dict[str, dict[str, Any]] = {
+    "feishu": {
+        "label": "飞书",
+        "description": "通过飞书开放平台 WebSocket 长连接接入。",
+        "fields": ["app_id", "app_secret", "encrypt_key", "verification_token", "allow_from"],
+        "required": ["app_id", "app_secret"],
+    },
+    "dingtalk": {
+        "label": "钉钉",
+        "description": "通过钉钉 Stream 模式接入。",
+        "fields": ["client_id", "client_secret", "allow_from"],
+        "required": ["client_id", "client_secret"],
+    },
+    "wecom": {
+        "label": "企业微信",
+        "description": "企业微信 AI 智能机器人。",
+        "fields": ["bot_id", "secret", "allow_from", "welcome_message"],
+        "required": ["bot_id", "secret"],
+    },
+    "qq": {
+        "label": "QQ",
+        "description": "QQ 官方机器人（需在 QQ 开放平台申请）。",
+        "fields": ["app_id", "secret", "allow_from", "msg_format"],
+        "required": ["app_id", "secret"],
+    },
+    "mochat": {
+        "label": "Mochat（个微）",
+        "description": "通过 Mochat 接入个人微信。",
+        "fields": ["base_url", "claw_token", "agent_user_id"],
+        "required": ["base_url", "claw_token", "agent_user_id"],
+    },
+}
+
+
+def _missing_required_fields(channel_name: str, config: dict[str, Any]) -> list[str]:
+    required = _CHANNEL_REGISTRY[channel_name].get("required", [])
+    missing: list[str] = []
+    for field in required:
+        value = config.get(field)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            missing.append(field)
+    return missing
+
+
+def _get_channel_section(config: Config, name: str) -> dict[str, Any]:
+    """Read a channel's stored config as a plain dict, defaulting to disabled."""
+    section = getattr(config.channels, name, None)
+    if isinstance(section, dict):
+        return dict(section)
+    if section is None:
+        return {"enabled": False}
+    return section.model_dump(by_alias=False) if hasattr(section, "model_dump") else dict(section)
+
+
+@router.get("/channels")
+async def list_channels():
+    """Return the catalog of supported channels with their current configuration."""
+    try:
+        config = load_config()
+        channels = []
+        for name, meta in _CHANNEL_REGISTRY.items():
+            stored = _get_channel_section(config, name)
+            channels.append(
+                {
+                    "name": name,
+                    "label": meta["label"],
+                    "description": meta["description"],
+                    "fields": meta["fields"],
+                    "required": meta.get("required", []),
+                    "enabled": bool(stored.get("enabled", False)),
+                    "config": stored,
+                }
+            )
+        return {"channels": channels}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load channels: {e}") from e
+
+
+class ChannelConfigUpdate(BaseModel):
+    """Free-form channel config update; backend validates per-channel schema on save."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool | None = None
+
+
+@router.put("/channels/{channel_name}")
+async def update_channel(channel_name: str, payload: ChannelConfigUpdate):
+    """Create or update an external channel configuration."""
+    if channel_name not in _CHANNEL_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Unknown channel '{channel_name}'")
+
+    try:
+        config = load_config()
+        current = _get_channel_section(config, channel_name)
+        update_dict = payload.model_dump(exclude_unset=True)
+        merged = {**current, **update_dict}
+        # Default enabled to False if not set, so saved configs are deterministic.
+        merged.setdefault("enabled", False)
+
+        # Block enabling when required fields are missing/empty.
+        if merged.get("enabled"):
+            missing = _missing_required_fields(channel_name, merged)
+            if missing:
+                label = _CHANNEL_REGISTRY[channel_name]["label"]
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"无法启用 {label}：缺少必填项 {', '.join(missing)}",
+                )
+
+        setattr(config.channels, channel_name, merged)
+        save_config(config)
+
+        return {"success": True, "name": channel_name, "config": merged}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update channel: {e}") from e

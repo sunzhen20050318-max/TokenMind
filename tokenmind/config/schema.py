@@ -184,6 +184,9 @@ class TemplatesConfig(Base):
 class MCPServerConfig(Base):
     """MCP server connection configuration (stdio or HTTP)."""
 
+    enabled: bool = True  # Master switch — disabled servers are skipped at runtime
+    notes: str = ""  # Free-form notes (UI-only metadata)
+    icon: str = ""  # Optional icon URL (UI-only metadata)
     type: Literal["stdio", "sse", "streamableHttp"] | None = None  # auto-detected if omitted
     command: str = ""  # Stdio: command to run (e.g. "npx")
     args: list[str] = Field(default_factory=list)  # Stdio: command arguments

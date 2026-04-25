@@ -15,6 +15,13 @@ export default defineConfig({
       '/ws': {
         target: tokenMindApiTarget.replace(/^http/, 'ws'),
         ws: true,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            const code = (err as { code?: string }).code
+            if (code === 'EPIPE' || code === 'ECONNRESET') return
+            console.error('[ws proxy]', err)
+          })
+        },
       },
     },
   },

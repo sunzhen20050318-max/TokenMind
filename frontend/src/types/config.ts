@@ -115,6 +115,9 @@ export interface KnowledgeSettings {
 }
 
 export interface McpServerSettings {
+  enabled: boolean;
+  notes: string;
+  icon: string;
   type: 'stdio' | 'sse' | 'streamableHttp' | null;
   command: string;
   args: string[];
@@ -261,6 +264,9 @@ export interface RuntimeSettingsUpdate {
 }
 
 export interface McpServerSettingsUpdate {
+  enabled?: boolean;
+  notes?: string;
+  icon?: string;
   type?: 'stdio' | 'sse' | 'streamableHttp' | null;
   command?: string;
   args?: string[];
@@ -269,4 +275,25 @@ export interface McpServerSettingsUpdate {
   headers?: Record<string, string>;
   tool_timeout?: number;
   enabled_tools?: string[];
+}
+
+export type ChannelName = 'feishu' | 'dingtalk' | 'wecom' | 'qq' | 'mochat';
+
+export interface ChannelCatalogEntry {
+  name: ChannelName;
+  label: string;
+  description: string;
+  fields: string[];
+  required: string[];
+  enabled: boolean;
+  config: Record<string, unknown>;
+}
+
+export interface ChannelCatalogResponse {
+  channels: ChannelCatalogEntry[];
+}
+
+export interface ChannelConfigUpdate {
+  enabled?: boolean;
+  [key: string]: unknown;
 }

@@ -33,6 +33,10 @@ import type { LongTermMemoryState, MemoryOverviewResponse } from '../types/memor
 import type {
   AgentSettingsUpdate,
   AppConfigResponse,
+  ChannelCatalogEntry,
+  ChannelCatalogResponse,
+  ChannelConfigUpdate,
+  ChannelName,
   CreativeCapabilityKey,
   CreativeCapabilitySettings,
   CreativeCapabilitySettingsUpdate,
@@ -702,6 +706,29 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Failed to delete MCP server: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listChannels(): Promise<ChannelCatalogResponse> {
+    const res = await fetch(`${API_BASE}/config/channels`);
+    if (!res.ok) {
+      throw new Error(`Failed to load channels: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async updateChannel(
+    name: ChannelName,
+    update: ChannelConfigUpdate,
+  ): Promise<{ success: boolean; name: ChannelName; config: ChannelCatalogEntry['config'] }> {
+    const res = await fetch(`${API_BASE}/config/channels/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update channel: ${res.statusText}`);
     }
     return res.json();
   },

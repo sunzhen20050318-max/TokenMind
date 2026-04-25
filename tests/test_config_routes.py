@@ -382,3 +382,141 @@ async def test_update_defaults_uses_provider_default_model_when_model_is_omitted
     updated = load_config(temp_config_path)
     assert updated.agents.defaults.provider == "minimax"
     assert updated.agents.defaults.model == "MiniMax-M2.7"
+
+
+@pytest.mark.asyncio
+async def test_upsert_mcp_server_persists_enabled_notes_and_icon(temp_config_path):
+    """New optional MCP fields (enabled/notes/icon) round-trip through save+load."""
+    from tokenmind.config.loader import load_config
+    from tokenmind.server.routes.config import (
+        MCPServerConfigUpdate,
+        upsert_mcp_server,
+    )
+
+    response = await upsert_mcp_server(
+        "filesystem",
+        MCPServerConfigUpdate(
+            enabled=False,
+            notes="Local filesystem bridge",
+            icon="https://example.com/fs.svg",
+            type="stdio",
+            command="npx",
+            args=["-y", "@modelcontextprotocol/server-filesystem"],
+        ),
+    )
+
+    assert response["server"]["enabled"] is False
+    assert response["server"]["notes"] == "Local filesystem bridge"
+    assert response["server"]["icon"] == "https://example.com/fs.svg"
+
+    config = load_config(temp_config_path)
+    saved = config.tools.mcp_servers["filesystem"]
+    assert saved.enabled is False
+    assert saved.notes == "Local filesystem bridge"
+    assert saved.icon == "https://example.com/fs.svg"
+
+
+@pytest.mark.asyncio
+async def test_connect_mcp_servers_skips_disabled_entries():
+    """Disabled MCP servers must not be connected or registered."""
+    from contextlib import AsyncExitStack
+
+    from tokenmind.agent.tools.mcp import connect_mcp_servers
+    from tokenmind.agent.tools.registry import ToolRegistry
+    from tokenmind.config.schema import MCPServerConfig
+
+    registry = ToolRegistry()
+    servers = {
+        "disabled-server": MCPServerConfig(
+            enabled=False,
+            type="stdio",
+            command="false",  # would fail if actually invoked
+        ),
+    }
+
+    async with AsyncExitStack() as stack:
+        await connect_mcp_servers(servers, registry, stack)
+
+    assert registry.get_definitions() == []
+
+
+@pytest.mark.asyncio
+async def test_list_channels_returns_chinese_app_catalog(temp_config_path):
+    """GET /channels returns the Chinese-app channel registry with current config."""
+    from tokenmind.server.routes.config import list_channels
+
+    response = await list_channels()
+    names = {ch["name"] for ch in response["channels"]}
+    assert names == {"feishu", "dingtalk", "wecom", "qq", "mochat"}
+    feishu = next(ch for ch in response["channels"] if ch["name"] == "feishu")
+    assert feishu["label"] == "飞书"
+    assert feishu["enabled"] is False
+    assert "app_id" in feishu["fields"]
+
+
+@pytest.mark.asyncio
+async def test_update_channel_persists_per_channel_config(temp_config_path):
+    """PUT /channels/{name} merges and saves channel config."""
+    from tokenmind.config.loader import load_config
+    from tokenmind.server.routes.config import ChannelConfigUpdate, update_channel
+
+    response = await update_channel(
+        "feishu",
+        ChannelConfigUpdate.model_validate({
+            "enabled": True,
+            "app_id": "cli_xxx",
+            "app_secret": "secret_yyy",
+            "allow_from": ["all"],
+        }),
+    )
+    assert response["success"] is True
+    assert response["config"]["enabled"] is True
+    assert response["config"]["app_id"] == "cli_xxx"
+
+    config = load_config(temp_config_path)
+    saved = getattr(config.channels, "feishu")
+    assert saved["enabled"] is True
+    assert saved["app_id"] == "cli_xxx"
+    assert saved["allow_from"] == ["all"]
+
+
+@pytest.mark.asyncio
+async def test_update_channel_rejects_unknown_name(temp_config_path):
+    """PUT /channels/{name} returns 404 for channels outside the supported registry."""
+    from fastapi import HTTPException
+
+    from tokenmind.server.routes.config import ChannelConfigUpdate, update_channel
+
+    with pytest.raises(HTTPException) as exc:
+        await update_channel("nonexistent", ChannelConfigUpdate.model_validate({"enabled": True}))
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_channel_blocks_enable_without_required_fields(temp_config_path):
+    """Enabling a channel without its required credentials must return 400."""
+    from fastapi import HTTPException
+
+    from tokenmind.server.routes.config import ChannelConfigUpdate, update_channel
+
+    with pytest.raises(HTTPException) as exc:
+        await update_channel(
+            "feishu",
+            ChannelConfigUpdate.model_validate({"enabled": True}),
+        )
+    assert exc.value.status_code == 400
+    assert "app_id" in str(exc.value.detail)
+    assert "app_secret" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_update_channel_allows_disable_without_required_fields(temp_config_path):
+    """Disabling a channel must always succeed even with empty config."""
+    from tokenmind.server.routes.config import ChannelConfigUpdate, update_channel
+
+    response = await update_channel(
+        "feishu",
+        ChannelConfigUpdate.model_validate({"enabled": False}),
+    )
+    assert response["success"] is True
+    assert response["config"]["enabled"] is False

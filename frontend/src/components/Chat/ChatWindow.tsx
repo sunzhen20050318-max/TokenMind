@@ -711,20 +711,23 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         ) : null}
 
         <div className={`chat-shell__scroll ${hasConversation ? 'is-active' : 'is-launch'}`}>
-          {!hasConversation ? (
-            <section className="chat-launch">
-              <div className="chat-launch__headline">
-                <span className="chat-launch__mark">
-                  <BrandMark size={18} alt="" />
-                </span>
-                <h1 className="chat-launch__title">{getGreeting()}</h1>
-              </div>
-            </section>
-          ) : (
+          {hasConversation ? (
             <div className="chat-thread">
               {renderedThread}
               {isLoading && !activeTool && visibleMessages.length > 0 ? <TypingIndicator /> : null}
             </div>
+          ) : isLoading ? (
+            // History is still loading — keep the area blank to avoid flashing the greeting.
+            <div className="chat-launch chat-launch--loading" />
+          ) : (
+            <section className="chat-launch">
+              <div className="chat-launch__headline">
+                <span className="chat-launch__mark">
+                  <BrandMark alt="" style={{ height: '0.9em', width: 'auto' }} />
+                </span>
+                <h1 className="chat-launch__title">{getGreeting()}</h1>
+              </div>
+            </section>
           )}
           <div ref={messagesEndRef} />
         </div>

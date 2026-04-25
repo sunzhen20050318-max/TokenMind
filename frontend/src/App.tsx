@@ -9,6 +9,7 @@ import { EntryGate } from './components/EntryGate/EntryGate';
 import { KnowledgePage } from './pages/Knowledge';
 import { MusicPage } from './pages/Music';
 import { ProjectHome } from './pages/ProjectHome';
+import { SettingsPage } from './pages/Settings';
 import { VideoPage } from './pages/Video';
 import { VoiceClonePage } from './pages/voice/VoiceCloneStudio';
 import { TtsPage } from './pages/voice/TtsStudio';
@@ -46,6 +47,7 @@ const App: React.FC = () => {
     | 'video'
     | 'project-home'
     | 'project-chat'
+    | 'settings'
   >('chat');
   const enterTimerRef = useRef<number | null>(null);
   const appReady = gateDismissed || gateExiting;
@@ -132,7 +134,15 @@ const App: React.FC = () => {
           />
           <main className="app-main__content">
             <Header />
-            {mainView === 'knowledge' ? (
+            {mainView === 'settings' ? (
+              <SettingsPage
+                onNavigateBack={() => setMainView('chat')}
+                onNavigateToSession={(sessionId) => {
+                  setCurrentSession(sessionId);
+                  setMainView('chat');
+                }}
+              />
+            ) : mainView === 'knowledge' ? (
               <KnowledgePage isActive />
             ) : mainView === 'music' ? (
               <MusicPage

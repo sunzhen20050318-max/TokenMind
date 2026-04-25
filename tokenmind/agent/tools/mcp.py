@@ -208,6 +208,10 @@ async def connect_mcp_servers(
     from mcp import ClientSession
 
     for name, cfg in mcp_servers.items():
+        if not getattr(cfg, "enabled", True):
+            logger.info("MCP: skipping disabled server '{}'", name)
+            continue
+
         try:
             try:
                 transport_type = _resolve_transport_type(cfg)

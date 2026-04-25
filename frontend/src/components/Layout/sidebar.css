@@ -16,40 +16,40 @@
 
 .shell-sidebar__edge-toggle {
   position: absolute;
-  top: 16px;
-  right: -26px;
+  top: 22px;
+  right: -12px;
   z-index: 6;
-  width: 26px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-left: none;
-  border-radius: 0 10px 10px 0;
-  background: linear-gradient(180deg, #1f1f23 0%, #19191d 100%);
-  color: #a3a6af;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.35);
   cursor: pointer;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
-  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  opacity: 0;
+  transition: opacity 0.18s ease, background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+/* Reveal on sidebar hover so it stops competing with the brand for attention. */
+.shell-sidebar:hover .shell-sidebar__edge-toggle,
+.shell-sidebar__edge-toggle:focus-visible,
+.shell-sidebar__edge-toggle.is-collapsed {
+  opacity: 1;
 }
 
 .shell-sidebar__edge-toggle:hover {
   color: #ffffff;
-  background: linear-gradient(180deg, #25252b 0%, #1f1f24 100%);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .shell-sidebar__edge-toggle.is-collapsed {
-  right: -26px;
-}
-
-.shell-sidebar__edge-toggle::before {
-  content: '';
-  position: absolute;
-  inset: 5px auto 5px 0;
-  width: 1px;
-  background: rgba(255, 255, 255, 0.04);
+  /* Always visible when collapsed since it's the only way to expand back. */
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .shell-sidebar__top {
@@ -99,8 +99,8 @@
 }
 
 .shell-sidebar__collapse-icon {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

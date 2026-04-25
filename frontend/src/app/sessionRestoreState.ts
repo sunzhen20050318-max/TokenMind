@@ -11,7 +11,8 @@ interface SessionRestoreStateOptions {
     | 'voice-design'
     | 'video'
     | 'project-home'
-    | 'project-chat';
+    | 'project-chat'
+    | 'settings';
   activeProjectId: string | null;
 }
 

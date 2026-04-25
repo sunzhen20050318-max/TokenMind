@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrandMark } from '../BrandMark';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
-import { SettingsModal } from '../../pages/Settings';
 import { CreateProjectModal } from '../Projects/CreateProjectModal';
 import { MoveSessionToProjectModal } from '../Projects/MoveSessionToProjectModal';
 import { ProjectConfirmModal } from '../Projects/ProjectConfirmModal';
@@ -20,7 +19,8 @@ export type SidebarMainView =
   | 'voice-design'
   | 'video'
   | 'project-home'
-  | 'project-chat';
+  | 'project-chat'
+  | 'settings';
 
 const VOICE_VIEWS: SidebarMainView[] = ['voice-clone', 'tts', 'voice-design'];
 
@@ -197,7 +197,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     deleteProject,
     leaveProject,
   } = useChatStore();
-  const [showSettings, setShowSettings] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [moveTargetSessionId, setMoveTargetSessionId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -271,7 +270,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
   const isProjectViewActive = mainView === 'project-home' || mainView === 'project-chat';
   const hasSidebarOverlay =
-    showSettings || showCreateProject || moveTargetSessionId !== null || confirmState !== null;
+    showCreateProject || moveTargetSessionId !== null || confirmState !== null;
 
   const beginRename = (sessionId: string, currentTitle?: string, firstMessage?: string) => {
     setEditingSessionId(sessionId);
@@ -855,8 +854,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="shell-sidebar__footer">
         <button
-          className="shell-sidebar__settings"
-          onClick={() => setShowSettings(true)}
+          className={`shell-sidebar__settings ${mainView === 'settings' ? 'is-active' : ''}`}
+          onClick={() => onSelectMainView('settings')}
           title="设置中心"
           type="button"
         >
@@ -869,7 +868,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {hasSidebarOverlay ? (
         <OverlayPortal>
-          {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} /> : null}
           {showCreateProject ? (
             <CreateProjectModal
               onClose={() => setShowCreateProject(false)}

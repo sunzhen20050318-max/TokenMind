@@ -152,6 +152,9 @@
   justify-content: center;
   flex: 0 0 auto;
   opacity: 0.92;
+  /* Track the title font-size so the mark height scales with the headline. */
+  font-size: clamp(38px, 4.7vw, 58px);
+  line-height: 1;
 }
 
 .chat-launch__title {

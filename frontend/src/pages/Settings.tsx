@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BrandMark } from '../components/BrandMark';
 import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
 import { useChatStore } from '../stores/chatStore';
@@ -14,7 +13,10 @@ import type {
   CreativeCapabilityKey,
   CreativeCapabilitySettings,
   CreativeSettings,
+  ChannelCatalogEntry,
+  ChannelName,
   McpServerSettings,
+  McpServerSettingsUpdate,
   McpServerToolsState,
   ProviderSettings,
   RuntimeSettings,
@@ -34,44 +36,14 @@ const PROVIDER_META: Record<
     mode: 'api' | 'local' | 'oauth';
   }
 > = {
-  custom: { label: '自定义', defaultModel: 'default', mode: 'api' },
-  azure_openai: { label: 'Azure OpenAI', defaultModel: 'gpt-5.2-chat', mode: 'api' },
-  anthropic: { label: 'Anthropic', defaultModel: 'claude-sonnet-4-5', mode: 'api' },
   openai: { label: 'OpenAI', defaultModel: 'gpt-4o', mode: 'api' },
-  openrouter: { label: 'OpenRouter', defaultModel: 'anthropic/claude-sonnet-4-5', mode: 'api' },
-  deepseek: { label: 'DeepSeek', defaultModel: 'deepseek-chat', mode: 'api' },
-  groq: { label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', mode: 'api' },
-  zhipu: { label: '智谱', defaultModel: 'glm-4', mode: 'api' },
-  dashscope: { label: 'DashScope', defaultModel: 'qwen-max', mode: 'api' },
-  vllm: { label: 'vLLM', defaultModel: 'llama-3.1-8b-instruct', mode: 'local' },
-  ollama: { label: 'Ollama', defaultModel: 'llama3.2', mode: 'local' },
+  anthropic: { label: 'Anthropic', defaultModel: 'claude-sonnet-4-5', mode: 'api' },
   gemini: { label: 'Gemini', defaultModel: 'gemini-2.0-flash', mode: 'api' },
+  deepseek: { label: 'DeepSeek', defaultModel: 'deepseek-chat', mode: 'api' },
   moonshot: { label: 'Moonshot', defaultModel: 'kimi-k2.5', mode: 'api' },
   minimax: { label: 'MiniMax', defaultModel: 'MiniMax-M2.7', mode: 'api' },
-  aihubmix: { label: 'AiHubMix', defaultModel: 'anthropic/claude-sonnet-4-5', mode: 'api' },
-  siliconflow: { label: 'SiliconFlow', defaultModel: 'Qwen/Qwen2.5-7B-Instruct', mode: 'api' },
-  volcengine: { label: 'VolcEngine', defaultModel: 'doubao-1-5-pro-32k', mode: 'api' },
-  volcengine_coding_plan: {
-    label: 'VolcEngine Coding Plan',
-    defaultModel: 'doubao-seed-1-6',
-    mode: 'api',
-  },
-  byteplus: { label: 'BytePlus', defaultModel: 'doubao-1-5-pro-32k', mode: 'api' },
-  byteplus_coding_plan: {
-    label: 'BytePlus Coding Plan',
-    defaultModel: 'doubao-seed-1-6',
-    mode: 'api',
-  },
-  openai_codex: {
-    label: 'OpenAI Codex',
-    defaultModel: 'openai-codex/gpt-5.1-codex',
-    mode: 'oauth',
-  },
-  github_copilot: {
-    label: 'GitHub Copilot',
-    defaultModel: 'github-copilot/gpt-5.3-codex',
-    mode: 'oauth',
-  },
+  zhipu: { label: 'GLM', defaultModel: 'glm-4', mode: 'api' },
+  dashscope: { label: 'Qwen', defaultModel: 'qwen-max', mode: 'api' },
 };
 
 const CREATIVE_CAPABILITY_META: Record<
@@ -160,6 +132,7 @@ const SECTION_META = [
   { id: 'agent', title: '智能体', copy: '管理默认模型参数、工作目录和工具预算。', group: 'core' },
   { id: 'tools', title: '工具', copy: '管理搜索、命令执行、上传和安全边界。', group: 'core' },
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。', group: 'core' },
+  { id: 'channels', title: '外部渠道', copy: '接入飞书、钉钉、企业微信等中国主流应用。', group: 'core' },
   { id: 'skills', title: '技能', copy: '启用或停用已安装的智能体技能。', group: 'core' },
   { id: 'runtime', title: '运行时', copy: '管理进度推送、网关和心跳设置。', group: 'core' },
   { id: 'memory', title: '记忆中心', copy: '查看长期记忆、当前上下文和近期归档。', group: 'workspace' },
@@ -188,7 +161,6 @@ type FixedCronPreset = 'daily' | 'weekdays' | 'weekly' | 'custom';
 type StorageFilterMode = 'all' | 'referenced' | 'orphan';
 
 const TASK_RESULTS_SESSION_ID = 'web:task-results';
-const TASK_RESULTS_SESSION_TITLE = '任务结果';
 const WEEKDAY_OPTIONS = [
   { value: '1', label: '周一' },
   { value: '2', label: '周二' },
@@ -215,14 +187,23 @@ interface CreativeCapabilityFormState {
   extraHeadersText: string;
 }
 
+interface McpHeaderRow {
+  id: string;
+  key: string;
+  value: string;
+}
+
 interface McpFormState {
   name: string;
+  enabled: boolean;
+  notes: string;
+  icon: string;
   type: '' | 'stdio' | 'sse' | 'streamableHttp';
   command: string;
   argsText: string;
   envText: string;
   url: string;
-  headersText: string;
+  headerRows: McpHeaderRow[];
   toolTimeout: number;
   enabledToolsText: string;
 }
@@ -356,7 +337,9 @@ function SettingsMarkdown({
 }
 
 interface SettingsModalProps {
-  onClose: () => void;
+  onClose?: () => void;
+  onNavigateToSession?: (sessionId: string) => void;
+  onNavigateBack?: () => void;
 }
 
 function prettyJson(value?: Record<string, string> | null): string {
@@ -423,15 +406,45 @@ function buildCreativeCapabilityForm(
   };
 }
 
+function nextHeaderRowId(): string {
+  return `mcp-h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function headersToRows(headers: Record<string, string> | null | undefined): McpHeaderRow[] {
+  if (!headers || Object.keys(headers).length === 0) {
+    return [];
+  }
+  return Object.entries(headers).map(([key, value]) => ({
+    id: nextHeaderRowId(),
+    key,
+    value,
+  }));
+}
+
+function rowsToHeaders(rows: McpHeaderRow[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const row of rows) {
+    const trimmedKey = row.key.trim();
+    if (!trimmedKey) {
+      continue;
+    }
+    result[trimmedKey] = row.value;
+  }
+  return result;
+}
+
 function emptyMcpForm(): McpFormState {
   return {
     name: '',
+    enabled: true,
+    notes: '',
+    icon: '',
     type: '',
     command: '',
     argsText: '',
     envText: '',
     url: '',
-    headersText: '',
+    headerRows: [],
     toolTimeout: 30,
     enabledToolsText: '*',
   };
@@ -444,12 +457,15 @@ function buildMcpForm(name: string, server?: McpServerSettings): McpFormState {
 
   return {
     name,
+    enabled: server.enabled ?? true,
+    notes: server.notes || '',
+    icon: server.icon || '',
     type: server.type || '',
     command: server.command,
     argsText: listToText(server.args),
     envText: prettyJson(server.env),
     url: server.url,
-    headersText: prettyJson(server.headers),
+    headerRows: headersToRows(server.headers),
     toolTimeout: server.tool_timeout,
     enabledToolsText: listToText(server.enabled_tools),
   };
@@ -566,6 +582,13 @@ function SettingsNavIcon({ section }: { section: SectionId }) {
       </svg>
     );
   }
+  if (section === 'channels') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+    );
+  }
   if (section === 'skills') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -615,7 +638,7 @@ function SettingsNavIcon({ section }: { section: SectionId }) {
   );
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigateToSession, onNavigateBack }) => {
   const {
     currentSession,
     sessions,
@@ -624,6 +647,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     setCreativeCapabilities,
     setCurrentSession,
   } = useChatStore();
+  const navigateToSession = (sessionId: string) => {
+    if (onNavigateToSession) {
+      onNavigateToSession(sessionId);
+    } else {
+      setCurrentSession(sessionId);
+      onClose?.();
+    }
+  };
   const [selectedSection, setSelectedSection] = useState<SectionId>('models');
   const [providers, setProviders] = useState<Record<string, ProviderSettings>>({});
   const [agentDraft, setAgentDraft] = useState<AgentSettings | null>(null);
@@ -634,6 +665,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const [providerForm, setProviderForm] = useState<ProviderFormState>(buildProviderForm('openai'));
   const [selectedMcpName, setSelectedMcpName] = useState<string | null>(null);
   const [mcpForm, setMcpForm] = useState<McpFormState>(emptyMcpForm());
+  const [mcpEditorOpen, setMcpEditorOpen] = useState(false);
+  const [mcpJsonImportOpen, setMcpJsonImportOpen] = useState(false);
+  const [mcpJsonImportText, setMcpJsonImportText] = useState('');
+  const [mcpJsonImportError, setMcpJsonImportError] = useState<string | null>(null);
+  const [mcpAdvancedOpen, setMcpAdvancedOpen] = useState(false);
   const [searchApiKeyMasked, setSearchApiKeyMasked] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingSection, setSavingSection] = useState<string | null>(null);
@@ -664,17 +700,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const [storageQuery, setStorageQuery] = useState('');
   const [storageFilterMode, setStorageFilterMode] = useState<StorageFilterMode>('all');
   const [storageActionPath, setStorageActionPath] = useState<string | null>(null);
-  const [taskName, setTaskName] = useState('早间提醒');
-  const [taskMessage, setTaskMessage] = useState('请提醒我查看今天的重要事项，并整理成一段简短总结。');
-  const [scheduleKind, setScheduleKind] = useState<TasksScheduleKind>('every');
-  const [fixedCronPreset, setFixedCronPreset] = useState<FixedCronPreset>('weekdays');
+  const [taskName, setTaskName] = useState('');
+  const [taskMessage, setTaskMessage] = useState('');
+  const [taskEnabled, setTaskEnabled] = useState(true);
+  const [scheduleKind, setScheduleKind] = useState<TasksScheduleKind>('cron');
+  const [fixedCronPreset, setFixedCronPreset] = useState<FixedCronPreset>('daily');
   const [everySeconds, setEverySeconds] = useState(3600);
-  const [cronExpr, setCronExpr] = useState('0 9 * * 1-5');
+  const [cronExpr, setCronExpr] = useState('0 9 * * *');
   const [fixedTime, setFixedTime] = useState('09:00');
   const [weeklyDay, setWeeklyDay] = useState('1');
   const [taskTimezone, setTaskTimezone] = useState('Asia/Shanghai');
   const [taskAtValue, setTaskAtValue] = useState(defaultAtValue());
   const [taskTargetSessionId, setTaskTargetSessionId] = useState(TASK_RESULTS_SESSION_ID);
+  const [cronTab, setCronTab] = useState<'scheduled' | 'completed'>('scheduled');
+  const [cronEditorOpen, setCronEditorOpen] = useState(false);
+  const [editingCronJobId, setEditingCronJobId] = useState<string | null>(null);
+  const [cronAdvancedOpen, setCronAdvancedOpen] = useState(false);
+  const [cronMenuOpenId, setCronMenuOpenId] = useState<string | null>(null);
+  const [toolsCategory, setToolsCategory] = useState<
+    'search' | 'exec' | 'audit' | 'uploads' | 'knowledge' | null
+  >(null);
+  const [toolsKnowledgeAdvancedOpen, setToolsKnowledgeAdvancedOpen] = useState(false);
+  const [channelCatalog, setChannelCatalog] = useState<ChannelCatalogEntry[] | null>(null);
+  const [channelLoading, setChannelLoading] = useState(false);
+  const [channelEditorName, setChannelEditorName] = useState<ChannelName | null>(null);
+  const [channelDraft, setChannelDraft] = useState<Record<string, unknown>>({});
+  const [channelSavingName, setChannelSavingName] = useState<ChannelName | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -708,10 +759,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         setProviderForm(buildProviderForm(nextProvider, data.providers[nextProvider]));
         setCreativeForm(buildCreativeCapabilityForm('image', data.creative.image));
 
-        const mcpKeys = Object.keys(data.tools.mcp_servers);
-        const firstMcp = mcpKeys[0] || null;
-        setSelectedMcpName(firstMcp);
-        setMcpForm(firstMcp ? buildMcpForm(firstMcp, data.tools.mcp_servers[firstMcp]) : emptyMcpForm());
+        // Card-based MCP UI: no server is auto-edited on load.
+        setSelectedMcpName(null);
+        setMcpForm(emptyMcpForm());
       } catch (error) {
         setNotice({
           tone: 'error',
@@ -786,10 +836,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     () => Object.entries(toolsDraft?.mcp_servers || {}).sort(([a], [b]) => a.localeCompare(b)),
     [toolsDraft]
   );
-  const selectedMcpProbe = selectedMcpName ? mcpCatalog[selectedMcpName] || null : null;
-  const connectedMcpCount = Object.values(mcpCatalog).filter(
-    (server) => server.status === 'connected'
-  ).length;
 
   const currentProviderLabel =
     (agentDraft?.provider && PROVIDER_META[agentDraft.provider]?.label) ||
@@ -814,14 +860,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     () => buildCronPreview(fixedCronPreset, fixedTime, taskTimezone, weeklyDay),
     [fixedCronPreset, fixedTime, taskTimezone, weeklyDay]
   );
-  const activeCronJobs = useMemo(() => cronJobs.filter((job) => job.enabled), [cronJobs]);
-  const nextCronJob = useMemo(
-    () =>
-      [...cronJobs]
-        .filter((job) => job.enabled && job.state.next_run_at_ms)
-        .sort((a, b) => (a.state.next_run_at_ms || 0) - (b.state.next_run_at_ms || 0))[0],
-    [cronJobs]
-  );
+  const cronJobsByTab = useMemo(() => {
+    const now = Date.now();
+    const scheduled: CronJob[] = [];
+    const completed: CronJob[] = [];
+    for (const job of cronJobs) {
+      const isOneOffPast =
+        job.schedule.kind === 'at' && (job.schedule.at_ms ?? 0) > 0 && (job.schedule.at_ms ?? 0) <= now;
+      if (isOneOffPast) {
+        completed.push(job);
+      } else {
+        scheduled.push(job);
+      }
+    }
+    const sortByNextRun = (list: CronJob[]) =>
+      [...list].sort(
+        (a, b) =>
+          (a.state.next_run_at_ms || a.schedule.at_ms || 0) -
+          (b.state.next_run_at_ms || b.schedule.at_ms || 0),
+      );
+    return { scheduled: sortByNextRun(scheduled), completed: sortByNextRun(completed) };
+  }, [cronJobs]);
+  const visibleCronJobs = cronTab === 'scheduled' ? cronJobsByTab.scheduled : cronJobsByTab.completed;
   const availableTargetSessions = useMemo(
     () =>
       sessions.filter((session) => {
@@ -839,13 +899,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         label: session.title || session.first_message || session.session_id,
       })),
     [availableTargetSessions]
-  );
-  const sessionLabelMap = useMemo<Record<string, string>>(
-    () => ({
-      [TASK_RESULTS_SESSION_ID]: TASK_RESULTS_SESSION_TITLE,
-      ...Object.fromEntries(sessionOptions.map((session) => [session.id, session.label])),
-    }),
-    [sessionOptions]
   );
   const storageUsagePercent = useMemo(() => {
     if (!storageOverview || storageOverview.summary.quota_bytes <= 0) return 0;
@@ -950,6 +1003,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     }
   };
 
+  const loadChannels = async () => {
+    setChannelLoading(true);
+    try {
+      const data = await api.listChannels();
+      setChannelCatalog(data.channels);
+    } catch (error) {
+      setFailure(error, '加载渠道列表失败');
+    } finally {
+      setChannelLoading(false);
+    }
+  };
+
   const loadMcpCatalog = async (silent = false) => {
     if (!toolsDraft || Object.keys(toolsDraft.mcp_servers).length === 0) {
       setMcpCatalog({});
@@ -1000,6 +1065,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     if (selectedSection === 'skills' && !skills && !skillsLoading) {
       void loadSkills();
     }
+
+    if (selectedSection === 'channels' && channelCatalog === null && !channelLoading) {
+      void loadChannels();
+    }
   }, [
     selectedSection,
     loading,
@@ -1009,6 +1078,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     cronStatus,
     cronLoading,
     storageOverview,
+    channelCatalog,
+    channelLoading,
     storageLoading,
     skills,
     skillsLoading,
@@ -1325,12 +1396,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     setNotice(null);
     try {
       const response = await api.upsertMcpServer(nextName, {
+        enabled: mcpForm.enabled,
+        notes: mcpForm.notes,
+        icon: mcpForm.icon.trim(),
         type: mcpForm.type || null,
         command: mcpForm.command.trim(),
         args: textToList(mcpForm.argsText),
         env: parseJsonObject(mcpForm.envText, 'Env'),
         url: mcpForm.url.trim(),
-        headers: parseJsonObject(mcpForm.headersText, 'Headers'),
+        headers: rowsToHeaders(mcpForm.headerRows),
         tool_timeout: mcpForm.toolTimeout,
         enabled_tools: textToList(mcpForm.enabledToolsText),
       });
@@ -1354,6 +1428,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         };
       });
       setSelectedMcpName(nextName);
+      setMcpEditorOpen(false);
       setSuccess(`MCP 服务 ${nextName} 已保存`);
     } catch (error) {
       setFailure(error, '保存 MCP 服务失败');
@@ -1362,30 +1437,234 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     }
   };
 
-  const handleDeleteMcp = async () => {
-    if (!toolsDraft || !selectedMcpName) {
+  const handleDeleteMcp = async (targetName?: string) => {
+    if (!toolsDraft) {
+      return;
+    }
+    const nameToDelete = targetName ?? selectedMcpName;
+    if (!nameToDelete) {
       return;
     }
 
     setSavingSection('mcp');
     setNotice(null);
     try {
-      await api.deleteMcpServer(selectedMcpName);
+      await api.deleteMcpServer(nameToDelete);
       const nextServers = { ...toolsDraft.mcp_servers };
-      delete nextServers[selectedMcpName];
-      const nextName = Object.keys(nextServers)[0] || null;
+      delete nextServers[nameToDelete];
 
       setToolsDraft({
         ...toolsDraft,
         mcp_servers: nextServers,
       });
-      setSelectedMcpName(nextName);
-      setMcpForm(nextName ? buildMcpForm(nextName, nextServers[nextName]) : emptyMcpForm());
-      setSuccess(`MCP 服务 ${selectedMcpName} 已删除`);
+      if (selectedMcpName === nameToDelete) {
+        setSelectedMcpName(null);
+        setMcpForm(emptyMcpForm());
+        setMcpEditorOpen(false);
+      }
+      setSuccess(`MCP 服务 ${nameToDelete} 已删除`);
     } catch (error) {
       setFailure(error, '删除 MCP 服务失败');
     } finally {
       setSavingSection(null);
+    }
+  };
+
+  const openMcpEditor = (name: string | null) => {
+    if (!toolsDraft) {
+      return;
+    }
+    if (name && toolsDraft.mcp_servers[name]) {
+      setSelectedMcpName(name);
+      setMcpForm(buildMcpForm(name, toolsDraft.mcp_servers[name]));
+    } else {
+      setSelectedMcpName(null);
+      setMcpForm(emptyMcpForm());
+    }
+    setMcpAdvancedOpen(false);
+    setMcpEditorOpen(true);
+  };
+
+  const closeMcpEditor = () => {
+    setMcpEditorOpen(false);
+    setSelectedMcpName(null);
+    setMcpForm(emptyMcpForm());
+  };
+
+  const handleToggleMcpEnabled = async (name: string, enabled: boolean) => {
+    if (!toolsDraft) {
+      return;
+    }
+    setNotice(null);
+    try {
+      const response = await api.upsertMcpServer(name, { enabled });
+      setToolsDraft((current) =>
+        current
+          ? {
+              ...current,
+              mcp_servers: { ...current.mcp_servers, [name]: response.server },
+            }
+          : current,
+      );
+      setSuccess(`MCP 服务 ${name} 已${enabled ? '启用' : '停用'}`);
+    } catch (error) {
+      setFailure(error, '切换 MCP 服务状态失败');
+    }
+  };
+
+  const openChannelEditor = (entry: ChannelCatalogEntry) => {
+    setChannelEditorName(entry.name);
+    setChannelDraft({ ...entry.config });
+  };
+
+  const closeChannelEditor = () => {
+    setChannelEditorName(null);
+    setChannelDraft({});
+  };
+
+  const handleSaveChannel = async () => {
+    if (!channelEditorName) {
+      return;
+    }
+    setChannelSavingName(channelEditorName);
+    setNotice(null);
+    try {
+      const response = await api.updateChannel(channelEditorName, channelDraft);
+      setChannelCatalog((current) =>
+        current
+          ? current.map((entry) =>
+              entry.name === channelEditorName
+                ? { ...entry, config: response.config, enabled: !!response.config.enabled }
+                : entry,
+            )
+          : current,
+      );
+      const label =
+        channelCatalog?.find((entry) => entry.name === channelEditorName)?.label ||
+        channelEditorName;
+      setSuccess(`${label} 渠道已保存`);
+      closeChannelEditor();
+    } catch (error) {
+      setFailure(error, '保存渠道失败');
+    } finally {
+      setChannelSavingName(null);
+    }
+  };
+
+  const handleToggleChannel = async (entry: ChannelCatalogEntry, enabled: boolean) => {
+    setChannelSavingName(entry.name);
+    setNotice(null);
+    try {
+      const response = await api.updateChannel(entry.name, { enabled });
+      setChannelCatalog((current) =>
+        current
+          ? current.map((item) =>
+              item.name === entry.name
+                ? { ...item, config: response.config, enabled: !!response.config.enabled }
+                : item,
+            )
+          : current,
+      );
+      setSuccess(`${entry.label} 已${enabled ? '启用' : '停用'}`);
+    } catch (error) {
+      setFailure(error, '切换渠道状态失败');
+    } finally {
+      setChannelSavingName(null);
+    }
+  };
+
+  const handleApplyMcpJsonImport = async () => {
+    if (!toolsDraft) {
+      return;
+    }
+    const trimmed = mcpJsonImportText.trim();
+    if (!trimmed) {
+      setMcpJsonImportError('请粘贴 JSON 内容');
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      setMcpJsonImportError(error instanceof Error ? `JSON 解析失败：${error.message}` : 'JSON 解析失败');
+      return;
+    }
+
+    const root = parsed as { mcpServers?: Record<string, unknown> } | Record<string, unknown> | null;
+    if (!root || typeof root !== 'object') {
+      setMcpJsonImportError('JSON 根节点必须是对象');
+      return;
+    }
+
+    const servers = (root as { mcpServers?: Record<string, unknown> }).mcpServers ?? root;
+    if (!servers || typeof servers !== 'object' || Array.isArray(servers)) {
+      setMcpJsonImportError('未找到 mcpServers 对象');
+      return;
+    }
+
+    const entries = Object.entries(servers as Record<string, unknown>);
+    if (entries.length === 0) {
+      setMcpJsonImportError('JSON 中没有找到任何 MCP 服务');
+      return;
+    }
+
+    setMcpJsonImportError(null);
+    setSavingSection('mcp');
+    const importedServers: Record<string, McpServerSettings> = {};
+    const failures: string[] = [];
+
+    for (const [name, raw] of entries) {
+      const cfg = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+      const update: McpServerSettingsUpdate = {
+        enabled: typeof cfg.enabled === 'boolean' ? cfg.enabled : true,
+        notes: typeof cfg.notes === 'string' ? cfg.notes : '',
+        icon: typeof cfg.icon === 'string' ? cfg.icon : '',
+        type:
+          cfg.type === 'stdio' || cfg.type === 'sse' || cfg.type === 'streamableHttp'
+            ? cfg.type
+            : null,
+        command: typeof cfg.command === 'string' ? cfg.command : '',
+        args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
+        env:
+          cfg.env && typeof cfg.env === 'object' && !Array.isArray(cfg.env)
+            ? Object.fromEntries(Object.entries(cfg.env as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
+            : {},
+        url: typeof cfg.url === 'string' ? cfg.url : '',
+        headers:
+          cfg.headers && typeof cfg.headers === 'object' && !Array.isArray(cfg.headers)
+            ? Object.fromEntries(
+                Object.entries(cfg.headers as Record<string, unknown>).map(([k, v]) => [k, String(v)]),
+              )
+            : {},
+        tool_timeout: typeof cfg.tool_timeout === 'number' ? cfg.tool_timeout : 30,
+        enabled_tools: Array.isArray(cfg.enabled_tools) ? cfg.enabled_tools.map(String) : ['*'],
+      };
+
+      try {
+        const response = await api.upsertMcpServer(name, update);
+        importedServers[name] = response.server;
+      } catch (error) {
+        failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    setToolsDraft((current) =>
+      current
+        ? {
+            ...current,
+            mcp_servers: { ...current.mcp_servers, ...importedServers },
+          }
+        : current,
+    );
+
+    setSavingSection(null);
+    if (failures.length > 0) {
+      setFailure(new Error(failures.join('；')), `导入 ${entries.length - failures.length}/${entries.length} 个 MCP 服务，部分失败`);
+    } else {
+      setSuccess(`成功导入 ${entries.length} 个 MCP 服务`);
+      setMcpJsonImportOpen(false);
+      setMcpJsonImportText('');
     }
   };
 
@@ -1411,7 +1690,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     }
   };
 
-  const handleCreateTask = async () => {
+  const handleSaveCronJob = async () => {
+    if (!taskName.trim()) {
+      setNotice({ tone: 'error', text: '请填写任务标题' });
+      return;
+    }
+    if (!taskMessage.trim()) {
+      setNotice({ tone: 'error', text: '请填写提示词' });
+      return;
+    }
+
     setSavingSection('automation');
     setNotice(null);
     try {
@@ -1432,12 +1720,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         payload.at = taskAtValue ? `${taskAtValue}:00` : '';
       }
 
-      await api.createCronJob(payload);
+      // Cron API has no PATCH — edit = delete old + create new.
+      if (editingCronJobId) {
+        await api.deleteCronJob(editingCronJobId);
+      }
+      const created = await api.createCronJob(payload);
+      // Honor the master enable toggle if the user disabled it in the editor.
+      if (!taskEnabled && created.enabled) {
+        await api.toggleCronJob(created.id, false);
+      }
       await loadSessions();
       await loadAutomationData(true);
-      setSuccess('定时任务已创建');
+      setSuccess(editingCronJobId ? '定时任务已更新' : '定时任务已创建');
+      closeCronEditor();
     } catch (error) {
-      setFailure(error, '创建定时任务失败');
+      setFailure(error, editingCronJobId ? '更新定时任务失败' : '创建定时任务失败');
     } finally {
       setSavingSection(null);
     }
@@ -1478,12 +1775,96 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
       await api.deleteCronJob(jobId);
       setCronJobs((current) => current.filter((job) => job.id !== jobId));
       setSuccess('任务已删除');
+      if (editingCronJobId === jobId) {
+        setEditingCronJobId(null);
+        setCronEditorOpen(false);
+      }
       await loadAutomationData(true);
     } catch (error) {
       setFailure(error, '删除任务失败');
     } finally {
       setCronActioningId(null);
     }
+  };
+
+  const resetCronForm = () => {
+    setTaskName('');
+    setTaskMessage('');
+    setTaskEnabled(true);
+    setScheduleKind('cron');
+    setFixedCronPreset('daily');
+    setEverySeconds(3600);
+    setCronExpr('0 9 * * *');
+    setFixedTime('09:00');
+    setWeeklyDay('1');
+    setTaskTimezone('Asia/Shanghai');
+    setTaskAtValue(defaultAtValue());
+    setTaskTargetSessionId(TASK_RESULTS_SESSION_ID);
+    setCronAdvancedOpen(false);
+  };
+
+  const populateCronFormFromJob = (job: CronJob) => {
+    setTaskName(job.name);
+    setTaskMessage(job.message);
+    setTaskEnabled(job.enabled);
+    setScheduleKind(job.schedule.kind);
+    setTaskTimezone(job.schedule.tz || 'Asia/Shanghai');
+    setTaskTargetSessionId(job.deliver ? job.to || '' : '');
+
+    if (job.schedule.kind === 'every') {
+      setEverySeconds(Math.max(1, Math.floor((job.schedule.every_ms || 3600000) / 1000)));
+    } else if (job.schedule.kind === 'at') {
+      if (job.schedule.at_ms) {
+        const date = new Date(job.schedule.at_ms);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        setTaskAtValue(
+          `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`,
+        );
+      }
+    } else if (job.schedule.kind === 'cron') {
+      const expr = job.schedule.expr || '';
+      setCronExpr(expr);
+      const parts = expr.split(/\s+/);
+      if (parts.length >= 5) {
+        const [minute, hour, , , dow] = parts;
+        const minuteNum = Number(minute);
+        const hourNum = Number(hour);
+        if (!Number.isNaN(minuteNum) && !Number.isNaN(hourNum)) {
+          setFixedTime(`${String(hourNum).padStart(2, '0')}:${String(minuteNum).padStart(2, '0')}`);
+        }
+        if (dow === '*') {
+          setFixedCronPreset('daily');
+        } else if (dow === '1-5') {
+          setFixedCronPreset('weekdays');
+        } else if (/^\d$/.test(dow)) {
+          setFixedCronPreset('weekly');
+          setWeeklyDay(dow);
+        } else {
+          setFixedCronPreset('custom');
+        }
+      } else {
+        setFixedCronPreset('custom');
+      }
+    }
+    setCronAdvancedOpen(false);
+  };
+
+  const openCronEditor = (job?: CronJob) => {
+    if (job) {
+      setEditingCronJobId(job.id);
+      populateCronFormFromJob(job);
+    } else {
+      setEditingCronJobId(null);
+      resetCronForm();
+    }
+    setCronEditorOpen(true);
+    setCronMenuOpenId(null);
+  };
+
+  const closeCronEditor = () => {
+    setCronEditorOpen(false);
+    setEditingCronJobId(null);
+    resetCronForm();
   };
 
   const handleCleanupStorage = async () => {
@@ -1852,17 +2233,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
     return (
       <div className="settings-section">
-        <div className="settings-metrics">
-          <Metric label="工作目录" value={agentDraft.workspace} />
-          <Metric label="工具迭代" value={`${agentDraft.max_tool_iterations} 次`} />
-          <Metric label="推理强度" value={agentDraft.reasoning_effort || '关闭'} />
+        <div className="settings-mcp-toolbar">
+          <div className="settings-mcp-toolbar__text">
+            <h3>智能体默认参数</h3>
+            <p>这些参数会影响新的会话和默认执行行为。改完记得点「保存」。</p>
+          </div>
+          <div className="settings-mcp-toolbar__actions">
+            <button
+              className="settings-button"
+              disabled={savingSection === 'agent'}
+              onClick={() => void handleSaveAgent()}
+              type="button"
+            >
+              {savingSection === 'agent' ? '保存中…' : '保存'}
+            </button>
+          </div>
         </div>
 
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>默认参数</h3>
-            <p>这些参数会影响新的会话和默认执行行为。</p>
-          </div>
+        <div className="settings-flat-panel">
           <div className="settings-grid">
             <Field label="提供商" copy="可以保留 auto，也可以固定某一个提供商。">
               <select
@@ -1993,16 +2381,621 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
               />
             </Field>
           </div>
-          <div className="settings-actions">
+        </div>
+      </div>
+    );
+  };
+
+  const renderToolsCategoryEditor = () => {
+    if (!toolsDraft || !toolsCategory) {
+      return null;
+    }
+
+    const titles: Record<NonNullable<typeof toolsCategory>, { title: string; copy: string }> = {
+      search: { title: 'Web 搜索', copy: '配置默认搜索引擎、API Key 和返回数量。' },
+      exec: { title: '命令执行', copy: '设置 exec 工具的超时和环境 PATH。' },
+      audit: { title: '审批与审计', copy: '高风险命令是否需要确认，是否记录审计日志。' },
+      uploads: { title: '上传与存储', copy: '单文件上限、总配额和过期清理策略。' },
+      knowledge: { title: '知识库检索', copy: '向量后端、Embedding 与可选 Rerank。' },
+    };
+    const meta = titles[toolsCategory];
+
+    const closeEditor = () => {
+      setToolsCategory(null);
+      setToolsKnowledgeAdvancedOpen(false);
+    };
+    const saveAndClose = async () => {
+      await handleSaveTools();
+      closeEditor();
+    };
+
+    return (
+      <div className="settings-mcp-editor">
+        <div className="settings-mcp-editor__head">
+          <div>
+            <h3>{meta.title}</h3>
+            <div className="settings-inline-note">{meta.copy}</div>
+          </div>
+          <button
+            className="settings-mcp-editor__close"
+            onClick={closeEditor}
+            type="button"
+            aria-label="关闭编辑器"
+          >
+            ×
+          </button>
+        </div>
+
+        {toolsCategory === 'search' ? (
+          <>
+            <Field label="搜索提供商">
+              <select
+                className="settings-select"
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          web: {
+                            ...current.web,
+                            search: { ...current.web.search, provider: event.target.value },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                value={toolsDraft.web.search.provider}
+              >
+                {SEARCH_PROVIDER_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="搜索 API Key" copy={`当前显示：${searchApiKeyMasked || '未配置'}。仅在输入新值时更新。`}>
+              <input
+                className="settings-input"
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          web: {
+                            ...current.web,
+                            search: { ...current.web.search, api_key: event.target.value },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                placeholder="输入新的搜索 API Key"
+                type="password"
+                value={toolsDraft.web.search.api_key || ''}
+              />
+            </Field>
+            <Field label="最大结果数" copy="单次搜索最多返回多少条结果。">
+              <input
+                className="settings-input"
+                min={1}
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          web: {
+                            ...current.web,
+                            search: {
+                              ...current.web.search,
+                              max_results: Number(event.target.value) || 1,
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                type="number"
+                value={toolsDraft.web.search.max_results}
+              />
+            </Field>
+            <Field label="代理（可选）" copy="支持 HTTP 和 SOCKS5。留空表示不使用代理。">
+              <input
+                className="settings-input"
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          web: { ...current.web, proxy: event.target.value },
+                        }
+                      : current,
+                  )
+                }
+                placeholder="http://127.0.0.1:7890"
+                type="text"
+                value={toolsDraft.web.proxy || ''}
+              />
+            </Field>
+            <Field label="自定义搜索地址（可选）" copy="SearXNG 或自托管搜索时使用。">
+              <input
+                className="settings-input"
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          web: {
+                            ...current.web,
+                            search: { ...current.web.search, base_url: event.target.value },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                placeholder="https://search.example.com"
+                type="text"
+                value={toolsDraft.web.search.base_url || ''}
+              />
+            </Field>
+          </>
+        ) : null}
+
+        {toolsCategory === 'exec' ? (
+          <>
+            <Field label="超时时间（秒）" copy="单次 exec 调用超过这个时间会被取消。">
+              <input
+                className="settings-input"
+                min={1}
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          exec: {
+                            ...current.exec,
+                            timeout: Number(event.target.value) || 1,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                type="number"
+                value={toolsDraft.exec.timeout}
+              />
+            </Field>
+            <Field label="额外 PATH（可选）" copy="会追加到 exec 环境的 PATH 中。">
+              <input
+                className="settings-input"
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          exec: { ...current.exec, path_append: event.target.value },
+                        }
+                      : current,
+                  )
+                }
+                placeholder="C:\\tools;D:\\bin"
+                type="text"
+                value={toolsDraft.exec.path_append}
+              />
+            </Field>
+          </>
+        ) : null}
+
+        {toolsCategory === 'audit' ? (
+          <>
+            <ToggleRow
+              title="高风险命令需要确认"
+              copy="Web 会话执行高风险命令前，先弹出确认层等待人工放行。"
+              value={toolsDraft.exec.confirm_high_risk}
+              onToggle={() =>
+                setToolsDraft((current) =>
+                  current
+                    ? {
+                        ...current,
+                        exec: {
+                          ...current.exec,
+                          confirm_high_risk: !current.exec.confirm_high_risk,
+                        },
+                      }
+                    : current,
+                )
+              }
+            />
+            <ToggleRow
+              title="启用审计日志"
+              copy="把 exec 审批、文件删除、会话删除和定时任务操作写入 workspace/logs/audit.jsonl。"
+              value={toolsDraft.audit_enabled}
+              onToggle={() =>
+                setToolsDraft((current) =>
+                  current
+                    ? { ...current, audit_enabled: !current.audit_enabled }
+                    : current,
+                )
+              }
+            />
+            <Field label="审批等待时间（秒）" copy="超过这个时间还没确认，高风险命令会自动取消。">
+              <input
+                className="settings-input"
+                min={15}
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          exec: {
+                            ...current.exec,
+                            approval_timeout_s: Number(event.target.value) || 15,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                type="number"
+                value={toolsDraft.exec.approval_timeout_s}
+              />
+            </Field>
+          </>
+        ) : null}
+
+        {toolsCategory === 'uploads' ? (
+          <>
+            <div className="settings-mcp-editor__grid">
+              <Field label="单文件上限 (MB)">
+                <input
+                  className="settings-input"
+                  min={1}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            uploads: {
+                              ...current.uploads,
+                              max_file_mb: Number(event.target.value) || 1,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.uploads.max_file_mb}
+                />
+              </Field>
+              <Field label="总配额 (MB)">
+                <input
+                  className="settings-input"
+                  min={1}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            uploads: {
+                              ...current.uploads,
+                              max_total_mb: Number(event.target.value) || 1,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.uploads.max_total_mb}
+                />
+              </Field>
+              <Field label="保留天数" copy="超过这个天数仍未被引用的文件可被清理。">
+                <input
+                  className="settings-input"
+                  min={1}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            uploads: {
+                              ...current.uploads,
+                              retention_days: Number(event.target.value) || 1,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.uploads.retention_days}
+                />
+              </Field>
+              <Field label="清理检查间隔（小时）">
+                <input
+                  className="settings-input"
+                  min={1}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            uploads: {
+                              ...current.uploads,
+                              cleanup_interval_hours: Number(event.target.value) || 1,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.uploads.cleanup_interval_hours}
+                />
+              </Field>
+            </div>
+          </>
+        ) : null}
+
+        {toolsCategory === 'knowledge' ? (
+          <>
+            <div className="settings-mcp-editor__grid">
+              <Field label="向量后端" copy="默认 Qdrant，本地单机也能直接运行。">
+                <select
+                  className="settings-select"
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            knowledge: { ...current.knowledge, vector_backend: event.target.value },
+                          }
+                        : current,
+                    )
+                  }
+                  value={toolsDraft.knowledge.vector_backend}
+                >
+                  <option value="qdrant">Qdrant</option>
+                  <option value="sqlite">SQLite（轻量兜底）</option>
+                </select>
+              </Field>
+              <Field label="召回数量 Top-K">
+                <input
+                  className="settings-input"
+                  min={1}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            knowledge: {
+                              ...current.knowledge,
+                              top_k: Number(event.target.value) || 1,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.knowledge.top_k}
+                />
+              </Field>
+              <Field label="分块长度" copy="单个 chunk 的目标长度。">
+                <input
+                  className="settings-input"
+                  min={100}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            knowledge: {
+                              ...current.knowledge,
+                              chunk_size: Number(event.target.value) || 100,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.knowledge.chunk_size}
+                />
+              </Field>
+              <Field label="分块重叠">
+                <input
+                  className="settings-input"
+                  min={0}
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            knowledge: {
+                              ...current.knowledge,
+                              chunk_overlap: Number(event.target.value) || 0,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={toolsDraft.knowledge.chunk_overlap}
+                />
+              </Field>
+            </div>
+
+            <Field label="Embedding 模型" copy="留空时只用关键词检索。">
+              <input
+                className="settings-input"
+                onChange={(event) =>
+                  setToolsDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          knowledge: { ...current.knowledge, embedding_model: event.target.value },
+                        }
+                      : current,
+                  )
+                }
+                placeholder="text-embedding-3-small"
+                type="text"
+                value={toolsDraft.knowledge.embedding_model}
+              />
+            </Field>
+
+            <div className="settings-mcp-editor__grid">
+              <Field label="Embedding API Key">
+                <input
+                  autoComplete="off"
+                  className="settings-input"
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            knowledge: {
+                              ...current.knowledge,
+                              embedding_api_key: event.target.value,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  placeholder={toolsDraft.knowledge.embedding_model ? 'sk-...' : '未启用 embedding 时可留空'}
+                  type="password"
+                  value={toolsDraft.knowledge.embedding_api_key}
+                />
+              </Field>
+              <Field label="Embedding Base URL（可选）">
+                <input
+                  className="settings-input"
+                  onChange={(event) =>
+                    setToolsDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            knowledge: {
+                              ...current.knowledge,
+                              embedding_api_base: event.target.value || null,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  placeholder="https://api.openai.com/v1"
+                  type="text"
+                  value={toolsDraft.knowledge.embedding_api_base ?? ''}
+                />
+              </Field>
+            </div>
+
             <button
-              className="settings-button"
-              disabled={savingSection === 'agent'}
-              onClick={() => void handleSaveAgent()}
+              className="settings-mcp-advanced-toggle"
+              onClick={() => setToolsKnowledgeAdvancedOpen((value) => !value)}
               type="button"
             >
-              保存智能体参数
+              {toolsKnowledgeAdvancedOpen ? '▾ 收起 Rerank 重排设置' : '▸ Rerank 重排（可选高级）'}
             </button>
-          </div>
+
+            {toolsKnowledgeAdvancedOpen ? (
+              <div className="settings-mcp-advanced">
+                <Field label="Rerank 模型" copy="留空则关闭 rerank。">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setToolsDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              knowledge: {
+                                ...current.knowledge,
+                                rerank_model: event.target.value,
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                    type="text"
+                    value={toolsDraft.knowledge.rerank_model}
+                  />
+                </Field>
+                <div className="settings-mcp-editor__grid">
+                  <Field label="Rerank API Key">
+                    <input
+                      autoComplete="off"
+                      className="settings-input"
+                      onChange={(event) =>
+                        setToolsDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                knowledge: {
+                                  ...current.knowledge,
+                                  rerank_api_key: event.target.value,
+                                },
+                              }
+                            : current,
+                        )
+                      }
+                      placeholder={toolsDraft.knowledge.rerank_model ? 'sk-...' : '未启用 rerank 时可留空'}
+                      type="password"
+                      value={toolsDraft.knowledge.rerank_api_key}
+                    />
+                  </Field>
+                  <Field label="Rerank Base URL（可选）">
+                    <input
+                      className="settings-input"
+                      onChange={(event) =>
+                        setToolsDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                knowledge: {
+                                  ...current.knowledge,
+                                  rerank_api_base: event.target.value || null,
+                                },
+                              }
+                            : current,
+                        )
+                      }
+                      placeholder="https://api.openai.com/v1"
+                      type="text"
+                      value={toolsDraft.knowledge.rerank_api_base ?? ''}
+                    />
+                  </Field>
+                  <Field label="Rerank 重排条数">
+                    <input
+                      className="settings-input"
+                      min={1}
+                      onChange={(event) =>
+                        setToolsDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                knowledge: {
+                                  ...current.knowledge,
+                                  rerank_top_n: Number(event.target.value) || 1,
+                                },
+                              }
+                            : current,
+                        )
+                      }
+                      type="number"
+                      value={toolsDraft.knowledge.rerank_top_n}
+                    />
+                  </Field>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+
+        <div className="settings-actions settings-mcp-editor__actions">
+          <button className="settings-button-secondary" onClick={closeEditor} type="button">
+            取消
+          </button>
+          <button
+            className="settings-button"
+            disabled={savingSection === 'tools'}
+            onClick={() => void saveAndClose()}
+            type="button"
+          >
+            {savingSection === 'tools' ? '保存中…' : '保存'}
+          </button>
         </div>
       </div>
     );
@@ -2013,837 +3006,434 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
       return null;
     }
 
+    const cards: Array<{
+      id: 'search' | 'exec' | 'audit' | 'uploads' | 'knowledge';
+      icon: string;
+      title: string;
+      desc: string;
+      summary: string;
+    }> = [
+      {
+        id: 'search',
+        icon: '🔍',
+        title: 'Web 搜索',
+        desc: '智能体搜索互联网时使用的提供商和参数。',
+        summary: `${toolsDraft.web.search.provider} · 最多 ${toolsDraft.web.search.max_results} 条`,
+      },
+      {
+        id: 'exec',
+        icon: '⚡',
+        title: '命令执行',
+        desc: '智能体执行 shell 命令时的超时和环境。',
+        summary: `超时 ${toolsDraft.exec.timeout} 秒`,
+      },
+      {
+        id: 'audit',
+        icon: '🛡️',
+        title: '审批与审计',
+        desc: '高风险动作是否需要人工确认，是否记录审计日志。',
+        summary: `${toolsDraft.exec.confirm_high_risk ? '需确认' : '直接放行'} · ${
+          toolsDraft.audit_enabled ? '已审计' : '未审计'
+        }`,
+      },
+      {
+        id: 'uploads',
+        icon: '📤',
+        title: '上传与存储',
+        desc: '单文件大小、总配额和过期清理策略。',
+        summary: `单文件 ${toolsDraft.uploads.max_file_mb}MB · 共 ${toolsDraft.uploads.max_total_mb}MB`,
+      },
+      {
+        id: 'knowledge',
+        icon: '📚',
+        title: '知识库检索',
+        desc: '向量后端、Embedding 与可选 Rerank 重排。',
+        summary: `${toolsDraft.knowledge.vector_backend} · Top-${toolsDraft.knowledge.top_k}${
+          toolsDraft.knowledge.embedding_model ? ` · ${toolsDraft.knowledge.embedding_model}` : ''
+        }`,
+      },
+    ];
+
     return (
       <div className="settings-section">
-        <div className="settings-metrics">
-          <Metric label="搜索提供商" value={toolsDraft.web.search.provider} />
-          <Metric label="命令超时" value={`${toolsDraft.exec.timeout} 秒`} />
-          <Metric label="上传总配额" value={`${toolsDraft.uploads.max_total_mb} MB`} />
-        </div>
-
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>安全边界</h3>
-            <p>建议先确定 workspace 限制和命令超时，再调整搜索提供商。</p>
-          </div>
-          <div className="settings-grid one">
-            <ToggleRow
-              title="限制工具访问工作目录"
-              copy="开启后，工具会尽量只访问当前 workspace 内的内容。"
-              value={toolsDraft.restrict_to_workspace}
-              onToggle={() =>
-                setToolsDraft((current) =>
-                  current
-                    ? {
-                        ...current,
-                        restrict_to_workspace: !current.restrict_to_workspace,
-                      }
-                    : current
-                )
-              }
-            />
+        <div className="settings-mcp-toolbar">
+          <div className="settings-mcp-toolbar__text">
+            <h3>工具与运行边界</h3>
+            <p>逐项管理工具能力、安全策略与上传配额。点击卡片打开对应配置。</p>
           </div>
         </div>
 
-        <div className="settings-grid">
-          <div className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>Web 搜索</h3>
-              <p>管理搜索提供商、代理和搜索返回数量。</p>
-            </div>
-            <div className="settings-grid one">
-              <Field label="代理" copy="支持 HTTP 和 SOCKS5。留空表示不使用代理。">
-                <input
-                  className="settings-input"
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            web: {
-                              ...current.web,
-                              proxy: event.target.value,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  placeholder="http://127.0.0.1:7890"
-                  type="text"
-                  value={toolsDraft.web.proxy || ''}
-                />
-              </Field>
-              <Field label="搜索提供商" copy="brave / tavily / duckduckgo / searxng / jina">
-                <select
-                  className="settings-select"
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            web: {
-                              ...current.web,
-                              search: {
-                                ...current.web.search,
-                                provider: event.target.value,
-                              },
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  value={toolsDraft.web.search.provider}
-                >
-                  {SEARCH_PROVIDER_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field
-                label="搜索 API Key"
-                copy={`当前显示：${searchApiKeyMasked || '未配置'}。仅在输入新值时更新。`}
-              >
-                <input
-                  className="settings-input"
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            web: {
-                              ...current.web,
-                              search: {
-                                ...current.web.search,
-                                api_key: event.target.value,
-                              },
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  placeholder="输入新的搜索 API Key"
-                  type="password"
-                  value={toolsDraft.web.search.api_key || ''}
-                />
-              </Field>
-              <Field label="搜索地址" copy="SearXNG 或自定义搜索地址时使用。">
-                <input
-                  className="settings-input"
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            web: {
-                              ...current.web,
-                              search: {
-                                ...current.web.search,
-                                base_url: event.target.value,
-                              },
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  placeholder="https://search.example.com"
-                  type="text"
-                  value={toolsDraft.web.search.base_url || ''}
-                />
-              </Field>
-              <Field label="最大结果数" copy="单次搜索最多返回多少条结果。">
-                <input
-                  className="settings-input"
-                  min={1}
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            web: {
-                              ...current.web,
-                              search: {
-                                ...current.web.search,
-                                max_results: Number(event.target.value) || 1,
-                              },
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="number"
-                  value={toolsDraft.web.search.max_results}
-                />
-              </Field>
-            </div>
+        <div className="settings-tools-safety">
+          <div className="settings-toggle-text">
+            <strong>限制工具访问工作目录</strong>
+            <span>开启后，工具会尽量只访问当前 workspace 内的内容。</span>
           </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>命令执行</h3>
-              <p>管理 exec 工具的超时和 PATH 追加项。</p>
-            </div>
-            <div className="settings-grid one">
-              <Field label="超时时间" copy="超过后会取消 exec 工具。">
-                <input
-                  className="settings-input"
-                  min={1}
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            exec: {
-                              ...current.exec,
-                              timeout: Number(event.target.value) || 1,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="number"
-                  value={toolsDraft.exec.timeout}
-                />
-              </Field>
-              <Field label="PATH 追加项" copy="会追加到 exec 环境里的 PATH。">
-                <input
-                  className="settings-input"
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            exec: {
-                              ...current.exec,
-                              path_append: event.target.value,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  placeholder="C:\\tools;D:\\bin"
-                  type="text"
-                  value={toolsDraft.exec.path_append}
-                />
-              </Field>
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>审批与审计</h3>
-              <p>控制 exec 的确认策略，以及是否记录关键操作审计日志。</p>
-            </div>
-            <div className="settings-grid one">
-              <ToggleRow
-                title="高风险 exec 需要确认"
-                copy="Web 会话里执行命令前，先弹出确认层；如果你在会话里手动设为允许，后续会自动放行。"
-                value={toolsDraft.exec.confirm_high_risk}
-                onToggle={() =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          exec: {
-                            ...current.exec,
-                            confirm_high_risk: !current.exec.confirm_high_risk,
-                          },
-                        }
-                      : current
-                  )
-                }
-              />
-              <ToggleRow
-                title="启用审计日志"
-                copy="把 exec 审批、文件删除、会话删除和定时任务操作写入 workspace/logs/audit.jsonl。"
-                value={toolsDraft.audit_enabled}
-                onToggle={() =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          audit_enabled: !current.audit_enabled,
-                        }
-                      : current
-                  )
-                }
-              />
-              <Field label="审批等待时间（秒）" copy="超过这个时间还没确认，高风险命令会自动取消。">
-                <input
-                  className="settings-input"
-                  min={15}
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            exec: {
-                              ...current.exec,
-                              approval_timeout_s: Number(event.target.value) || 15,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="number"
-                  value={toolsDraft.exec.approval_timeout_s}
-                />
-              </Field>
-            </div>
-          </div>
-        </div>
-
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>上传与存储</h3>
-            <p>控制单文件上限、总配额和自动清理周期，文件中心会直接使用这里的策略。</p>
-          </div>
-          <div className="settings-grid">
-            <Field label="单文件上限 (MB)" copy="超过后会直接拒绝上传。">
-              <input
-                className="settings-input"
-                min={1}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          uploads: {
-                            ...current.uploads,
-                            max_file_mb: Number(event.target.value) || 1,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.uploads.max_file_mb}
-              />
-            </Field>
-            <Field label="总配额 (MB)" copy="所有上传文件共享的上限。">
-              <input
-                className="settings-input"
-                min={1}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          uploads: {
-                            ...current.uploads,
-                            max_total_mb: Number(event.target.value) || 1,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.uploads.max_total_mb}
-              />
-            </Field>
-            <Field label="保留天数" copy="未被任何会话引用的文件超过这个天数后可被清理。">
-              <input
-                className="settings-input"
-                min={1}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          uploads: {
-                            ...current.uploads,
-                            retention_days: Number(event.target.value) || 1,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.uploads.retention_days}
-              />
-            </Field>
-            <Field label="清理检查间隔 (小时)" copy="后台清理器会按这个周期重新检查旧文件。">
-              <input
-                className="settings-input"
-                min={1}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          uploads: {
-                            ...current.uploads,
-                            cleanup_interval_hours: Number(event.target.value) || 1,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.uploads.cleanup_interval_hours}
-              />
-            </Field>
-          </div>
-        </div>
-
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>知识库检索</h3>
-            <p>配置向量库、Embedding 与可选 Rerank，让知识库回答更稳定也更可控。</p>
-          </div>
-          <div className="settings-grid">
-            <Field label="向量后端" copy="默认推荐 Qdrant，本地单机也能直接运行。">
-              <select
-                className="settings-select"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            vector_backend: event.target.value,
-                          },
-                        }
-                      : current
-                  )
-                }
-                value={toolsDraft.knowledge.vector_backend}
-              >
-                <option value="qdrant">Qdrant</option>
-                <option value="sqlite">SQLite（轻量兜底）</option>
-              </select>
-            </Field>
-            <Field label="召回数量 Top-K" copy="每次检索最多召回多少条知识片段参与回答。">
-              <input
-                className="settings-input"
-                min={1}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            top_k: Number(event.target.value) || 1,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.knowledge.top_k}
-              />
-            </Field>
-            <Field label="分块长度" copy="单个 chunk 的目标长度，过大会影响精度，过小会影响上下文完整性。">
-              <input
-                className="settings-input"
-                min={100}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            chunk_size: Number(event.target.value) || 100,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.knowledge.chunk_size}
-              />
-            </Field>
-            <Field label="分块重叠" copy="相邻 chunk 的重叠长度，适当保留上下文衔接。">
-              <input
-                className="settings-input"
-                min={0}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            chunk_overlap: Number(event.target.value) || 0,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.knowledge.chunk_overlap}
-              />
-            </Field>
-          </div>
-          <div className="settings-grid">
-            <Field label="Embedding 模型" copy="留空时只使用关键词检索；填写后会叠加向量召回。">
-              <input
-                className="settings-input"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            embedding_model: event.target.value,
-                          },
-                        }
-                      : current
-                  )
-                }
-                placeholder="text-embedding-3-small"
-                type="text"
-                value={toolsDraft.knowledge.embedding_model}
-              />
-            </Field>
-            <Field label="Embedding Base URL" copy="使用兼容 OpenAI 的 embedding 服务时可填写自定义地址。">
-              <input
-                className="settings-input"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            embedding_api_base: event.target.value || null,
-                          },
-                        }
-                      : current
-                  )
-                }
-                placeholder="https://api.openai.com/v1"
-                type="text"
-                value={toolsDraft.knowledge.embedding_api_base ?? ''}
-              />
-            </Field>
-            <Field label="Embedding API Key" copy="出于安全考虑，保存后这里会重新变空。">
-              <input
-                autoComplete="off"
-                className="settings-input"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            embedding_api_key: event.target.value,
-                          },
-                        }
-                      : current
-                  )
-                }
-                placeholder={toolsDraft.knowledge.embedding_model ? 'sk-...' : '未启用 embedding 时可留空'}
-                type="password"
-                value={toolsDraft.knowledge.embedding_api_key}
-              />
-            </Field>
-          </div>
-          <div className="settings-grid">
-            <Field label="Rerank 模型" copy="可选增强。先粗召回，再用该模型重排结果，适合资料较多时提高命中质量。">
-              <input
-                className="settings-input"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            rerank_model: event.target.value,
-                          },
-                        }
-                      : current
-                  )
-                }
-                placeholder="留空则关闭 rerank"
-                type="text"
-                value={toolsDraft.knowledge.rerank_model}
-              />
-            </Field>
-            <Field label="Rerank Base URL" copy="使用兼容服务时可填写自定义地址。">
-              <input
-                className="settings-input"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            rerank_api_base: event.target.value || null,
-                          },
-                        }
-                      : current
-                  )
-                }
-                placeholder="https://api.openai.com/v1"
-                type="text"
-                value={toolsDraft.knowledge.rerank_api_base ?? ''}
-              />
-            </Field>
-            <Field label="Rerank API Key" copy="如果启用了 rerank，需要填写对应服务的密钥。">
-              <input
-                autoComplete="off"
-                className="settings-input"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            rerank_api_key: event.target.value,
-                          },
-                        }
-                      : current
-                  )
-                }
-                placeholder={toolsDraft.knowledge.rerank_model ? 'sk-...' : '未启用 rerank 时可留空'}
-                type="password"
-                value={toolsDraft.knowledge.rerank_api_key}
-              />
-            </Field>
-            <Field label="Rerank 重排条数" copy="进入重排阶段的候选片段数量。">
-              <input
-                className="settings-input"
-                min={1}
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: {
-                            ...current.knowledge,
-                            rerank_top_n: Number(event.target.value) || 1,
-                          },
-                        }
-                      : current
-                  )
-                }
-                type="number"
-                value={toolsDraft.knowledge.rerank_top_n}
-              />
-            </Field>
-          </div>
-        </div>
-
-        <div className="settings-actions">
           <button
-            className="settings-button"
-            disabled={savingSection === 'tools'}
-            onClick={() => void handleSaveTools()}
+            className={`settings-toggle ${toolsDraft.restrict_to_workspace ? 'on' : ''}`}
+            onClick={() => {
+              setToolsDraft((current) =>
+                current
+                  ? { ...current, restrict_to_workspace: !current.restrict_to_workspace }
+                  : current,
+              );
+              // Persist immediately so users don't need to remember to save.
+              window.setTimeout(() => void handleSaveTools(), 0);
+            }}
             type="button"
           >
-            保存工具配置
+            {toolsDraft.restrict_to_workspace ? '已开启' : '已关闭'}
+          </button>
+        </div>
+
+        <div className="settings-mcp-grid">
+          {cards.map((card) => (
+            <button
+              className={`settings-mcp-card settings-tools-card ${toolsCategory === card.id ? 'is-active' : ''}`}
+              key={card.id}
+              onClick={() => {
+                setToolsKnowledgeAdvancedOpen(false);
+                setToolsCategory(card.id);
+              }}
+              type="button"
+            >
+              <div className="settings-mcp-card__head">
+                <div className="settings-mcp-card__icon settings-tools-card__icon">{card.icon}</div>
+                <div className="settings-mcp-card__title">
+                  <div className="settings-mcp-card__name">{card.title}</div>
+                  <div className="settings-mcp-card__transport">{card.summary}</div>
+                </div>
+              </div>
+              <div className="settings-mcp-card__notes">{card.desc}</div>
+            </button>
+          ))}
+        </div>
+
+        {renderToolsCategoryEditor()}
+      </div>
+    );
+  };
+
+
+  const renderMcpEditor = () => {
+    const isHttpMode = mcpForm.type === 'sse' || mcpForm.type === 'streamableHttp' || mcpForm.type === '';
+    const showStdioFields = mcpForm.type === 'stdio' || mcpForm.type === '';
+    const editingExistingName = selectedMcpName;
+
+    return (
+      <div className="settings-mcp-editor">
+        <div className="settings-mcp-editor__head">
+          <h3>{editingExistingName ? `编辑 ${editingExistingName}` : '新建 MCP 服务'}</h3>
+          <button
+            className="settings-mcp-editor__close"
+            onClick={closeMcpEditor}
+            type="button"
+            aria-label="关闭编辑器"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="settings-mcp-editor__grid">
+          <Field label="服务器名称">
+            <input
+              className="settings-input"
+              onChange={(event) => setMcpForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="例如：filesystem"
+              type="text"
+              value={mcpForm.name}
+            />
+          </Field>
+          <Field label="传输类型">
+            <select
+              className="settings-select"
+              onChange={(event) =>
+                setMcpForm((current) => ({
+                  ...current,
+                  type: event.target.value as McpFormState['type'],
+                }))
+              }
+              value={mcpForm.type}
+            >
+              <option value="">自动识别</option>
+              <option value="streamableHttp">HTTP</option>
+              <option value="sse">SSE</option>
+              <option value="stdio">本地命令 (stdio)</option>
+            </select>
+          </Field>
+        </div>
+
+        <Field label="图标 URL（可选）">
+          <input
+            className="settings-input"
+            onChange={(event) => setMcpForm((current) => ({ ...current, icon: event.target.value }))}
+            placeholder="粘贴一个图标的 URL"
+            type="text"
+            value={mcpForm.icon}
+          />
+        </Field>
+
+        <Field label="备注（可选）" copy="简短说明这个 MCP 服务做什么、何时启用。">
+          <textarea
+            className="settings-textarea settings-mcp-editor__notes"
+            onChange={(event) => setMcpForm((current) => ({ ...current, notes: event.target.value }))}
+            placeholder="例如：本地文件系统访问，仅在处理项目源码时启用"
+            value={mcpForm.notes}
+          />
+        </Field>
+
+        {isHttpMode ? (
+          <>
+            <Field label="服务器 URL">
+              <input
+                className="settings-input"
+                onChange={(event) => setMcpForm((current) => ({ ...current, url: event.target.value }))}
+                placeholder="https://mcp.yourserver.com/mcp"
+                type="text"
+                value={mcpForm.url}
+              />
+            </Field>
+
+            <div className="settings-mcp-headers">
+              <div className="settings-mcp-headers__head">
+                <span className="settings-field-title">自定义 headers（可选）</span>
+                <button
+                  className="settings-button-secondary settings-mcp-headers__add"
+                  onClick={() =>
+                    setMcpForm((current) => ({
+                      ...current,
+                      headerRows: [...current.headerRows, { id: nextHeaderRowId(), key: '', value: '' }],
+                    }))
+                  }
+                  type="button"
+                >
+                  + 添加自定义 header
+                </button>
+              </div>
+              {mcpForm.headerRows.length > 0 ? (
+                <div className="settings-mcp-headers__list">
+                  {mcpForm.headerRows.map((row) => (
+                    <div className="settings-mcp-headers__row" key={row.id}>
+                      <input
+                        className="settings-input"
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setMcpForm((current) => ({
+                            ...current,
+                            headerRows: current.headerRows.map((entry) =>
+                              entry.id === row.id ? { ...entry, key: value } : entry,
+                            ),
+                          }));
+                        }}
+                        placeholder="Header 名称"
+                        type="text"
+                        value={row.key}
+                      />
+                      <input
+                        className="settings-input"
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setMcpForm((current) => ({
+                            ...current,
+                            headerRows: current.headerRows.map((entry) =>
+                              entry.id === row.id ? { ...entry, value: value } : entry,
+                            ),
+                          }));
+                        }}
+                        placeholder="Header 值"
+                        type="text"
+                        value={row.value}
+                      />
+                      <button
+                        className="settings-mcp-headers__remove"
+                        onClick={() =>
+                          setMcpForm((current) => ({
+                            ...current,
+                            headerRows: current.headerRows.filter((entry) => entry.id !== row.id),
+                          }))
+                        }
+                        type="button"
+                        aria-label="删除 header"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+
+        {showStdioFields && mcpForm.type === 'stdio' ? (
+          <>
+            <Field label="启动命令" copy="本地 stdio 模式下要执行的命令。">
+              <input
+                className="settings-input"
+                onChange={(event) =>
+                  setMcpForm((current) => ({ ...current, command: event.target.value }))
+                }
+                placeholder="npx"
+                type="text"
+                value={mcpForm.command}
+              />
+            </Field>
+            <Field label="参数列表（可选）" copy="每行一个参数。">
+              <textarea
+                className="settings-textarea"
+                onChange={(event) =>
+                  setMcpForm((current) => ({ ...current, argsText: event.target.value }))
+                }
+                placeholder="-y&#10;@modelcontextprotocol/server-filesystem"
+                value={mcpForm.argsText}
+              />
+            </Field>
+            <Field label="环境变量（可选）" copy="JSON 对象，例如 {&quot;ROOT&quot;:&quot;/data&quot;}。">
+              <textarea
+                className="settings-textarea"
+                onChange={(event) =>
+                  setMcpForm((current) => ({ ...current, envText: event.target.value }))
+                }
+                placeholder='{"ROOT":"/data"}'
+                value={mcpForm.envText}
+              />
+            </Field>
+          </>
+        ) : null}
+
+        <button
+          className="settings-mcp-advanced-toggle"
+          onClick={() => setMcpAdvancedOpen((value) => !value)}
+          type="button"
+        >
+          {mcpAdvancedOpen ? '▾ 收起高级选项' : '▸ 高级选项'}
+        </button>
+
+        {mcpAdvancedOpen ? (
+          <div className="settings-mcp-advanced">
+            <Field label="允许的工具" copy="每行一个工具名，使用 * 表示全部。">
+              <textarea
+                className="settings-textarea"
+                onChange={(event) =>
+                  setMcpForm((current) => ({ ...current, enabledToolsText: event.target.value }))
+                }
+                placeholder="*"
+                value={mcpForm.enabledToolsText}
+              />
+            </Field>
+            <Field label="工具超时（秒）">
+              <input
+                className="settings-input"
+                min={1}
+                onChange={(event) =>
+                  setMcpForm((current) => ({
+                    ...current,
+                    toolTimeout: Number(event.target.value) || 1,
+                  }))
+                }
+                type="number"
+                value={mcpForm.toolTimeout}
+              />
+            </Field>
+          </div>
+        ) : null}
+
+        <div className="settings-actions settings-mcp-editor__actions">
+          <button
+            className="settings-button-secondary"
+            onClick={closeMcpEditor}
+            type="button"
+          >
+            取消
+          </button>
+          {editingExistingName ? (
+            <button
+              className="settings-button-danger"
+              disabled={savingSection === 'mcp'}
+              onClick={() => void handleDeleteMcp(editingExistingName)}
+              type="button"
+            >
+              删除
+            </button>
+          ) : null}
+          <button
+            className="settings-button"
+            disabled={savingSection === 'mcp'}
+            onClick={() => void handleSaveMcp()}
+            type="button"
+          >
+            {savingSection === 'mcp' ? '保存中…' : '保存'}
           </button>
         </div>
       </div>
     );
   };
 
-  const renderMcp = () => {
-    if (!toolsDraft) {
+  const renderMcpJsonImport = () => {
+    if (!mcpJsonImportOpen) {
       return null;
     }
-
     return (
-      <div className="settings-section">
-        <div className="settings-metrics">
-          <Metric label="已登记服务" value={`${mcpEntries.length} 个`} />
-          <Metric label="当前选择" value={selectedMcpName || '新建服务'} />
-          <Metric label="工具范围" value={mcpForm.enabledToolsText || '*'} />
-        </div>
-
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>MCP 服务</h3>
-            <p>这里保存的是 MCP 服务定义，不是实时运行状态。</p>
+      <div
+        className="settings-modal-overlay"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            setMcpJsonImportOpen(false);
+          }
+        }}
+      >
+        <div className="settings-mcp-json">
+          <div className="settings-mcp-json__head">
+            <h3>从 JSON 导入 MCP 服务</h3>
+            <button
+              className="settings-mcp-editor__close"
+              onClick={() => setMcpJsonImportOpen(false)}
+              type="button"
+              aria-label="关闭"
+            >
+              ×
+            </button>
           </div>
-          <div className="settings-split">
-            <div className="settings-list">
-              <button
-                className={`settings-list-item ${selectedMcpName === null ? 'active' : ''}`}
-                onClick={() => {
-                  setSelectedMcpName(null);
-                  setMcpForm(emptyMcpForm());
-                }}
-                type="button"
-              >
-                <div className="settings-list-head">
-                  <div>
-                    <div className="settings-provider-name">新建服务</div>
-                    <div className="settings-provider-desc">创建一条新的 MCP 服务配置。</div>
-                  </div>
-                </div>
-              </button>
-
-              {mcpEntries.length === 0 ? (
-                <div className="settings-empty">当前还没有 MCP 服务配置。</div>
-              ) : (
-                mcpEntries.map(([name, server]) => (
-                  <button
-                    className={`settings-list-item ${selectedMcpName === name ? 'active' : ''}`}
-                    key={name}
-                    onClick={() => setSelectedMcpName(name)}
-                    type="button"
-                  >
-                    <div className="settings-list-head">
-                      <div>
-                        <div className="settings-provider-name">{name}</div>
-                        <div className="settings-provider-desc">
-                          {server.type || 'auto'} · {server.command || server.url || '未填写地址'}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <div className="settings-panel">
-              <div className="settings-grid">
-                <Field label="服务名称" copy="作为配置字典的 key，同名会覆盖。">
-                  <input
-                    className="settings-input"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({ ...current, name: event.target.value }))
-                    }
-                    placeholder="filesystem"
-                    type="text"
-                    value={mcpForm.name}
-                  />
-                </Field>
-                <Field label="类型" copy="留空时由后端自动识别。">
-                  <select
-                    className="settings-select"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({
-                        ...current,
-                        type: event.target.value as McpFormState['type'],
-                      }))
-                    }
-                    value={mcpForm.type}
-                  >
-                    <option value="">自动识别</option>
-                    <option value="stdio">stdio</option>
-                    <option value="sse">sse</option>
-                    <option value="streamableHttp">streamableHttp</option>
-                  </select>
-                </Field>
-              </div>
-              <div className="settings-grid">
-                <Field label="命令" copy="stdio 模式下的启动命令。">
-                  <input
-                    className="settings-input"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({ ...current, command: event.target.value }))
-                    }
-                    placeholder="npx"
-                    type="text"
-                    value={mcpForm.command}
-                  />
-                </Field>
-                <Field label="URL" copy="HTTP 或 SSE 模式下的服务地址。">
-                  <input
-                    className="settings-input"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({ ...current, url: event.target.value }))
-                    }
-                    placeholder="http://localhost:3001/sse"
-                    type="text"
-                    value={mcpForm.url}
-                  />
-                </Field>
-              </div>
-              <div className="settings-grid">
-                <Field label="参数列表" copy="每行一个参数，也支持逗号分隔。">
-                  <textarea
-                    className="settings-textarea"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({ ...current, argsText: event.target.value }))
-                    }
-                    placeholder="-y&#10;@modelcontextprotocol/server-filesystem"
-                    value={mcpForm.argsText}
-                  />
-                </Field>
-                <Field label="允许的工具" copy="每行一个工具名，使用 * 表示全部。">
-                  <textarea
-                    className="settings-textarea"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({
-                        ...current,
-                        enabledToolsText: event.target.value,
-                      }))
-                    }
-                    placeholder="*"
-                    value={mcpForm.enabledToolsText}
-                  />
-                </Field>
-              </div>
-              <div className="settings-grid">
-                <Field label="环境变量" copy="JSON 对象，留空表示不设置。">
-                  <textarea
-                    className="settings-textarea"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({ ...current, envText: event.target.value }))
-                    }
-                    placeholder='{"ROOT":"D:/project"}'
-                    value={mcpForm.envText}
-                  />
-                </Field>
-                <Field label="请求头" copy="JSON 对象，HTTP 和 SSE 模式常用。">
-                  <textarea
-                    className="settings-textarea"
-                    onChange={(event) =>
-                      setMcpForm((current) => ({ ...current, headersText: event.target.value }))
-                    }
-                    placeholder='{"Authorization":"Bearer ..."}'
-                    value={mcpForm.headersText}
-                  />
-                </Field>
-              </div>
-              <div className="settings-grid one">
-                <Field label="工具超时（秒）" copy="单次 MCP 工具调用的超时时间。">
-                  <input
-                    className="settings-input"
-                    min={1}
-                    onChange={(event) =>
-                      setMcpForm((current) => ({
-                        ...current,
-                        toolTimeout: Number(event.target.value) || 1,
-                      }))
-                    }
-                    type="number"
-                    value={mcpForm.toolTimeout}
-                  />
-                </Field>
-              </div>
-              <div className="settings-actions">
-                <button
-                  className="settings-button"
-                  disabled={savingSection === 'mcp'}
-                  onClick={() => void handleSaveMcp()}
-                  type="button"
-                >
-                  保存 MCP 服务
-                </button>
-                <button
-                  className="settings-button-danger"
-                  disabled={savingSection === 'mcp' || !selectedMcpName}
-                  onClick={() => void handleDeleteMcp()}
-                  type="button"
-                >
-                  删除当前服务
-                </button>
-              </div>
-            </div>
+          <p className="settings-inline-note">
+            支持 Claude Desktop / Cursor 等工具使用的 <code>{'{ "mcpServers": { ... } }'}</code> 格式，
+            也接受直接传入服务字典。重名将覆盖现有配置。
+          </p>
+          <textarea
+            className="settings-textarea settings-mcp-json__textarea"
+            onChange={(event) => {
+              setMcpJsonImportText(event.target.value);
+              if (mcpJsonImportError) {
+                setMcpJsonImportError(null);
+              }
+            }}
+            placeholder={`{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"]
+    }
+  }
+}`}
+            value={mcpJsonImportText}
+          />
+          {mcpJsonImportError ? (
+            <div className="settings-notice error">{mcpJsonImportError}</div>
+          ) : null}
+          <div className="settings-actions">
+            <button
+              className="settings-button-secondary"
+              onClick={() => setMcpJsonImportOpen(false)}
+              type="button"
+            >
+              取消
+            </button>
+            <button
+              className="settings-button"
+              disabled={savingSection === 'mcp'}
+              onClick={() => void handleApplyMcpJsonImport()}
+              type="button"
+            >
+              {savingSection === 'mcp' ? '导入中…' : '导入'}
+            </button>
           </div>
         </div>
       </div>
@@ -2986,6 +3576,206 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     );
   };
 
+  const renderCronEditor = () => {
+    return (
+      <div className="settings-mcp-editor">
+        <div className="settings-mcp-editor__head">
+          <h3>{editingCronJobId ? '编辑定时任务' : '新建定时任务'}</h3>
+          <button
+            className="settings-mcp-editor__close"
+            onClick={closeCronEditor}
+            type="button"
+            aria-label="关闭编辑器"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="settings-cron-toggle-row">
+          <div className="settings-toggle-text">
+            <strong>启用此任务</strong>
+            <span>启用后，此任务将根据以下计划自动运行。</span>
+          </div>
+          <button
+            className={`settings-toggle ${taskEnabled ? 'on' : ''}`}
+            onClick={() => setTaskEnabled((value) => !value)}
+            type="button"
+            aria-label={taskEnabled ? '点击停用' : '点击启用'}
+          >
+            {taskEnabled ? '已启用' : '已停用'}
+          </button>
+        </div>
+
+        <Field label="标题">
+          <input
+            className="settings-input"
+            type="text"
+            value={taskName}
+            onChange={(event) => setTaskName(event.target.value)}
+            placeholder="例如：每日新闻摘要"
+          />
+        </Field>
+
+        <Field label="提示词">
+          <textarea
+            className="settings-textarea settings-cron-prompt"
+            value={taskMessage}
+            onChange={(event) => setTaskMessage(event.target.value)}
+            placeholder="例如：搜索昨天最具影响力的 AI 新闻，并向我发送一份简要摘要。"
+          />
+        </Field>
+
+        <div className="settings-cron-schedule">
+          <div className="settings-field-title">计划</div>
+          <div className="settings-cron-schedule__row">
+            <select
+              className="settings-select"
+              value={
+                scheduleKind === 'at'
+                  ? 'at'
+                  : scheduleKind === 'every'
+                    ? 'every'
+                    : fixedCronPreset
+              }
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === 'at') {
+                  setScheduleKind('at');
+                } else if (value === 'every') {
+                  setScheduleKind('every');
+                } else {
+                  setScheduleKind('cron');
+                  setFixedCronPreset(value as FixedCronPreset);
+                }
+              }}
+            >
+              <option value="at">不重复</option>
+              <option value="daily">每天</option>
+              <option value="weekdays">每个工作日</option>
+              <option value="weekly">每周</option>
+              <option value="every">每隔一段时间</option>
+              <option value="custom">自定义 Cron</option>
+            </select>
+
+            {scheduleKind === 'at' ? (
+              <input
+                className="settings-input"
+                type="datetime-local"
+                value={taskAtValue}
+                onChange={(event) => setTaskAtValue(event.target.value)}
+              />
+            ) : scheduleKind === 'every' ? (
+              <div className="settings-cron-interval">
+                <span className="settings-inline-note">每隔</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min={1}
+                  value={Math.max(1, Math.round(everySeconds / 60))}
+                  onChange={(event) =>
+                    setEverySeconds(Math.max(1, Number(event.target.value) || 1) * 60)
+                  }
+                />
+                <span className="settings-inline-note">分钟</span>
+              </div>
+            ) : fixedCronPreset === 'custom' ? (
+              <input
+                className="settings-input"
+                type="text"
+                placeholder="0 9 * * 1-5"
+                value={cronExpr}
+                onChange={(event) => setCronExpr(event.target.value)}
+              />
+            ) : (
+              <>
+                {fixedCronPreset === 'weekly' ? (
+                  <select
+                    className="settings-select"
+                    value={weeklyDay}
+                    onChange={(event) => setWeeklyDay(event.target.value)}
+                  >
+                    {WEEKDAY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <input
+                  className="settings-input"
+                  type="time"
+                  value={fixedTime}
+                  onChange={(event) => setFixedTime(event.target.value)}
+                />
+              </>
+            )}
+          </div>
+          {scheduleKind === 'cron' ? (
+            <div className="settings-cron-preview">
+              <span>{cronPreview}</span>
+              <code>{cronGeneratedExpr || '--'}</code>
+            </div>
+          ) : null}
+        </div>
+
+        <Field label="结果投递">
+          <select
+            className="settings-select"
+            value={taskTargetSessionId}
+            onChange={(event) => setTaskTargetSessionId(event.target.value)}
+          >
+            <option value={TASK_RESULTS_SESSION_ID}>任务结果会话（推荐）</option>
+            {sessionOptions.map((session) => (
+              <option key={session.id} value={session.id}>
+                {session.label}
+              </option>
+            ))}
+            <option value="">仅执行，不发送到聊天窗口</option>
+          </select>
+        </Field>
+
+        <button
+          className="settings-mcp-advanced-toggle"
+          onClick={() => setCronAdvancedOpen((value) => !value)}
+          type="button"
+        >
+          {cronAdvancedOpen ? '▾ 收起高级设置' : '▸ 高级设置'}
+        </button>
+
+        {cronAdvancedOpen ? (
+          <div className="settings-mcp-advanced">
+            <Field label="时区" copy="使用 IANA 名称，例如 Asia/Shanghai、UTC。">
+              <input
+                className="settings-input"
+                type="text"
+                value={taskTimezone}
+                onChange={(event) => setTaskTimezone(event.target.value)}
+              />
+            </Field>
+          </div>
+        ) : null}
+
+        <div className="settings-actions settings-mcp-editor__actions">
+          <button
+            className="settings-button-secondary"
+            onClick={closeCronEditor}
+            type="button"
+          >
+            取消
+          </button>
+          <button
+            className="settings-button"
+            disabled={savingSection === 'automation'}
+            onClick={() => void handleSaveCronJob()}
+            type="button"
+          >
+            {savingSection === 'automation' ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderAutomationCenter = () => {
     if (cronLoading && !cronStatus) {
       return <div className="settings-loading">正在加载定时任务...</div>;
@@ -2993,224 +3783,129 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
     return (
       <div className="settings-section">
-        <div className="settings-metrics">
-          <Metric label="运行状态" value={cronStatus?.enabled ? '运行中' : '未启动'} />
-          <Metric label="已启用任务" value={`${activeCronJobs.length} 个`} />
-          <Metric label="下次执行" value={nextCronJob ? formatTimestamp(nextCronJob.state.next_run_at_ms) : '--'} />
+        <div className="settings-mcp-toolbar">
+          <div className="settings-cron-tabs">
+            <button
+              className={`settings-cron-tab ${cronTab === 'scheduled' ? 'is-active' : ''}`}
+              onClick={() => setCronTab('scheduled')}
+              type="button"
+            >
+              已定时
+            </button>
+            <button
+              className={`settings-cron-tab ${cronTab === 'completed' ? 'is-active' : ''}`}
+              onClick={() => setCronTab('completed')}
+              type="button"
+            >
+              已完成
+            </button>
+          </div>
+          <div className="settings-mcp-toolbar__actions">
+            <button
+              className="settings-button"
+              onClick={() => openCronEditor()}
+              type="button"
+            >
+              + 新建定时计划
+            </button>
+          </div>
         </div>
 
-        <div className="settings-grid">
-          <section className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>任务列表</h3>
-              <p>这里可以统一查看、启停、立即执行和删除现有自动化任务。</p>
+        {visibleCronJobs.length === 0 ? (
+          <div className="settings-mcp-empty">
+            <div className="settings-mcp-empty__title">
+              {cronTab === 'scheduled' ? '暂无定时任务' : '暂无已完成任务'}
             </div>
-            {cronJobs.length === 0 ? (
-              <div className="settings-empty">还没有自动化任务。先在右侧创建一个试试看。</div>
-            ) : (
-              <div className="settings-job-list">
-                {cronJobs.map((job) => (
-                  <article className="settings-job-card" key={job.id}>
-                    <div className="settings-list-head">
-                      <div>
-                        <div className="settings-provider-name">{job.name}</div>
-                        <div className="settings-badges">
-                          <span className={`settings-badge ${job.enabled ? 'active' : ''}`}>
-                            {job.enabled ? '已启用' : '已暂停'}
-                          </span>
-                          <span className="settings-badge">{job.schedule.label}</span>
-                          <span className="settings-badge">
-                            {job.deliver ? `发送到：${sessionLabelMap[job.to || ''] || job.to}` : '仅执行不发送'}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="settings-inline-note">#{job.id}</span>
-                    </div>
-                    <div className="settings-job-message">{job.message}</div>
-                    <div className="settings-job-facts">
-                      <span>下次执行：{formatTimestamp(job.state.next_run_at_ms)}</span>
-                      <span>最近执行：{formatTimestamp(job.state.last_run_at_ms)}</span>
-                      <span>最近状态：{job.state.last_status || '--'}</span>
-                    </div>
-                    {job.state.last_error ? (
-                      <div className="settings-inline-error">{job.state.last_error}</div>
-                    ) : null}
-                    <div className="settings-actions">
-                      <button
-                        className="settings-button"
-                        disabled={cronActioningId === job.id}
-                        onClick={() => void handleRunCronJob(job.id)}
-                        type="button"
-                      >
-                        立即执行
-                      </button>
-                      <button
-                        className="settings-button-secondary"
-                        disabled={cronActioningId === job.id}
-                        onClick={() => void handleToggleCronJob(job)}
-                        type="button"
-                      >
-                        {job.enabled ? '暂停任务' : '启用任务'}
-                      </button>
-                      <button
-                        className="settings-button-danger"
-                        disabled={cronActioningId === job.id}
-                        onClick={() => void handleDeleteCronJob(job.id)}
-                        type="button"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>新建任务</h3>
-              <p>把重复动作整理成稳定的自动化流程，让 TokenMind 按计划主动执行。</p>
+            <div className="settings-mcp-empty__hint">
+              {cronTab === 'scheduled'
+                ? '点击右上角 “+ 新建定时计划” 创建你的第一个自动化任务。'
+                : '一次性任务执行完成后会出现在这里。'}
             </div>
-            <div className="settings-grid one">
-              <Field label="任务名称" copy="给这个自动化起一个一眼能懂的名字。">
-                <input className="settings-input" type="text" value={taskName} onChange={(event) => setTaskName(event.target.value)} />
-              </Field>
-              <Field label="执行内容" copy="这里填写任务执行时要完成的自然语言说明。">
-                <textarea className="settings-textarea" value={taskMessage} onChange={(event) => setTaskMessage(event.target.value)} />
-              </Field>
+          </div>
+        ) : (
+          <div className="settings-cron-table">
+            <div className="settings-cron-row settings-cron-row--head">
+              <span>标题</span>
+              <span>计划于</span>
+              <span>状态</span>
+              <span></span>
             </div>
-
-            <div className="settings-segmented">
-              {[
-                ['every', '间隔执行'],
-                ['cron', '固定时间'],
-                ['at', '单次执行'],
-              ].map(([kind, label]) => (
-                <button
-                  key={kind}
-                  className={`settings-segmented-button ${scheduleKind === kind ? 'active' : ''}`}
-                  onClick={() => setScheduleKind(kind as TasksScheduleKind)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {scheduleKind === 'every' ? (
-              <div className="settings-grid one">
-                <Field label="间隔秒数" copy="例如 3600 表示每小时执行一次。">
-                  <input
-                    className="settings-input"
-                    min={1}
-                    onChange={(event) => setEverySeconds(Number(event.target.value) || 1)}
-                    type="number"
-                    value={everySeconds}
-                  />
-                </Field>
-              </div>
-            ) : null}
-
-            {scheduleKind === 'cron' ? (
-              <>
-                <div className="settings-segmented settings-segmented--wrap">
-                  {[
-                    ['daily', '每天'],
-                    ['weekdays', '工作日'],
-                    ['weekly', '每周'],
-                    ['custom', '高级 Cron'],
-                  ].map(([preset, label]) => (
+            {visibleCronJobs.map((job) => {
+              const scheduleText =
+                job.schedule.kind === 'at' && job.schedule.at_ms
+                  ? formatTimestamp(job.schedule.at_ms)
+                  : job.schedule.label || '--';
+              return (
+                <div className="settings-cron-row" key={job.id}>
+                  <button
+                    className="settings-cron-row__title"
+                    onClick={() => openCronEditor(job)}
+                    type="button"
+                    title="点击编辑"
+                  >
+                    {job.name}
+                  </button>
+                  <span className="settings-cron-row__schedule">{scheduleText}</span>
+                  <button
+                    className={`settings-toggle ${job.enabled ? 'on' : ''}`}
+                    disabled={cronActioningId === job.id}
+                    onClick={() => void handleToggleCronJob(job)}
+                    type="button"
+                    aria-label={job.enabled ? '点击停用' : '点击启用'}
+                  >
+                    {job.enabled ? '已启用' : '已停用'}
+                  </button>
+                  <div className="settings-cron-row__menu">
                     <button
-                      key={preset}
-                      className={`settings-segmented-button ${fixedCronPreset === preset ? 'active' : ''}`}
-                      onClick={() => setFixedCronPreset(preset as FixedCronPreset)}
+                      className="settings-cron-menu-trigger"
+                      onClick={() =>
+                        setCronMenuOpenId((current) => (current === job.id ? null : job.id))
+                      }
                       type="button"
+                      aria-label="更多操作"
                     >
-                      {label}
+                      ⋯
                     </button>
-                  ))}
+                    {cronMenuOpenId === job.id ? (
+                      <div className="settings-cron-menu">
+                        <button
+                          onClick={() => {
+                            setCronMenuOpenId(null);
+                            void handleRunCronJob(job.id);
+                          }}
+                          type="button"
+                        >
+                          立即执行
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCronMenuOpenId(null);
+                            openCronEditor(job);
+                          }}
+                          type="button"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          className="settings-cron-menu__danger"
+                          onClick={() => {
+                            setCronMenuOpenId(null);
+                            void handleDeleteCronJob(job.id);
+                          }}
+                          type="button"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="settings-grid">
-                  {fixedCronPreset === 'weekly' ? (
-                    <Field label="每周哪一天" copy="固定每周的某一天执行。">
-                      <select className="settings-select" value={weeklyDay} onChange={(event) => setWeeklyDay(event.target.value)}>
-                        {WEEKDAY_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                  ) : null}
-                  <Field label={fixedCronPreset === 'custom' ? 'Cron 表达式' : '执行时间'} copy="支持本地时区显示和固定时刻预览。">
-                    {fixedCronPreset === 'custom' ? (
-                      <input
-                        className="settings-input"
-                        onChange={(event) => setCronExpr(event.target.value)}
-                        placeholder="0 9 * * 1-5"
-                        type="text"
-                        value={cronExpr}
-                      />
-                    ) : (
-                      <input className="settings-input" onChange={(event) => setFixedTime(event.target.value)} type="time" value={fixedTime} />
-                    )}
-                  </Field>
-                  <Field label="时区" copy="默认使用 Asia/Shanghai。">
-                    <input className="settings-input" onChange={(event) => setTaskTimezone(event.target.value)} type="text" value={taskTimezone} />
-                  </Field>
-                </div>
-                <div className="settings-preview-card">
-                  <strong>执行预览</strong>
-                  <span>{cronPreview}</span>
-                  <code>{cronGeneratedExpr || '--'}</code>
-                </div>
-              </>
-            ) : null}
+              );
+            })}
+          </div>
+        )}
 
-            {scheduleKind === 'at' ? (
-              <div className="settings-grid one">
-                <Field label="执行时间" copy="一次性任务会在指定时刻触发后自动结束。">
-                  <input
-                    className="settings-input"
-                    onChange={(event) => setTaskAtValue(event.target.value)}
-                    type="datetime-local"
-                    value={taskAtValue}
-                  />
-                </Field>
-              </div>
-            ) : null}
-
-            <div className="settings-grid one">
-              <Field label="结果投递" copy="执行结果默认发送到任务结果会话，也可以选择已有会话。">
-                <select
-                  className="settings-select"
-                  onChange={(event) => setTaskTargetSessionId(event.target.value)}
-                  value={taskTargetSessionId}
-                >
-                  <option value={TASK_RESULTS_SESSION_ID}>任务结果会话（推荐）</option>
-                  {sessionOptions.map((session) => (
-                    <option key={session.id} value={session.id}>
-                      {session.label}
-                    </option>
-                  ))}
-                  <option value="">仅执行，不发送到聊天窗口</option>
-                </select>
-              </Field>
-            </div>
-
-            <div className="settings-actions">
-              <button
-                className="settings-button"
-                disabled={savingSection === 'automation'}
-                onClick={() => void handleCreateTask()}
-                type="button"
-              >
-                {savingSection === 'automation' ? '正在创建' : '创建任务'}
-              </button>
-            </div>
-          </section>
-        </div>
+        {cronEditorOpen ? renderCronEditor() : null}
       </div>
     );
   };
@@ -3350,8 +4045,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                             key={`${file.path}-${reference.session_id}`}
                             className="settings-reference-pill"
                             onClick={() => {
-                              setCurrentSession(reference.session_id);
-                              onClose();
+                              navigateToSession(reference.session_id);
                             }}
                             type="button"
                           >
@@ -3812,8 +4506,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                             key={`${file.path}-${reference.session_id}`}
                             className="settings-reference-pill"
                             onClick={() => {
-                              setCurrentSession(reference.session_id);
-                              onClose();
+                              navigateToSession(reference.session_id);
                             }}
                             type="button"
                           >
@@ -3968,8 +4661,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                             key={`${file.path}-${reference.session_id}`}
                             className="settings-reference-pill"
                             onClick={() => {
-                              setCurrentSession(reference.session_id);
-                              onClose();
+                              navigateToSession(reference.session_id);
                             }}
                             type="button"
                           >
@@ -4000,17 +4692,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
     return (
       <div className="settings-section">
-        <div className="settings-metrics">
-          <Metric label="发送进度" value={runtimeDraft.channels.send_progress ? '开启' : '关闭'} />
-          <Metric label="网关地址" value={`${runtimeDraft.gateway.host}:${runtimeDraft.gateway.port}`} />
-          <Metric
-            label="心跳状态"
-            value={
-              runtimeDraft.gateway.heartbeat.enabled
-                ? `${runtimeDraft.gateway.heartbeat.interval_s} 秒`
-                : '关闭'
-            }
-          />
+        <div className="settings-mcp-toolbar">
+          <div className="settings-mcp-toolbar__text">
+            <h3>运行时与渠道</h3>
+            <p>控制 Web 服务监听、心跳，以及外部渠道能看到的中间过程。</p>
+          </div>
+          <div className="settings-mcp-toolbar__actions">
+            <button
+              className="settings-button"
+              disabled={savingSection === 'runtime'}
+              onClick={() => void handleSaveRuntime()}
+              type="button"
+            >
+              {savingSection === 'runtime' ? '保存中…' : '保存'}
+            </button>
+          </div>
         </div>
 
         <div className="settings-grid">
@@ -4157,16 +4853,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           </div>
         </div>
 
-        <div className="settings-actions">
-          <button
-            className="settings-button"
-            disabled={savingSection === 'runtime'}
-            onClick={() => void handleSaveRuntime()}
-            type="button"
-          >
-            保存运行时配置
-          </button>
-        </div>
       </div>
     );
   };
@@ -4178,147 +4864,372 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
     return (
       <div className="settings-section">
-        <div className="settings-metrics">
-          <Metric label="已登记服务" value={`${mcpEntries.length} 个`} />
-          <Metric label="已连通服务" value={`${connectedMcpCount} 个`} />
-          <Metric
-            label="当前工具数"
-            value={selectedMcpName ? `${selectedMcpProbe?.tool_count || 0} 个` : '--'}
-          />
+        <div className="settings-mcp-toolbar">
+          <div className="settings-mcp-toolbar__text">
+            <h3>MCP 服务</h3>
+            <p>把外部工具（数据库、文件系统、API 等）通过 MCP 协议接入 TokenMind。</p>
+          </div>
+          <div className="settings-mcp-toolbar__actions">
+            <button
+              className="settings-button-secondary"
+              disabled={loadingMcpCatalog || mcpEntries.length === 0}
+              onClick={() => void loadMcpCatalog()}
+              type="button"
+            >
+              {loadingMcpCatalog ? '刷新中…' : '刷新工具'}
+            </button>
+            <button
+              className="settings-button-secondary"
+              onClick={() => {
+                setMcpJsonImportText('');
+                setMcpJsonImportError(null);
+                setMcpJsonImportOpen(true);
+              }}
+              type="button"
+            >
+              JSON 导入
+            </button>
+            <button
+              className="settings-button"
+              onClick={() => openMcpEditor(null)}
+              type="button"
+            >
+              + 添加 MCP 服务
+            </button>
+          </div>
         </div>
 
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>MCP 工具总览</h3>
-            <p>这里展示的是当前 MCP 服务实时探测到的工具列表，方便直接核对接入结果。</p>
-          </div>
-
-          <div className="settings-split">
-            <div className="settings-list">
-              {mcpEntries.length === 0 ? (
-                <div className="settings-empty">当前还没有 MCP 服务配置。</div>
-              ) : (
-                mcpEntries.map(([name, server]) => (
-                  <button
-                    className={`settings-list-item ${selectedMcpName === name ? 'active' : ''}`}
-                    key={name}
-                    onClick={() => setSelectedMcpName(name)}
-                    type="button"
-                  >
-                    <div className="settings-list-head">
-                      <div>
-                        <div className="settings-provider-name">{name}</div>
-                        <div className="settings-provider-desc">
-                          {(mcpCatalog[name]?.transport_type || server.type || 'auto') +
-                            ' · ' +
-                            (server.command || server.url || '未填写地址')}
-                        </div>
-                        <div className="settings-badges">
-                          <span
-                            className={`settings-badge ${
-                              getMcpConnectionTone(mcpCatalog[name]) === 'connected'
-                                ? 'active'
-                                : getMcpConnectionTone(mcpCatalog[name]) === 'error'
-                                  ? 'error'
-                                  : ''
-                            }`}
-                          >
-                            {getMcpConnectionLabel(mcpCatalog[name])}
-                          </span>
-                          <span className="settings-badge">
-                            {mcpCatalog[name]?.tool_count || 0} 个工具
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
+        {mcpEntries.length === 0 ? (
+          <div className="settings-mcp-empty">
+            <div className="settings-mcp-empty__title">还没有配置任何 MCP 服务</div>
+            <div className="settings-mcp-empty__hint">
+              点击右上角 “+ 添加 MCP 服务” 开始配置，或粘贴 Claude Desktop 的 JSON 一键导入。
             </div>
-
-            <div className="settings-mcp-main">
-              <div className="settings-panel settings-mcp-overview">
-                <div className="settings-mcp-overview-row">
-                  <div className="settings-mcp-overview-text">
-                    <div className="settings-mcp-status">
-                      <span
-                        className={`settings-mcp-status-dot ${getMcpConnectionTone(selectedMcpProbe)}`}
-                      />
-                      <div>
-                        <div className="settings-provider-name">
-                          {selectedMcpName || '先选择一个 MCP 服务'}
-                        </div>
-                        <div className="settings-inline-note">
-                          {!selectedMcpName
-                            ? '左侧选择一个已保存的 MCP 服务，或先创建并保存后再来查看工具。'
-                            : selectedMcpProbe?.status === 'connected'
-                              ? `已探测到 ${selectedMcpProbe.tool_count} 个工具，其中 ${selectedMcpProbe.enabled_count} 个在当前配置下可用。`
-                              : selectedMcpProbe?.error ||
-                                '还没有拿到实时探测结果，点击右侧按钮刷新即可。'}
-                        </div>
+          </div>
+        ) : (
+          <div className="settings-mcp-grid">
+            {mcpEntries.map(([name, server]) => {
+              const probe = mcpCatalog[name];
+              const tone = getMcpConnectionTone(probe);
+              const transportLabel =
+                probe?.transport_type ||
+                (server.type === 'streamableHttp'
+                  ? 'HTTP'
+                  : server.type === 'sse'
+                    ? 'SSE'
+                    : server.type === 'stdio'
+                      ? '本地命令'
+                      : '自动识别');
+              return (
+                <div
+                  className={`settings-mcp-card ${server.enabled === false ? 'is-disabled' : ''}`}
+                  key={name}
+                >
+                  <div className="settings-mcp-card__head">
+                    <div className="settings-mcp-card__icon">
+                      {server.icon ? (
+                        <img src={server.icon} alt="" />
+                      ) : (
+                        <span>{name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="settings-mcp-card__title">
+                      <div className="settings-mcp-card__name">{name}</div>
+                      <div className="settings-mcp-card__transport">
+                        {transportLabel} · {server.url || server.command || '未填写地址'}
                       </div>
                     </div>
-
-                    {selectedMcpName ? (
-                      <div className="settings-mcp-facts">
-                        <span className="settings-badge">
-                          传输方式：{selectedMcpProbe?.transport_type || mcpForm.type || '自动识别'}
-                        </span>
-                        <span className="settings-badge">
-                          允许范围：{mcpForm.enabledToolsText || '*'}
-                        </span>
-                      </div>
-                    ) : null}
+                    <button
+                      className={`settings-toggle ${server.enabled !== false ? 'on' : ''}`}
+                      onClick={() => void handleToggleMcpEnabled(name, !(server.enabled !== false))}
+                      type="button"
+                      aria-label={server.enabled !== false ? '点击停用' : '点击启用'}
+                    >
+                      {server.enabled !== false ? '已启用' : '已停用'}
+                    </button>
                   </div>
 
+                  {server.notes ? (
+                    <div className="settings-mcp-card__notes">{server.notes}</div>
+                  ) : null}
+
+                  <div className="settings-mcp-card__meta">
+                    <span className={`settings-badge ${tone === 'connected' ? 'active' : tone === 'error' ? 'error' : ''}`}>
+                      {getMcpConnectionLabel(probe)}
+                    </span>
+                    <span className="settings-badge">{probe?.tool_count || 0} 个工具</span>
+                  </div>
+
+                  <div className="settings-mcp-card__actions">
+                    <button
+                      className="settings-button-secondary"
+                      onClick={() => openMcpEditor(name)}
+                      type="button"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      className="settings-button-danger"
+                      disabled={savingSection === 'mcp'}
+                      onClick={() => void handleDeleteMcp(name)}
+                      type="button"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {mcpEditorOpen ? renderMcpEditor() : null}
+        {renderMcpJsonImport()}
+      </div>
+    );
+  };
+
+  const renderChannelEditor = () => {
+    if (!channelEditorName || !channelCatalog) {
+      return null;
+    }
+    const entry = channelCatalog.find((item) => item.name === channelEditorName);
+    if (!entry) {
+      return null;
+    }
+
+    const stringValue = (key: string): string => {
+      const v = channelDraft[key];
+      if (v == null) return '';
+      if (Array.isArray(v)) return v.join(', ');
+      return String(v);
+    };
+
+    const setField = (key: string, value: unknown) => {
+      setChannelDraft((current) => ({ ...current, [key]: value }));
+    };
+
+    const missingRequired = entry.required.filter((field) => {
+      const v = channelDraft[field];
+      return v == null || (typeof v === 'string' && !v.trim());
+    });
+    const canEnable = missingRequired.length === 0;
+
+    const fieldLabels: Record<string, string> = {
+      app_id: 'App ID',
+      app_secret: 'App Secret',
+      client_id: 'Client ID',
+      client_secret: 'Client Secret',
+      bot_id: 'Bot ID',
+      secret: 'Secret',
+      encrypt_key: 'Encrypt Key（可选）',
+      verification_token: 'Verification Token（可选）',
+      welcome_message: '欢迎语（可选）',
+      msg_format: '消息格式',
+      base_url: 'Mochat 地址',
+      claw_token: 'Claw Token',
+      agent_user_id: '机器人用户 ID',
+      allow_from: '允许的用户 / 群（多个用逗号分隔，* 表示全部）',
+    };
+
+    const renderField = (fieldKey: string) => {
+      const label = fieldLabels[fieldKey] || fieldKey;
+
+      if (fieldKey === 'msg_format') {
+        return (
+          <Field label={label} key={fieldKey}>
+            <select
+              className="settings-select"
+              value={stringValue(fieldKey) || 'plain'}
+              onChange={(event) => setField(fieldKey, event.target.value)}
+            >
+              <option value="plain">纯文本</option>
+              <option value="markdown">Markdown</option>
+            </select>
+          </Field>
+        );
+      }
+
+      if (fieldKey === 'allow_from') {
+        return (
+          <Field label={label} key={fieldKey}>
+            <input
+              className="settings-input"
+              type="text"
+              value={stringValue(fieldKey)}
+              onChange={(event) =>
+                setField(
+                  fieldKey,
+                  event.target.value
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                )
+              }
+              placeholder="* 或 user_id1, user_id2"
+            />
+          </Field>
+        );
+      }
+
+      const isSecret =
+        fieldKey.includes('secret') ||
+        fieldKey.includes('token') ||
+        fieldKey === 'encrypt_key';
+      const isMultiline = fieldKey === 'welcome_message';
+
+      return (
+        <Field label={label} key={fieldKey}>
+          {isMultiline ? (
+            <textarea
+              className="settings-textarea"
+              value={stringValue(fieldKey)}
+              onChange={(event) => setField(fieldKey, event.target.value)}
+            />
+          ) : (
+            <input
+              className="settings-input"
+              type={isSecret ? 'password' : 'text'}
+              value={stringValue(fieldKey)}
+              onChange={(event) => setField(fieldKey, event.target.value)}
+              placeholder={isSecret ? '请输入' : ''}
+            />
+          )}
+        </Field>
+      );
+    };
+
+    return (
+      <div className="settings-mcp-editor">
+        <div className="settings-mcp-editor__head">
+          <div>
+            <h3>{entry.label}</h3>
+            <div className="settings-inline-note">{entry.description}</div>
+          </div>
+          <button
+            className="settings-mcp-editor__close"
+            onClick={closeChannelEditor}
+            type="button"
+            aria-label="关闭编辑器"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="settings-cron-toggle-row">
+          <div className="settings-toggle-text">
+            <strong>启用此渠道</strong>
+            <span>
+              {!canEnable && !channelDraft.enabled
+                ? `请先填写：${missingRequired.join('、')}`
+                : '启用后，TokenMind 会尝试连接此渠道并接收消息。'}
+            </span>
+          </div>
+          <button
+            className={`settings-toggle ${channelDraft.enabled ? 'on' : ''}`}
+            disabled={!canEnable && !channelDraft.enabled}
+            onClick={() => setField('enabled', !channelDraft.enabled)}
+            type="button"
+            title={!canEnable && !channelDraft.enabled ? '请先填写必填项' : undefined}
+          >
+            {channelDraft.enabled ? '已启用' : '已停用'}
+          </button>
+        </div>
+
+        {entry.fields.map(renderField)}
+
+        <div className="settings-actions settings-mcp-editor__actions">
+          <button
+            className="settings-button-secondary"
+            onClick={closeChannelEditor}
+            type="button"
+          >
+            取消
+          </button>
+          <button
+            className="settings-button"
+            disabled={channelSavingName === channelEditorName}
+            onClick={() => void handleSaveChannel()}
+            type="button"
+          >
+            {channelSavingName === channelEditorName ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderChannels = () => {
+    if (channelLoading && !channelCatalog) {
+      return <div className="settings-loading">正在加载渠道…</div>;
+    }
+    const items = channelCatalog ?? [];
+
+    return (
+      <div className="settings-section">
+        <div className="settings-mcp-toolbar">
+          <div className="settings-mcp-toolbar__text">
+            <h3>外部渠道接入</h3>
+            <p>把 TokenMind 接到飞书 / 钉钉 / 企业微信 / QQ / 个微，让你在这些应用里直接对话。</p>
+          </div>
+        </div>
+
+        <div className="settings-mcp-grid">
+          {items.map((entry) => {
+            const isConfigured = entry.required.every((field) => {
+              const v = entry.config[field];
+              return typeof v === 'string' && v.trim().length > 0;
+            });
+            const toggleDisabled =
+              channelSavingName === entry.name || (!isConfigured && !entry.enabled);
+            return (
+              <div
+                className={`settings-mcp-card ${entry.enabled ? '' : 'is-disabled'}`}
+                key={entry.name}
+              >
+                <div className="settings-mcp-card__head">
+                  <div className="settings-mcp-card__icon settings-tools-card__icon">
+                    {entry.label.charAt(0)}
+                  </div>
+                  <div className="settings-mcp-card__title">
+                    <div className="settings-mcp-card__name">{entry.label}</div>
+                    <div className="settings-mcp-card__transport">
+                      {entry.enabled
+                        ? '已配置启用'
+                        : isConfigured
+                          ? '已配置 · 待启用'
+                          : '未配置'}
+                    </div>
+                  </div>
+                  <button
+                    className={`settings-toggle ${entry.enabled ? 'on' : ''}`}
+                    disabled={toggleDisabled}
+                    onClick={() => void handleToggleChannel(entry, !entry.enabled)}
+                    type="button"
+                    aria-label={entry.enabled ? '点击停用' : '点击启用'}
+                    title={!isConfigured && !entry.enabled ? '请先点「配置」填写必填项' : undefined}
+                  >
+                    {entry.enabled ? '已启用' : '已停用'}
+                  </button>
+                </div>
+
+                <div className="settings-mcp-card__notes">{entry.description}</div>
+
+                <div className="settings-mcp-card__actions">
                   <button
                     className="settings-button-secondary"
-                    disabled={loadingMcpCatalog || mcpEntries.length === 0}
-                    onClick={() => void loadMcpCatalog()}
+                    onClick={() => openChannelEditor(entry)}
                     type="button"
                   >
-                    {loadingMcpCatalog ? '正在刷新' : '刷新工具列表'}
+                    配置
                   </button>
                 </div>
               </div>
-
-              {!selectedMcpName ? (
-                <div className="settings-empty">
-                  当前还没有选中 MCP 服务。你可以先在下方服务配置里保存一条服务，然后再回来刷新工具列表。
-                </div>
-              ) : selectedMcpProbe?.status === 'error' ? (
-                <div className="settings-empty">
-                  {selectedMcpProbe.error || '当前服务连接失败，请检查命令、URL、Headers 或环境变量。'}
-                </div>
-              ) : loadingMcpCatalog && !selectedMcpProbe ? (
-                <div className="settings-empty">正在探测 MCP 工具列表...</div>
-              ) : selectedMcpProbe && selectedMcpProbe.tools.length > 0 ? (
-                <div className="settings-mcp-tool-grid">
-                  {selectedMcpProbe.tools.map((tool) => (
-                    <div className="settings-mcp-tool-card" key={tool.wrapped_name}>
-                      <div className="settings-list-head">
-                        <div>
-                          <div className="settings-provider-name">{tool.name}</div>
-                          <div className="settings-mcp-tool-call">{tool.wrapped_name}</div>
-                        </div>
-                        <span className={`settings-badge ${tool.enabled ? 'active' : ''}`}>
-                          {tool.enabled ? '已允许' : '未允许'}
-                        </span>
-                      </div>
-                      <div className="settings-mcp-tool-desc">
-                        {tool.description || '这个工具没有提供额外说明。'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="settings-empty">当前服务已连接，但还没有探测到任何工具。</div>
-              )}
-            </div>
-          </div>
+            );
+          })}
         </div>
 
-        <div className="settings-mcp-config">{renderMcp()}</div>
+        {renderChannelEditor()}
       </div>
     );
   };
@@ -4331,82 +5242,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
       return <div className="settings-notice error">{skillsError}</div>;
     }
     const items = skills ?? [];
-    if (items.length === 0) {
-      return (
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>还没有安装技能</h3>
+    const enabledCount = items.filter((item) => item.enabled).length;
+
+    return (
+      <div className="settings-section">
+        <div className="settings-mcp-toolbar">
+          <div className="settings-mcp-toolbar__text">
+            <h3>智能体技能</h3>
             <p>
-              在工作区的 <code>skills/</code> 目录下放入带有 SKILL.md 的文件夹后，它会自动出现在这里。
+              {items.length === 0
+                ? '在工作区的 skills/ 目录下放入带 SKILL.md 的文件夹后，它会自动出现在这里。'
+                : `共 ${items.length} 个技能，已启用 ${enabledCount} 个。停用后智能体不会在系统提示里看到这个技能。`}
             </p>
           </div>
         </div>
-      );
-    }
 
-    const enabledCount = items.filter((item) => item.enabled).length;
-    return (
-      <div className="settings-section">
-        <div className="settings-panel">
-          <div className="settings-panel-header">
-            <h3>已安装技能</h3>
-            <p>
-              共 {items.length} 个技能，当前启用 {enabledCount} 个。停用后智能体不会在系统提示里看到这个技能，也不会主动调用。
-            </p>
+        {items.length === 0 ? (
+          <div className="settings-mcp-empty">
+            <div className="settings-mcp-empty__title">还没有安装技能</div>
+            <div className="settings-mcp-empty__hint">
+              将带有 <code>SKILL.md</code> 的目录放进 <code>workspace/skills/</code>，刷新即可加载。
+            </div>
           </div>
-          <div className="settings-list">
+        ) : (
+          <div className="settings-mcp-grid">
             {items.map((item) => {
               const busy = togglingSkill === item.name;
               return (
-                <div key={item.name} className="settings-list-item">
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      gap: 14,
-                    }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          marginBottom: 4,
-                        }}
-                      >
-                        {item.emoji ? <span style={{ fontSize: 14 }}>{item.emoji}</span> : null}
-                        <strong
-                          style={{
-                            color: 'var(--text)',
-                            fontSize: 13,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {item.name}
-                        </strong>
-                        <span className={`settings-badge ${item.source === 'workspace' ? 'active' : ''}`}>
-                          {item.source === 'workspace' ? '工作区' : '内置'}
-                        </span>
-                        {item.always ? (
-                          <span className="settings-badge">始终加载</span>
-                        ) : null}
-                        {!item.available ? (
-                          <span className="settings-badge error">
-                            缺少依赖{item.missing_requirements ? ` · ${item.missing_requirements}` : ''}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div
-                        style={{
-                          color: 'var(--muted)',
-                          fontSize: 12,
-                          lineHeight: 1.55,
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {item.description}
+                <div
+                  key={item.name}
+                  className={`settings-mcp-card ${item.enabled ? '' : 'is-disabled'}`}
+                >
+                  <div className="settings-mcp-card__head">
+                    <div className="settings-mcp-card__icon">
+                      {item.emoji ? (
+                        <span>{item.emoji}</span>
+                      ) : (
+                        <span>{item.name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="settings-mcp-card__title">
+                      <div className="settings-mcp-card__name">{item.name}</div>
+                      <div className="settings-mcp-card__transport">
+                        {item.source === 'workspace' ? '工作区' : '内置'}
+                        {item.always ? ' · 始终加载' : ''}
                       </div>
                     </div>
                     <button
@@ -4414,16 +5293,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                       className={`settings-toggle ${item.enabled ? 'on' : ''}`}
                       onClick={() => void toggleSkillEnabled(item, !item.enabled)}
                       disabled={busy}
-                      style={{ flexShrink: 0 }}
+                      aria-label={item.enabled ? '点击停用' : '点击启用'}
                     >
                       {busy ? '处理中…' : item.enabled ? '已启用' : '已停用'}
                     </button>
                   </div>
+
+                  {item.description ? (
+                    <div className="settings-mcp-card__notes">{item.description}</div>
+                  ) : null}
+
+                  {!item.available ? (
+                    <div className="settings-mcp-card__meta">
+                      <span className="settings-badge error">
+                        缺少依赖{item.missing_requirements ? ` · ${item.missing_requirements}` : ''}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
           </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -4444,6 +5335,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         return renderStorageWorkspaceV2();
       case 'mcp':
         return renderMcpPanel();
+      case 'channels':
+        return renderChannels();
       case 'skills':
         return renderSkills();
       case 'runtime':
@@ -4454,34 +5347,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   };
 
   return (
-    <div
-      className="settings-overlay"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div className="settings-modal settings-modal--manus" onClick={(event) => event.stopPropagation()}>
+    <div className="settings-page">
+      <div className="settings-modal settings-modal--manus settings-modal--inline">
         <aside className="settings-sidebar">
-          <div className="settings-profile-card">
-            <div className="settings-profile-card__avatar">
-              <BrandMark size={18} alt="TokenMind 标志" variant="icon" />
-            </div>
-            <div className="settings-profile-card__body">
-              <div className="settings-profile-card__name">TokenMind</div>
-              <div className="settings-profile-card__role">系统设置</div>
-            </div>
-            <div className="settings-profile-card__chevron" aria-hidden="true">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <path d="M5.5 3.5 10 8l-4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+          {onNavigateBack ? (
+            <button
+              className="settings-sidebar-back"
+              onClick={onNavigateBack}
+              type="button"
+              title="返回聊天"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M10 3.5 5.5 8 10 12.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-            </div>
-          </div>
+              <span>返回</span>
+            </button>
+          ) : null}
 
-          <div className="settings-sidebar-divider" />
-
-          <div className="settings-sidebar-group-label">偏好与能力</div>
+          <div className="settings-sidebar-title">设置中心</div>
 
           <nav className="settings-nav">
             {SECTION_META.map((section) => (
@@ -4501,14 +5384,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
               </button>
             ))}
           </nav>
-
-          <button className="settings-sidebar-help" type="button">
-            <span>获取帮助</span>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
-              <path d="M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M10.5 5.5 4.5 11.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
         </aside>
 
         <section className="settings-main">
@@ -4518,9 +5393,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
               <h1>{currentSectionMeta.title}</h1>
               <p>{currentSectionMeta.copy}</p>
             </div>
-            <button aria-label="关闭设置中心" className="settings-close" onClick={onClose} type="button">
-              <CloseIcon />
-            </button>
+            {onClose ? (
+              <button aria-label="关闭设置中心" className="settings-close" onClick={onClose} type="button">
+                <CloseIcon />
+              </button>
+            ) : null}
           </header>
 
           <div className="settings-content">
@@ -4539,3 +5416,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     </div>
   );
 };
+
+interface SettingsPageProps {
+  onNavigateToSession?: (sessionId: string) => void;
+  onNavigateBack?: () => void;
+}
+
+export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigateToSession, onNavigateBack }) => (
+  <SettingsModal onNavigateToSession={onNavigateToSession} onNavigateBack={onNavigateBack} />
+);
