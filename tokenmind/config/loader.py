@@ -114,6 +114,7 @@ def _migrate_config(data: dict) -> dict:
     if workspace in {"~/.tokenmind/workspace", str(legacy_workspace)}:
         defaults["workspace"] = "~/.tokenmind/workspace"
     _adopt_first_configured_provider_for_initial_defaults(migrated)
+    _repair_removed_default_provider(migrated)
     return migrated
 
 
@@ -153,3 +154,28 @@ def _adopt_first_configured_provider_for_initial_defaults(data: dict) -> None:
         defaults["provider"] = provider_name
         defaults["model"] = str(default_model).strip()
         return
+
+
+def _repair_removed_default_provider(data: dict) -> None:
+    """Move stale default providers to the first configured supported provider."""
+    defaults = data.setdefault("agents", {}).setdefault("defaults", {})
+    current_provider = defaults.get("provider", AgentDefaults().provider)
+    if current_provider == "auto" or current_provider in ProvidersConfig.model_fields:
+        return
+
+    providers = data.get("providers", {})
+    if not isinstance(providers, dict):
+        defaults["provider"] = "auto"
+        return
+
+    for provider_name in ProvidersConfig.model_fields:
+        provider_data = providers.get(provider_name)
+        if not isinstance(provider_data, dict) or not _provider_has_connection(provider_data):
+            continue
+        defaults["provider"] = provider_name
+        default_model = _pick(provider_data, "defaultModel", "default_model")
+        if str(default_model or "").strip():
+            defaults["model"] = str(default_model).strip()
+        return
+
+    defaults["provider"] = "auto"

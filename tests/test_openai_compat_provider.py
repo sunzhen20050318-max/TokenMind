@@ -108,30 +108,6 @@ async def test_openrouter_non_claude_models_skip_prompt_caching() -> None:
 
 
 @pytest.mark.asyncio
-async def test_aihubmix_strips_model_prefix() -> None:
-    mock_create = AsyncMock(return_value=_fake_chat_response())
-    spec = find_by_name("aihubmix")
-
-    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
-        client_instance = mock_client.return_value
-        client_instance.chat.completions.create = mock_create
-
-        provider = OpenAICompatProvider(
-            api_key="sk-aihub-test-key",
-            api_base="https://aihubmix.com/v1",
-            default_model="claude-sonnet-4-5",
-            spec=spec,
-        )
-        await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="anthropic/claude-sonnet-4-5",
-        )
-
-    call_kwargs = mock_create.call_args.kwargs
-    assert call_kwargs["model"] == "claude-sonnet-4-5"
-
-
-@pytest.mark.asyncio
 async def test_standard_provider_strips_explicit_provider_prefix() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("deepseek")

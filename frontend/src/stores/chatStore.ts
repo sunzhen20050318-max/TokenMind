@@ -595,16 +595,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         moonshot: 'Moonshot',
         minimax: 'MiniMax',
         ollama: 'Ollama',
-        vllm: 'vLLM',
-        groq: 'Groq',
-        github_copilot: 'GitHub Copilot',
-        openai_codex: 'OpenAI Codex',
-        azure_openai: 'Azure OpenAI',
-        custom: 'Custom',
-        aihubmix: 'AiHubMix',
         siliconflow: 'SiliconFlow',
-        volcengine: 'VolcEngine',
-        byteplus: 'BytePlus',
+        custom: '自定义',
       };
 
       // Show ALL providers from registry, mark configured ones

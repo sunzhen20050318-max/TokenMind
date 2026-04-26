@@ -44,6 +44,10 @@ const PROVIDER_META: Record<
   minimax: { label: 'MiniMax', defaultModel: 'MiniMax-M2.7', mode: 'api' },
   zhipu: { label: 'GLM', defaultModel: 'glm-4', mode: 'api' },
   dashscope: { label: 'Qwen', defaultModel: 'qwen-max', mode: 'api' },
+  openrouter: { label: 'OpenRouter', defaultModel: 'anthropic/claude-sonnet-4-5', mode: 'api' },
+  siliconflow: { label: 'SiliconFlow', defaultModel: 'Qwen/Qwen2.5-7B-Instruct', mode: 'api' },
+  ollama: { label: 'Ollama', defaultModel: 'llama3.2', mode: 'local' },
+  custom: { label: '自定义', defaultModel: 'default', mode: 'api' },
 };
 
 const CREATIVE_CAPABILITY_META: Record<
@@ -484,7 +488,12 @@ function getMcpConnectionLabel(probe?: McpServerToolsState | null): string {
 }
 
 function isProviderConfigured(providerId: string, provider?: ProviderSettings): boolean {
-  void providerId;
+  if (PROVIDER_META[providerId]?.mode === 'local') {
+    return true;
+  }
+  if (providerId === 'custom') {
+    return Boolean((provider?.api_key || '').trim() || (provider?.api_base || '').trim());
+  }
   return Boolean((provider?.api_key || '').trim());
 }
 

@@ -13,7 +13,7 @@ class ProviderSpec:
     name: str
     keywords: tuple[str, ...]
     display_name: str = ""
-    backend: str = "openai_compat"  # openai_compat / anthropic / azure_openai / openai_codex
+    backend: str = "openai_compat"  # openai_compat / anthropic
 
     is_gateway: bool = False
     is_local: bool = False
@@ -44,13 +44,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         is_direct=True,
     ),
     ProviderSpec(
-        name="azure_openai",
-        keywords=("azure", "azure-openai"),
-        display_name="Azure OpenAI",
-        backend="azure_openai",
-        is_direct=True,
-    ),
-    ProviderSpec(
         name="openrouter",
         keywords=("openrouter",),
         display_name="OpenRouter",
@@ -63,16 +56,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         prompt_caching_model_patterns=("claude",),
     ),
     ProviderSpec(
-        name="aihubmix",
-        keywords=("aihubmix",),
-        display_name="AiHubMix",
-        backend="openai_compat",
-        is_gateway=True,
-        detect_by_base_keyword="aihubmix",
-        default_api_base="https://aihubmix.com/v1",
-        strip_model_prefix=True,
-    ),
-    ProviderSpec(
         name="siliconflow",
         keywords=("siliconflow",),
         display_name="SiliconFlow",
@@ -80,43 +63,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         is_gateway=True,
         detect_by_base_keyword="siliconflow",
         default_api_base="https://api.siliconflow.cn/v1",
-    ),
-    ProviderSpec(
-        name="volcengine",
-        keywords=("volcengine", "volces", "ark"),
-        display_name="VolcEngine",
-        backend="openai_compat",
-        is_gateway=True,
-        detect_by_base_keyword="volces",
-        default_api_base="https://ark.cn-beijing.volces.com/api/v3",
-    ),
-    ProviderSpec(
-        name="volcengine_coding_plan",
-        keywords=("volcengine-plan",),
-        display_name="VolcEngine Coding Plan",
-        backend="openai_compat",
-        is_gateway=True,
-        default_api_base="https://ark.cn-beijing.volces.com/api/coding/v3",
-        strip_model_prefix=True,
-    ),
-    ProviderSpec(
-        name="byteplus",
-        keywords=("byteplus",),
-        display_name="BytePlus",
-        backend="openai_compat",
-        is_gateway=True,
-        detect_by_base_keyword="bytepluses",
-        default_api_base="https://ark.ap-southeast.bytepluses.com/api/v3",
-        strip_model_prefix=True,
-    ),
-    ProviderSpec(
-        name="byteplus_coding_plan",
-        keywords=("byteplus-plan",),
-        display_name="BytePlus Coding Plan",
-        backend="openai_compat",
-        is_gateway=True,
-        default_api_base="https://ark.ap-southeast.bytepluses.com/api/coding/v3",
-        strip_model_prefix=True,
     ),
     ProviderSpec(
         name="anthropic",
@@ -132,22 +78,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         display_name="OpenAI",
         backend="openai_compat",
         default_api_base="https://api.openai.com/v1",
-    ),
-    ProviderSpec(
-        name="openai_codex",
-        keywords=("openai-codex",),
-        display_name="OpenAI Codex",
-        backend="openai_codex",
-        default_api_base="https://chatgpt.com/backend-api",
-        is_oauth=True,
-    ),
-    ProviderSpec(
-        name="github_copilot",
-        keywords=("github_copilot", "copilot"),
-        display_name="Github Copilot",
-        backend="openai_compat",
-        default_api_base="https://api.githubcopilot.com",
-        is_oauth=True,
     ),
     ProviderSpec(
         name="deepseek",
@@ -193,15 +123,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         default_api_base="https://api.minimax.io/v1",
     ),
     ProviderSpec(
-        name="vllm",
-        keywords=("vllm",),
-        display_name="vLLM/Local",
-        backend="openai_compat",
-        is_local=True,
-        default_api_base="http://localhost:8000/v1",
-        strip_model_prefix=True,
-    ),
-    ProviderSpec(
         name="ollama",
         keywords=("ollama", "nemotron"),
         display_name="Ollama",
@@ -210,13 +131,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         detect_by_base_keyword="11434",
         default_api_base="http://localhost:11434/v1",
         strip_model_prefix=True,
-    ),
-    ProviderSpec(
-        name="groq",
-        keywords=("groq",),
-        display_name="Groq",
-        backend="openai_compat",
-        default_api_base="https://api.groq.com/openai/v1",
     ),
 )
 

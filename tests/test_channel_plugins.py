@@ -92,12 +92,12 @@ _EP_TARGET = "importlib.metadata.entry_points"
 def test_discover_plugins_loads_entry_points():
     from tokenmind.channels.registry import discover_plugins
 
-    ep = _make_entry_point("line", _FakePlugin)
+    ep = _make_entry_point("customplugin", _FakePlugin)
     with patch(_EP_TARGET, return_value=[ep]):
         result = discover_plugins()
 
-    assert "line" in result
-    assert result["line"] is _FakePlugin
+    assert "customplugin" in result
+    assert result["customplugin"] is _FakePlugin
 
 
 def test_discover_plugins_handles_load_error():
@@ -130,15 +130,22 @@ def test_discover_all_includes_builtins():
         assert name in discover_channel_names()
 
 
+def test_removed_foreign_channels_are_not_builtins():
+    from tokenmind.channels.registry import discover_channel_names
+
+    removed_channels = {"discord", "slack", "matrix", "teams", "line"}
+    assert removed_channels.isdisjoint(discover_channel_names())
+
+
 def test_discover_all_includes_external_plugin():
     from tokenmind.channels.registry import discover_all
 
-    ep = _make_entry_point("line", _FakePlugin)
+    ep = _make_entry_point("customplugin", _FakePlugin)
     with patch(_EP_TARGET, return_value=[ep]):
         result = discover_all()
 
-    assert "line" in result
-    assert result["line"] is _FakePlugin
+    assert "customplugin" in result
+    assert result["customplugin"] is _FakePlugin
 
 
 def test_discover_all_builtin_shadows_plugin():

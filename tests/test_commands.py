@@ -11,8 +11,6 @@ from typer.testing import CliRunner
 from tokenmind.bus.events import OutboundMessage
 from tokenmind.cli.commands import _make_provider, app
 from tokenmind.config.schema import Config
-from tokenmind.providers.openai_codex_provider import _strip_model_prefix
-from tokenmind.providers.registry import find_by_name
 
 runner = CliRunner()
 
@@ -255,20 +253,6 @@ async def test_web_outbound_router_keeps_web_messages_on_websocket():
     feishu_channel.send.assert_not_awaited()
 
 
-def test_config_matches_github_copilot_codex_with_hyphen_prefix():
-    config = Config()
-    config.agents.defaults.model = "github-copilot/gpt-5.3-codex"
-
-    assert config.get_provider_name() == "github_copilot"
-
-
-def test_config_matches_openai_codex_with_hyphen_prefix():
-    config = Config()
-    config.agents.defaults.model = "openai-codex/gpt-5.1-codex"
-
-    assert config.get_provider_name() == "openai_codex"
-
-
 def test_config_matches_explicit_ollama_prefix_without_api_key():
     config = Config()
     config.agents.defaults.model = "ollama/llama3.2"
@@ -298,12 +282,11 @@ def test_config_auto_detects_ollama_from_local_api_base():
     assert config.get_api_base() == "http://localhost:11434"
 
 
-def test_config_prefers_ollama_over_vllm_when_both_local_providers_configured():
+def test_config_prefers_ollama_when_local_api_base_is_configured():
     config = Config.model_validate(
         {
             "agents": {"defaults": {"provider": "auto", "model": "llama3.2"}},
             "providers": {
-                "vllm": {"apiBase": "http://localhost:8000"},
                 "ollama": {"apiBase": "http://localhost:11434"},
             },
         }
@@ -311,27 +294,6 @@ def test_config_prefers_ollama_over_vllm_when_both_local_providers_configured():
 
     assert config.get_provider_name() == "ollama"
     assert config.get_api_base() == "http://localhost:11434"
-
-
-def test_config_falls_back_to_vllm_when_ollama_not_configured():
-    config = Config.model_validate(
-        {
-            "agents": {"defaults": {"provider": "auto", "model": "llama3.2"}},
-            "providers": {
-                "vllm": {"apiBase": "http://localhost:8000"},
-            },
-        }
-    )
-
-    assert config.get_provider_name() == "vllm"
-    assert config.get_api_base() == "http://localhost:8000"
-
-
-def test_registry_can_find_github_copilot_by_name():
-    spec = find_by_name("github_copilot")
-
-    assert spec is not None
-    assert spec.name == "github_copilot"
 
 
 def test_make_provider_uses_openai_compat_for_custom_provider():
@@ -360,11 +322,6 @@ def test_make_provider_uses_openai_compat_for_custom_provider():
     assert kwargs["base_url"] == "https://example.com/v1"
     assert kwargs["default_headers"]["APP-Code"] == "demo-app"
     assert kwargs["default_headers"]["x-session-affinity"] == "sticky-session"
-
-
-def test_openai_codex_strip_prefix_supports_hyphen_and_underscore():
-    assert _strip_model_prefix("openai-codex/gpt-5.1-codex") == "gpt-5.1-codex"
-    assert _strip_model_prefix("openai_codex/gpt-5.1-codex") == "gpt-5.1-codex"
 
 
 @pytest.fixture

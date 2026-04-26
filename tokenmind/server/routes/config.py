@@ -16,27 +16,17 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 
 _PROVIDER_DEFAULT_MODELS: dict[str, str] = {
     "custom": "default",
-    "azure_openai": "gpt-5.2-chat",
     "anthropic": "claude-sonnet-4-5",
     "openai": "gpt-4o",
     "openrouter": "anthropic/claude-sonnet-4-5",
     "deepseek": "deepseek-chat",
-    "groq": "llama-3.3-70b-versatile",
     "zhipu": "glm-4",
     "dashscope": "qwen-max",
-    "vllm": "llama-3.1-8b-instruct",
     "ollama": "llama3.2",
     "gemini": "gemini-2.0-flash",
     "moonshot": "kimi-k2.5",
     "minimax": "MiniMax-M2.7",
-    "aihubmix": "anthropic/claude-sonnet-4-5",
     "siliconflow": "Qwen/Qwen2.5-7B-Instruct",
-    "volcengine": "doubao-1-5-pro-32k",
-    "volcengine_coding_plan": "doubao-seed-1-6",
-    "byteplus": "doubao-1-5-pro-32k",
-    "byteplus_coding_plan": "doubao-seed-1-6",
-    "openai_codex": "openai-codex/gpt-5.1-codex",
-    "github_copilot": "github-copilot/gpt-5.3-codex",
 }
 
 

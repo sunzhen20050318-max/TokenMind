@@ -220,6 +220,36 @@ def test_load_config_adopts_configured_provider_when_defaults_are_initial(tmp_pa
     assert config.agents.defaults.model == "MiniMax-M2.7"
 
 
+def test_load_config_repairs_removed_default_provider(tmp_path) -> None:
+    from tokenmind.config import loader
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "defaults": {
+                        "provider": "groq",
+                        "model": "llama-3.3-70b-versatile",
+                    }
+                },
+                "providers": {
+                    "deepseek": {
+                        "apiKey": "sk-deepseek",
+                        "defaultModel": "deepseek-chat",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = loader.load_config(config_path)
+
+    assert config.agents.defaults.provider == "deepseek"
+    assert config.agents.defaults.model == "deepseek-chat"
+
+
 def test_load_config_accepts_utf8_bom_encoded_json(tmp_path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(

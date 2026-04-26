@@ -30,7 +30,7 @@
 
 ## 核心能力
 
-- 多模型支持：内置 OpenAI、Anthropic、Gemini、DeepSeek、Groq、MiniMax、OpenRouter、Ollama、vLLM 等提供商
+- 多模型支持：内置 OpenAI、Anthropic、Gemini、DeepSeek、MiniMax、OpenRouter、Ollama、SiliconFlow、Qwen、GLM、Moonshot 和自定义兼容接口等提供商
 - Web 控制台：支持会话管理、流式回复、工具时间线、停止生成、模型切换、知识库链接
 - 工具系统：内置 `exec`、文件读写、Web 搜索、定时任务、消息发送、MCP 工具接入
 - MCP 集成：支持 `stdio`、`sse`、`streamableHttp` 三类服务
@@ -91,13 +91,6 @@ source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -e .
 ```
-
-> 如果遇到 `python-olm` 编译失败（CMake 报错），说明系统缺少 libolm 或 CMake 版本不兼容。这是可选的 Matrix 加密依赖，不影响核心功能。可以只安装基础包：
->
-> ```bash
-> pip install -e .
-> pip install pytest pytest-asyncio ruff   # 开发工具单独装
-> ```
 
 ### 3. 初始化配置
 
@@ -206,7 +199,7 @@ tokenmind web --port 18888
 
 ### 7. 可选：启动网关
 
-如果你想把 Agent 接到 Telegram、Discord、飞书等聊天渠道：
+如果你想把 Agent 接到 Telegram、飞书等聊天渠道：
 
 ```bash
 tokenmind gateway
@@ -281,11 +274,14 @@ Embedding 与 Rerank 模型支持用户自定义配置。
 | Anthropic | `claude-sonnet-4-5` |
 | Gemini | `gemini-2.0-flash` |
 | DeepSeek | `deepseek-chat` |
-| Groq | `llama-3.3-70b-versatile` |
 | MiniMax | `MiniMax-M2.7` |
 | OpenRouter | `anthropic/claude-sonnet-4-5` |
 | Ollama | `llama3.2` |
-| vLLM | `llama-3.1-8b-instruct` |
+| SiliconFlow | `Qwen/Qwen2.5-7B-Instruct` |
+| Qwen | `qwen-max` |
+| GLM | `glm-4` |
+| Moonshot | `kimi-k2.5` |
+| 自定义 | `default` |
 
 ## MCP 支持
 

@@ -58,7 +58,7 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 
 ### Providers (`tokenmind/providers/`)
 
-- `ProviderSpec` (frozen dataclass in `registry.py`) defines 21 providers with routing metadata: `backend` (openai_compat / anthropic / azure_openai / openai_codex), `is_gateway`, `is_local`, `detect_by_key_prefix`
+- `ProviderSpec` (frozen dataclass in `registry.py`) defines the supported provider presets with routing metadata: `backend` (openai_compat / anthropic), `is_gateway`, `is_local`, `detect_by_key_prefix`
 - `LLMProvider` (abstract base in `base.py`): `chat()` and `chat_with_retry()` with exponential backoff
 - `LLMResponse` returns: `content`, `tool_calls`, `finish_reason`, `usage`, `reasoning_content`, `thinking_blocks`
 - Adding a provider: add `ProviderSpec` to `registry.py`, add field to `ProvidersConfig` in `config/schema.py`
@@ -73,7 +73,7 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 ### Channels (`tokenmind/channels/`)
 
 - `BaseChannel` (abstract): `start()`, `stop()`, `send(OutboundMessage)`, `_handle_message()`
-- Implementations: telegram, discord, slack, email, dingtalk, feishu, matrix, wecom, qq, mochat, whatsapp
+- Implementations: telegram, email, dingtalk, feishu, wecom, qq, mochat, whatsapp
 - Adding a channel: implement `BaseChannel`, register with channel manager
 
 ### Sessions (`tokenmind/session/manager.py`)

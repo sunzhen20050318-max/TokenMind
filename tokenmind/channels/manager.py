@@ -42,7 +42,8 @@ class ChannelManager:
 
     def _build_channel(self, name: str, cls: type[BaseChannel], section: Any) -> BaseChannel:
         channel = cls(section, self.bus)
-        channel.transcription_api_key = self.config.providers.groq.api_key
+        groq_provider = getattr(self.config.providers, "groq", None)
+        channel.transcription_api_key = getattr(groq_provider, "api_key", "")
         logger.info("{} channel enabled", cls.display_name)
         return channel
 
