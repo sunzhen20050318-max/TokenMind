@@ -94,6 +94,13 @@ def register_missing_frontend_routes(app: FastAPI) -> None:
     }
     h1 { margin: 0 0 12px; font-size: 28px; }
     p { margin: 0 0 18px; color: #b8bac7; line-height: 1.7; }
+    .eyebrow {
+      margin-bottom: 8px;
+      color: #8d91a2;
+      font-size: 13px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
     code, pre {
       font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
     }
@@ -111,26 +118,28 @@ def register_missing_frontend_routes(app: FastAPI) -> None:
 </head>
 <body>
   <main>
-    <h1>TokenMind Web UI has not been built yet</h1>
+    <p class="eyebrow">TokenMind Web UI has not been built yet</p>
+    <h1>TokenMind Web UI 还没有构建</h1>
     <p>
-      The backend is running, but this source checkout does not contain a built React frontend.
-      Choose one of the following source-development workflows.
+      后端已经启动，但当前源码目录里还没有构建好的 React 前端。
+      如果你是通过 <code>git clone</code> 运行源码，请选择下面其中一种方式。
     </p>
-    <p><strong>Production-style source run on this same port:</strong></p>
+    <p><strong>方式 A：源码生产模式，使用默认 18888 端口：</strong></p>
     <pre>cd frontend
 npm install
 npm run build
 cd ..
-tokenmind web --port 8080</pre>
-    <p><strong>Frontend development mode with hot reload:</strong></p>
-    <pre>tokenmind web --port 8080
+tokenmind web --port 18888</pre>
+    <p>如果你启动后端时使用了自定义端口，请把命令里的 <code>18888</code> 换成你的实际端口。</p>
+    <p><strong>方式 B：前端开发模式，使用 Vite 热更新：</strong></p>
+    <pre>tokenmind web --port 18888
 cd frontend
 npm install
 npm run dev</pre>
-    <p>Then open <code>http://localhost:5173</code> for development mode.</p>
+    <p>开发模式下请打开 <code>http://localhost:5173</code>，不要打开当前后端端口。</p>
     <p class="muted">
-      Installed pip and desktop builds bundle the production Web UI, so they can serve
-      <code>http://localhost:8080</code> directly.
+      如果你是通过 pip 包或桌面安装包安装，生产 Web UI 会随程序一起打包，
+      正常可以直接打开 <code>http://localhost:18888</code>。
     </p>
   </main>
 </body>

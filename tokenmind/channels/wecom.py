@@ -23,7 +23,7 @@ class WecomConfig(Base):
     enabled: bool = False
     bot_id: str = ""
     secret: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: list[str] = Field(default_factory=lambda: ["*"])
     welcome_message: str = ""
 
 

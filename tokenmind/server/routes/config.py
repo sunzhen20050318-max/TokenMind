@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -9,7 +10,7 @@ from pydantic import BaseModel
 
 from tokenmind.agent.tools.mcp import inspect_mcp_servers
 from tokenmind.config.loader import load_config, save_config
-from tokenmind.config.schema import Config, MCPServerConfig
+from tokenmind.config.schema import AgentDefaults, Config, MCPServerConfig
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -48,6 +49,18 @@ def _resolve_provider_default_model(
     if provider_config and provider_config.default_model:
         return provider_config.default_model
     return _PROVIDER_DEFAULT_MODELS.get(provider) or current_model or config.agents.defaults.model
+
+
+def _agent_defaults_are_initial(config: Config) -> bool:
+    initial = AgentDefaults()
+    defaults = config.agents.defaults
+    return defaults.provider == initial.provider and defaults.model == initial.model
+
+
+def _provider_has_connection(provider_config: object) -> bool:
+    api_key = getattr(provider_config, "api_key", "")
+    api_base = getattr(provider_config, "api_base", "")
+    return bool((api_key or "").strip() or (api_base or "").strip())
 
 
 class ProviderConfigUpdate(BaseModel):
@@ -407,6 +420,13 @@ async def update_provider_config(provider: str, update: ProviderConfigUpdate):
                 provider,
                 current_model=config.agents.defaults.model,
             )
+        elif _agent_defaults_are_initial(config) and _provider_has_connection(provider_config):
+            config.agents.defaults.provider = provider
+            config.agents.defaults.model = _resolve_provider_default_model(
+                config,
+                provider,
+                current_model=config.agents.defaults.model,
+            )
 
         save_config(config)
 
@@ -753,31 +773,31 @@ _CHANNEL_REGISTRY: dict[str, dict[str, Any]] = {
         "label": "飞书",
         "description": "通过飞书开放平台 WebSocket 长连接接入。",
         "fields": ["app_id", "app_secret", "encrypt_key", "verification_token", "allow_from"],
-        "required": ["app_id", "app_secret"],
+        "required": ["app_id", "app_secret", "allow_from"],
     },
     "dingtalk": {
         "label": "钉钉",
         "description": "通过钉钉 Stream 模式接入。",
         "fields": ["client_id", "client_secret", "allow_from"],
-        "required": ["client_id", "client_secret"],
+        "required": ["client_id", "client_secret", "allow_from"],
     },
     "wecom": {
         "label": "企业微信",
         "description": "企业微信 AI 智能机器人。",
         "fields": ["bot_id", "secret", "allow_from", "welcome_message"],
-        "required": ["bot_id", "secret"],
+        "required": ["bot_id", "secret", "allow_from"],
     },
     "qq": {
         "label": "QQ",
         "description": "QQ 官方机器人（需在 QQ 开放平台申请）。",
         "fields": ["app_id", "secret", "allow_from", "msg_format"],
-        "required": ["app_id", "secret"],
+        "required": ["app_id", "secret", "allow_from"],
     },
     "mochat": {
         "label": "Mochat（个微）",
         "description": "通过 Mochat 接入个人微信。",
-        "fields": ["base_url", "claw_token", "agent_user_id"],
-        "required": ["base_url", "claw_token", "agent_user_id"],
+        "fields": ["base_url", "claw_token", "agent_user_id", "allow_from"],
+        "required": ["base_url", "claw_token", "agent_user_id", "allow_from"],
     },
 }
 
@@ -787,19 +807,49 @@ def _missing_required_fields(channel_name: str, config: dict[str, Any]) -> list[
     missing: list[str] = []
     for field in required:
         value = config.get(field)
-        if value is None or (isinstance(value, str) and not value.strip()):
+        if (
+            value is None
+            or (isinstance(value, str) and not value.strip())
+            or (isinstance(value, list) and not value)
+        ):
             missing.append(field)
     return missing
+
+
+def _camel_to_snake(value: str) -> str:
+    value = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", value)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", value).lower()
+
+
+def _is_empty_config_value(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _normalize_channel_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Use snake_case keys for channel configs and collapse alias duplicates."""
+    normalized: dict[str, Any] = {}
+    for raw_key, value in config.items():
+        key = _camel_to_snake(str(raw_key))
+        if key in normalized:
+            existing = normalized[key]
+            if _is_empty_config_value(existing) and not _is_empty_config_value(value):
+                normalized[key] = value
+            elif not _is_empty_config_value(value) or _is_empty_config_value(existing):
+                normalized[key] = value
+            continue
+        normalized[key] = value
+    return normalized
 
 
 def _get_channel_section(config: Config, name: str) -> dict[str, Any]:
     """Read a channel's stored config as a plain dict, defaulting to disabled."""
     section = getattr(config.channels, name, None)
     if isinstance(section, dict):
-        return dict(section)
+        return _normalize_channel_config(dict(section))
     if section is None:
         return {"enabled": False}
-    return section.model_dump(by_alias=False) if hasattr(section, "model_dump") else dict(section)
+    raw = section.model_dump(by_alias=False) if hasattr(section, "model_dump") else dict(section)
+    return _normalize_channel_config(raw)
 
 
 @router.get("/channels")
@@ -843,8 +893,8 @@ async def update_channel(channel_name: str, payload: ChannelConfigUpdate):
     try:
         config = load_config()
         current = _get_channel_section(config, channel_name)
-        update_dict = payload.model_dump(exclude_unset=True)
-        merged = {**current, **update_dict}
+        update_dict = _normalize_channel_config(payload.model_dump(exclude_unset=True))
+        merged = _normalize_channel_config({**current, **update_dict})
         # Default enabled to False if not set, so saved configs are deterministic.
         merged.setdefault("enabled", False)
 
@@ -860,6 +910,12 @@ async def update_channel(channel_name: str, payload: ChannelConfigUpdate):
 
         setattr(config.channels, channel_name, merged)
         save_config(config)
+
+        from tokenmind.server.dependencies import get_channel_manager
+
+        channel_manager = get_channel_manager()
+        if channel_manager is not None:
+            await channel_manager.refresh_channel(channel_name, merged)
 
         return {"success": True, "name": channel_name, "config": merged}
     except HTTPException:

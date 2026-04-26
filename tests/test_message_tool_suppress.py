@@ -86,6 +86,35 @@ class TestMessageToolSuppressLogic:
         assert result is not None
         assert "Hello" in result.content
 
+    @pytest.mark.asyncio
+    async def test_web_message_tool_text_becomes_current_reply(self, tmp_path: Path) -> None:
+        loop = _make_loop(tmp_path)
+        tool_call = ToolCallRequest(
+            id="call1",
+            name="message",
+            arguments={"content": "Scheduled result", "channel": "web", "chat_id": "web"},
+        )
+        calls = iter([
+            LLMResponse(content="", tool_calls=[tool_call]),
+            LLMResponse(content="Sent.", tool_calls=[]),
+        ])
+        loop.provider.chat_with_retry = AsyncMock(side_effect=lambda *a, **kw: next(calls))
+        loop.tools.get_definitions = MagicMock(return_value=[])
+
+        msg = InboundMessage(
+            channel="web",
+            sender_id="user1",
+            chat_id="web:task-results",
+            content="Run scheduled task",
+        )
+        result = await loop._process_message(msg, session_key="web:task-results")
+
+        assert result is not None
+        assert result.content == "Scheduled result"
+        session = loop.sessions.get_or_create("web:task-results")
+        assert session.messages[-1]["role"] == "assistant"
+        assert session.messages[-1]["content"] == "Scheduled result"
+
     async def test_progress_hides_internal_reasoning(self, tmp_path: Path) -> None:
         loop = _make_loop(tmp_path)
         tool_call = ToolCallRequest(id="call1", name="read_file", arguments={"path": "foo.txt"})

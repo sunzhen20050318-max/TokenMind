@@ -67,6 +67,8 @@ def test_register_missing_frontend_routes_explains_source_setup() -> None:
 
     assert index_response.status_code == 503
     assert "TokenMind Web UI has not been built yet" in index_response.text
+    assert "TokenMind Web UI 还没有构建" in index_response.text
     assert "npm run build" in index_response.text
+    assert "http://localhost:18888" in index_response.text
     assert "http://localhost:5173" in index_response.text
     assert api_response.status_code == 404

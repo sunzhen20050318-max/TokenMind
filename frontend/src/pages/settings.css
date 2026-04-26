@@ -628,6 +628,32 @@
   padding: 20px 22px 24px;
 }
 
+.settings-provider-advanced-fields {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-provider-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-provider-advanced-head h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.settings-provider-advanced-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .settings-notice {
   margin-bottom: 16px;
   padding: 11px 14px;
@@ -768,6 +794,21 @@
   background: var(--panel-strong);
 }
 
+.settings-select option {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.settings-select option:checked {
+  background: #2a2a2e;
+  color: var(--text);
+}
+
+.settings-select option:disabled {
+  background: var(--panel-strong);
+  color: var(--soft);
+}
+
 .settings-textarea {
   min-height: 110px;
   resize: vertical;
@@ -854,6 +895,11 @@
 .settings-provider-card.active {
   border-color: var(--text);
   background: var(--panel);
+}
+
+.settings-provider-card.is-selected:not(.active) {
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .settings-provider-head,
@@ -1859,7 +1905,7 @@
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 14px;
-  overflow: hidden;
+  overflow: visible;
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -1919,6 +1965,33 @@
   position: relative;
   display: inline-flex;
   justify-content: center;
+  z-index: 20;
+}
+
+.settings-cron-status {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-cron-status--ok {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: rgba(214, 228, 220, 0.18);
+}
+
+.settings-cron-status--error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: rgba(241, 185, 185, 0.2);
 }
 
 .settings-cron-menu-trigger {
@@ -1941,10 +2014,11 @@
 
 .settings-cron-menu {
   position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 10;
+  top: 50%;
+  right: calc(100% + 8px);
+  z-index: 30;
   min-width: 140px;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   padding: 6px;

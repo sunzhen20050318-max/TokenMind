@@ -38,6 +38,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
   );
   const [citationsExpanded, setCitationsExpanded] = useState(false);
   const [retainingAttachmentId, setRetainingAttachmentId] = useState<string | null>(null);
+  const hasVisibleContent =
+    (renderedContent.trim().length > 0 && renderedContent !== '\u200b') ||
+    !!message.attachments?.length ||
+    (!isUser && visibleCitations.length > 0) ||
+    !!message.isStreaming;
+  const isToolOnlyBubble = !!embeddedToolChain && !hasVisibleContent;
 
   const citationLabel = useMemo(() => {
     const count = visibleCitations.length;
@@ -198,7 +204,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
       ) : null}
 
       <div className="message-row__body">
-        <div className={`message-bubble ${isUser ? 'is-user' : 'is-assistant'}`}>
+        <div
+          className={`message-bubble ${isUser ? 'is-user' : 'is-assistant'} ${
+            isToolOnlyBubble ? 'message-bubble--tool-only' : ''
+          }`}
+        >
           {embeddedToolChain ? (
             <div className="message-bubble__embedded-toolchain">{embeddedToolChain}</div>
           ) : null}

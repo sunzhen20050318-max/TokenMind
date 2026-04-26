@@ -22,36 +22,42 @@ class ChannelManager:
     - Route outbound messages
     """
 
-    def __init__(self, config: Config, bus: MessageBus):
+    def __init__(self, config: Config, bus: MessageBus, *, strict_allow_from: bool = True):
         self.config = config
         self.bus = bus
+        self.strict_allow_from = strict_allow_from
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
+        self._channel_tasks: dict[str, asyncio.Task] = {}
 
         self._init_channels()
+
+    @staticmethod
+    def _is_enabled(section: Any) -> bool:
+        return (
+            section.get("enabled", False)
+            if isinstance(section, dict)
+            else getattr(section, "enabled", False)
+        )
+
+    def _build_channel(self, name: str, cls: type[BaseChannel], section: Any) -> BaseChannel:
+        channel = cls(section, self.bus)
+        channel.transcription_api_key = self.config.providers.groq.api_key
+        logger.info("{} channel enabled", cls.display_name)
+        return channel
 
     def _init_channels(self) -> None:
         """Initialize channels discovered via pkgutil scan + entry_points plugins."""
         from tokenmind.channels.registry import discover_all
 
-        groq_key = self.config.providers.groq.api_key
-
         for name, cls in discover_all().items():
             section = getattr(self.config.channels, name, None)
             if section is None:
                 continue
-            enabled = (
-                section.get("enabled", False)
-                if isinstance(section, dict)
-                else getattr(section, "enabled", False)
-            )
-            if not enabled:
+            if not self._is_enabled(section):
                 continue
             try:
-                channel = cls(section, self.bus)
-                channel.transcription_api_key = groq_key
-                self.channels[name] = channel
-                logger.info("{} channel enabled", cls.display_name)
+                self.channels[name] = self._build_channel(name, cls, section)
             except Exception as e:
                 logger.warning("{} channel not available: {}", name, e)
 
@@ -60,10 +66,57 @@ class ChannelManager:
     def _validate_allow_from(self) -> None:
         for name, ch in self.channels.items():
             if getattr(ch.config, "allow_from", None) == []:
-                raise SystemExit(
-                    f'Error: "{name}" has empty allowFrom (denies all). '
+                message = (
+                    f'"{name}" has empty allowFrom (denies all). '
                     f'Set ["*"] to allow everyone, or add specific user IDs.'
                 )
+                if self.strict_allow_from:
+                    raise SystemExit(f"Error: {message}")
+                logger.warning(message)
+
+    def start_channel_background(self, name: str) -> None:
+        """Start one channel in the current event loop without blocking the caller."""
+        channel = self.channels.get(name)
+        if channel is None:
+            return
+        existing = self._channel_tasks.get(name)
+        if existing and not existing.done():
+            return
+        self._channel_tasks[name] = asyncio.create_task(self._start_channel(name, channel))
+
+    async def refresh_channel(self, name: str, section: dict[str, Any]) -> BaseChannel | None:
+        """Apply saved channel settings to the running channel manager."""
+        from tokenmind.channels.registry import discover_all
+
+        cls = discover_all().get(name)
+        if cls is None:
+            logger.warning("Cannot refresh unknown channel {}", name)
+            return None
+
+        existing = self.channels.get(name)
+        if not self._is_enabled(section):
+            if existing is not None:
+                await existing.stop()
+                self.channels.pop(name, None)
+            task = self._channel_tasks.pop(name, None)
+            if task and not task.done():
+                task.cancel()
+            return None
+
+        replacement = self._build_channel(name, cls, section)
+        if existing is not None:
+            existing.config = replacement.config
+            existing.transcription_api_key = replacement.transcription_api_key
+            logger.info("{} channel config refreshed", name)
+            return existing
+
+        self.channels[name] = replacement
+        self._validate_allow_from()
+        try:
+            self.start_channel_background(name)
+        except RuntimeError:
+            logger.debug("No running event loop; {} channel will start on next runtime start", name)
+        return replacement
 
     async def _start_channel(self, name: str, channel: BaseChannel) -> None:
         """Start a channel and log any exceptions."""
@@ -103,6 +156,16 @@ class ChannelManager:
                 pass
 
         # Stop all channels
+        for task in self._channel_tasks.values():
+            if not task.done():
+                task.cancel()
+        for task in self._channel_tasks.values():
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._channel_tasks.clear()
+
         for name, channel in self.channels.items():
             try:
                 await channel.stop()

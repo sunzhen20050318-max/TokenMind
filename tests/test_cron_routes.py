@@ -113,3 +113,25 @@ async def test_create_cron_job_defaults_to_task_results_session(temp_cron_servic
 
     assert created.deliver is True
     assert created.to == TASK_RESULTS_SESSION_ID
+
+
+@pytest.mark.asyncio
+async def test_one_time_cron_jobs_are_retained_for_completed_list(temp_cron_service):
+    """One-shot task-center jobs should stay in the store after running."""
+    from datetime import datetime, timedelta
+
+    from tokenmind.server.routes.cron import CronJobCreateRequest, create_cron_job
+
+    run_at = (datetime.now() + timedelta(minutes=5)).replace(microsecond=0).isoformat()
+    created = await create_cron_job(
+        CronJobCreateRequest(
+            name="one shot",
+            message="remind me once",
+            schedule_kind="at",
+            at=run_at,
+            deliver=True,
+        ),
+        temp_cron_service,
+    )
+
+    assert created.delete_after_run is False

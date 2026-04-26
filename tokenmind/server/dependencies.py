@@ -9,6 +9,7 @@ _chat_service: Any = None
 _connection_manager: Any = None
 _inbound_queue: Any = None
 _cron_service: Any = None
+_channel_manager: Any = None
 
 
 def set_chat_service(service: Any) -> None:
@@ -53,3 +54,14 @@ def set_cron_service(service: Any) -> None:
 def get_cron_service() -> Any:
     """Get the global cron service instance."""
     return _cron_service
+
+
+def set_channel_manager(manager: Any) -> None:
+    """Set the global external channel manager instance."""
+    global _channel_manager
+    _channel_manager = manager
+
+
+def get_channel_manager() -> Any:
+    """Get the global external channel manager instance."""
+    return _channel_manager

@@ -990,11 +990,7 @@ class AgentLoop:
             if isinstance(image_tool, GenerateImageTool) and image_tool.delivered:
                 assistant_attachments = [*assistant_attachments, *image_tool.delivered]
         if message_tool := self.tools.get("message"):
-            if (
-                isinstance(message_tool, MessageTool)
-                and msg.channel == "web"
-                and message_tool._sent_media
-            ):
+            if isinstance(message_tool, MessageTool) and msg.channel == "web" and message_tool._sent_in_turn:
                 bridged_attachments: list[dict[str, Any]] = []
                 for media_path in message_tool._sent_media:
                     try:
@@ -1050,7 +1046,7 @@ class AgentLoop:
             (mt := self.tools.get("message"))
             and isinstance(mt, MessageTool)
             and mt._sent_in_turn
-            and not (msg.channel == "web" and mt._sent_media)
+            and msg.channel != "web"
         ):
             return None
 

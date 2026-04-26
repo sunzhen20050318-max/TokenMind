@@ -7,7 +7,7 @@ from pathlib import Path
 import pydantic
 from loguru import logger
 
-from tokenmind.config.schema import Config
+from tokenmind.config.schema import AgentDefaults, Config, ProvidersConfig
 
 # Global variable to store current config path (for multi-instance support)
 _current_config_path: Path | None = None
@@ -113,4 +113,43 @@ def _migrate_config(data: dict) -> dict:
     legacy_workspace = Path.home() / ".tokenmind" / "workspace"
     if workspace in {"~/.tokenmind/workspace", str(legacy_workspace)}:
         defaults["workspace"] = "~/.tokenmind/workspace"
+    _adopt_first_configured_provider_for_initial_defaults(migrated)
     return migrated
+
+
+def _pick(data: dict, *keys: str) -> object:
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def _provider_has_connection(provider_data: dict) -> bool:
+    api_key = _pick(provider_data, "apiKey", "api_key")
+    api_base = _pick(provider_data, "apiBase", "api_base")
+    return bool(str(api_key or "").strip() or str(api_base or "").strip())
+
+
+def _adopt_first_configured_provider_for_initial_defaults(data: dict) -> None:
+    """Replace the initial auto/Claude default once a real provider is configured."""
+    initial = AgentDefaults()
+    defaults = data.setdefault("agents", {}).setdefault("defaults", {})
+    current_provider = defaults.get("provider", initial.provider)
+    current_model = defaults.get("model", initial.model)
+    if current_provider != initial.provider or current_model != initial.model:
+        return
+
+    providers = data.get("providers", {})
+    if not isinstance(providers, dict):
+        return
+
+    for provider_name in ProvidersConfig.model_fields:
+        provider_data = providers.get(provider_name)
+        if not isinstance(provider_data, dict) or not _provider_has_connection(provider_data):
+            continue
+        default_model = _pick(provider_data, "defaultModel", "default_model")
+        if not str(default_model or "").strip():
+            continue
+        defaults["provider"] = provider_name
+        defaults["model"] = str(default_model).strip()
+        return

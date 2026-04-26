@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from tokenmind.cron.constants import TASK_RESULTS_SESSION_ID, TASK_RESULTS_SESSION_TITLE
 from tokenmind.cron.delivery import persist_task_result
+from tokenmind.cron.types import CronJob, CronPayload, CronSchedule
 from tokenmind.session.manager import SessionManager
 
 
@@ -26,3 +27,64 @@ def test_persist_task_result_creates_task_results_session(tmp_path):
     assert "daily digest" in session.messages[0]["content"]
     assert session.messages[1]["role"] == "assistant"
     assert session.messages[1]["content"] == "Here is today's summary."
+
+
+def test_web_cron_uses_target_session_for_execution():
+    """Web cron jobs should keep tool timelines in the visible delivery session."""
+    from tokenmind.cli.commands import _cron_execution_session_key
+
+    job = CronJob(
+        id="abc123",
+        name="reminder",
+        schedule=CronSchedule(kind="at", at_ms=1770000000000),
+        payload=CronPayload(
+            message="send a reminder",
+            deliver=True,
+            channel="web",
+            to=TASK_RESULTS_SESSION_ID,
+        ),
+    )
+
+    assert _cron_execution_session_key(job) == TASK_RESULTS_SESSION_ID
+
+
+def test_non_web_cron_keeps_internal_execution_session():
+    """External channel cron jobs should not use their destination id as a session key."""
+    from tokenmind.cli.commands import _cron_execution_session_key
+
+    job = CronJob(
+        id="abc123",
+        name="reminder",
+        schedule=CronSchedule(kind="at", at_ms=1770000000000),
+        payload=CronPayload(
+            message="send a reminder",
+            deliver=True,
+            channel="feishu",
+            to="ou_user",
+        ),
+    )
+
+    assert _cron_execution_session_key(job) == "cron:abc123"
+
+
+def test_cron_prompt_does_not_expose_internal_delivery_instructions():
+    """The stored cron trigger message should not leak scheduler-only guidance."""
+    from tokenmind.cli.commands import _build_cron_prompt
+
+    job = CronJob(
+        id="abc123",
+        name="test",
+        schedule=CronSchedule(kind="at", at_ms=1770000000000),
+        payload=CronPayload(
+            message="say something encouraging",
+            deliver=True,
+            channel="web",
+            to=TASK_RESULTS_SESSION_ID,
+        ),
+    )
+
+    prompt = _build_cron_prompt(job)
+
+    assert "say something encouraging" in prompt
+    assert "请直接完成这条定时任务" not in prompt
+    assert "message 工具" not in prompt

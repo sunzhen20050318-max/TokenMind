@@ -154,6 +154,92 @@ async def test_standard_provider_strips_explicit_provider_prefix() -> None:
     assert call_kwargs["model"] == "deepseek-chat"
 
 
+@pytest.mark.asyncio
+async def test_deepseek_thinking_models_drop_legacy_tool_turn_without_reasoning() -> None:
+    mock_create = AsyncMock(return_value=_fake_chat_response())
+    spec = find_by_name("deepseek")
+    legacy_tool_call = {
+        "id": "call_legacy",
+        "type": "function",
+        "function": {"name": "read_file", "arguments": "{}"},
+    }
+
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+        client_instance = mock_client.return_value
+        client_instance.chat.completions.create = mock_create
+
+        provider = OpenAICompatProvider(
+            api_key="sk-deepseek-test-key",
+            default_model="deepseek-v4-pro",
+            spec=spec,
+        )
+        await provider.chat(
+            messages=[
+                {"role": "system", "content": "system"},
+                {"role": "user", "content": "old question"},
+                {"role": "assistant", "content": None, "tool_calls": [legacy_tool_call]},
+                {"role": "tool", "tool_call_id": "call_legacy", "name": "read_file", "content": "old result"},
+                {"role": "user", "content": "new question"},
+            ],
+            model="deepseek-v4-pro",
+        )
+
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["messages"] == [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "old question"},
+        {"role": "user", "content": "new question"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_thinking_models_keep_tool_turn_with_reasoning() -> None:
+    mock_create = AsyncMock(return_value=_fake_chat_response())
+    spec = find_by_name("deepseek")
+    tool_call = {
+        "id": "call_ok",
+        "type": "function",
+        "function": {"name": "read_file", "arguments": "{}"},
+    }
+
+    with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+        client_instance = mock_client.return_value
+        client_instance.chat.completions.create = mock_create
+
+        provider = OpenAICompatProvider(
+            api_key="sk-deepseek-test-key",
+            default_model="deepseek-v4-pro",
+            spec=spec,
+        )
+        await provider.chat(
+            messages=[
+                {"role": "user", "content": "old question"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call],
+                    "reasoning_content": "needed by DeepSeek",
+                },
+                {"role": "tool", "tool_call_id": "call_ok", "name": "read_file", "content": "old result"},
+                {"role": "user", "content": "new question"},
+            ],
+            model="deepseek-v4-pro",
+        )
+
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["messages"] == [
+        {"role": "user", "content": "old question"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [tool_call],
+            "reasoning_content": "needed by DeepSeek",
+        },
+        {"role": "tool", "tool_call_id": "call_ok", "name": "read_file", "content": "old result"},
+        {"role": "user", "content": "new question"},
+    ]
+
+
 def test_openai_model_passthrough() -> None:
     spec = find_by_name("openai")
     with patch("tokenmind.providers.openai_compat_provider.AsyncOpenAI"):

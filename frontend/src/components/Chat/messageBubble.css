@@ -184,6 +184,10 @@
   margin-bottom: 12px;
 }
 
+.message-bubble--tool-only .message-bubble__embedded-toolchain {
+  margin-bottom: 0;
+}
+
 .message-bubble__attachment {
   display: flex;
   align-items: center;

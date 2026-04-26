@@ -59,15 +59,37 @@
 ### 1. 环境要求
 
 - Python `3.11+`
-- Node.js `20+`（仅前端开发或 WhatsApp Bridge 需要）
+- Node.js `20+`（源码运行 Web UI、前端开发或 WhatsApp Bridge 需要）
 - 推荐使用独立虚拟环境
 
 ### 2. 克隆并安装
 
+如果你是从源码运行，建议先创建虚拟环境，避免和系统 Python 里的包互相影响。
+
+**Windows PowerShell**
+
+```powershell
+git clone https://gitee.com/sun124578963_0/TokenMind.git
+cd TokenMind
+
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+python -m pip install -U pip
+python -m pip install -e .
+```
+
+**macOS / Linux**
+
 ```bash
 git clone https://gitee.com/sun124578963_0/TokenMind.git
 cd TokenMind
-pip install -e .
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install -U pip
+python -m pip install -e .
 ```
 
 > 如果遇到 `python-olm` 编译失败（CMake 报错），说明系统缺少 libolm 或 CMake 版本不兼容。这是可选的 Matrix 加密依赖，不影响核心功能。可以只安装基础包：
@@ -87,44 +109,81 @@ tokenmind onboard
 
 ### 4. 启动 Web UI
 
-如果你是通过 `pip install tokenmind-ai` 安装，或使用未来的桌面安装包，Web UI 已经随程序打包，可以直接启动：
+这里要分清楚两种运行方式：
+
+- `pip install tokenmind-ai` 安装：前端构建产物已经打包进 Python 包里。
+- `git clone` 源码运行：仓库里通常不会提交 `frontend/dist`，所以需要你自己先构建前端。
+
+**方式 A：pip 安装 / 桌面安装包**
 
 ```bash
-tokenmind web --port 8080
+tokenmind web --port 18888
 ```
 
-然后打开 `http://localhost:8080`。
+然后打开 `http://localhost:18888`。
 
-如果你是通过 `git clone` 运行源码，仓库里通常不会包含前端构建产物。此时需要选择下面其中一种方式：
+如果 `18888` 仍然被占用，可以换成任意空闲端口，例如：
 
-**源码生产模式：先构建前端，再用 8080 打开**
+```bash
+tokenmind web --port 3000
+```
+
+此时请打开 `http://localhost:3000`。
+
+**方式 B：源码生产模式，推荐给普通源码使用者**
+
+先构建 React 前端，再让后端 18888 直接托管构建后的页面：
 
 ```bash
 cd frontend
 npm install
 npm run build
 cd ..
-tokenmind web --port 8080
+
+tokenmind web --port 18888
 ```
 
-然后打开 `http://localhost:8080`。
+然后打开 `http://localhost:18888`。
 
-**源码开发模式：后端 8080 + 前端 5173**
+如果浏览器里看到 `{"detail":"Not Found"}`，通常说明你是源码模式但还没有执行 `npm run build`，或者构建产物没有生成成功。重新执行上面的 `cd frontend && npm install && npm run build` 后再启动 `tokenmind web --port 18888`。
+
+**方式 C：源码开发模式，适合正在改前端**
+
+开发模式需要开两个终端。
+
+终端 1：启动后端和 Agent 服务：
 
 ```bash
-tokenmind web --port 8080
+tokenmind web --port 18888
+```
+
+终端 2：启动 Vite 前端开发服务器：
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-然后打开 `http://localhost:5173`。Vite 开发服务器会自动代理 API 请求到后端 8080 端口。
+然后打开 `http://localhost:5173`。Vite 开发服务器会自动代理 API 请求到后端 18888 端口。
+
+如果后端使用了自定义端口，例如 `tokenmind web --port 3000`，前端开发服务器也要指定代理目标：
+
+```bash
+# PowerShell
+$env:TOKENMIND_API_PROXY="http://localhost:3000"
+npm run dev
+
+# cmd
+set TOKENMIND_API_PROXY=http://localhost:3000
+npm run dev
+```
 
 如果还没有配置 API Key，服务仍然会正常启动，但聊天功能暂不可用。
 
 ### 5. 配置模型 API Key
 
-打开上一步对应的地址（pip/生产模式为 `http://localhost:8080`，源码开发模式为 `http://localhost:5173`），进入**设置中心**：
+打开上一步对应的地址（pip/生产模式为 `http://localhost:18888`，源码开发模式为 `http://localhost:5173`），进入**设置中心**：
 
 1. 在 **Providers** 区域选择你要使用的模型提供商（如 OpenAI、Anthropic、DeepSeek 等）
 2. 填入对应的 API Key
@@ -135,11 +194,14 @@ npm run dev
 
 ### 6. 可选：前端构建
 
-修改前端后，如果想让后端 8080 直接提供最新页面，请重新构建：
+修改前端后，如果想让后端 18888 直接提供最新页面，请重新构建：
 
 ```bash
 cd frontend
+npm install
 npm run build
+cd ..
+tokenmind web --port 18888
 ```
 
 ### 7. 可选：启动网关
@@ -277,18 +339,29 @@ TokenMind/
 ### 后端
 
 ```bash
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 pytest -q
 ruff check tokenmind/
 ```
 
 ### 前端
 
+前端开发时打开 `http://localhost:5173`：
+
 ```bash
 cd frontend
 npm install
 npm run dev
+```
+
+如果要让 `tokenmind web --port 18888` 直接提供最新页面，需要生成生产构建：
+
+```bash
+cd frontend
+npm install
 npm run build
+cd ..
+tokenmind web --port 18888
 ```
 
 ### Bridge

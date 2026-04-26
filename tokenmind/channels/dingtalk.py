@@ -152,7 +152,7 @@ class DingTalkConfig(Base):
     enabled: bool = False
     client_id: str = ""
     client_secret: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: list[str] = Field(default_factory=lambda: ["*"])
 
 
 class DingTalkChannel(BaseChannel):

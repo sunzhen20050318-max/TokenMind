@@ -9,7 +9,15 @@ import {
 } from '../src/types/config';
 
 test('creative capability helpers expose all supported capability keys', () => {
-  assert.deepEqual(CREATIVE_CAPABILITY_KEYS, ['image', 'music', 'music_cover', 'voice_clone', 'video']);
+  assert.deepEqual(CREATIVE_CAPABILITY_KEYS, [
+    'image',
+    'music',
+    'music_cover',
+    'voice_clone',
+    'tts',
+    'voice_design',
+    'video',
+  ]);
 });
 
 test('createEmptyCreativeCapabilitySettings returns the expected disabled shape', () => {
@@ -43,6 +51,12 @@ test('isCreativeCapabilityConfigured only returns true when provider and model a
       ...createEmptyCreativeCapabilitySettings(),
       provider: 'minimax',
     },
+    tts: {
+      ...createEmptyCreativeCapabilitySettings(),
+      provider: 'minimax',
+      model: 'speech-2.8',
+    },
+    voice_design: createEmptyCreativeCapabilitySettings(),
     video: {
       ...createEmptyCreativeCapabilitySettings(),
       model: 'video-01',
@@ -53,5 +67,7 @@ test('isCreativeCapabilityConfigured only returns true when provider and model a
   assert.equal(isCreativeCapabilityConfigured(creative.music), false);
   assert.equal(isCreativeCapabilityConfigured(creative.music_cover), true);
   assert.equal(isCreativeCapabilityConfigured(creative.voice_clone), false);
+  assert.equal(isCreativeCapabilityConfigured(creative.tts), true);
+  assert.equal(isCreativeCapabilityConfigured(creative.voice_design), false);
   assert.equal(isCreativeCapabilityConfigured(creative.video), false);
 });

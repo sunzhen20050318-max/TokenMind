@@ -226,3 +226,100 @@ def test_builtin_channel_init_from_dict():
     ch = TelegramChannel({"enabled": False, "token": "test-tok", "allowFrom": ["*"]}, bus)
     assert ch.config.token == "test-tok"
     assert ch.config.allow_from == ["*"]
+
+
+def test_chinese_external_channels_default_to_allow_all():
+    """External channel setup should start usable while still allowing users to restrict IDs."""
+    from tokenmind.channels.dingtalk import DingTalkChannel
+    from tokenmind.channels.feishu import FeishuChannel
+    from tokenmind.channels.mochat import MochatChannel
+    from tokenmind.channels.qq import QQChannel
+    from tokenmind.channels.wecom import WecomChannel
+
+    for channel_cls in (FeishuChannel, DingTalkChannel, WecomChannel, QQChannel, MochatChannel):
+        default_config = channel_cls.default_config()
+        assert default_config["allowFrom"] == ["*"]
+
+
+def test_feishu_config_prefers_non_empty_snake_case_over_blank_aliases():
+    """Existing duplicate Feishu configs should not parse blank appId/appSecret first."""
+    from tokenmind.channels.feishu import FeishuConfig
+
+    cfg = FeishuConfig.model_validate({
+        "enabled": True,
+        "appId": "",
+        "appSecret": "",
+        "app_id": "cli_real",
+        "app_secret": "secret_real",
+    })
+
+    assert cfg.app_id == "cli_real"
+    assert cfg.app_secret == "secret_real"
+
+
+def test_manager_can_relax_empty_allow_from_for_web_settings_access():
+    """Web runtime must still start so users can repair invalid channel settings."""
+    from tokenmind.channels.feishu import FeishuChannel
+    from tokenmind.channels.manager import ChannelManager
+
+    fake_config = SimpleNamespace(
+        channels=ChannelsConfig.model_validate({
+            "feishu": {
+                "enabled": True,
+                "app_id": "cli_real",
+                "app_secret": "secret_real",
+                "allow_from": [],
+            },
+        }),
+        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+    )
+
+    with patch(
+        "tokenmind.channels.registry.discover_all",
+        return_value={"feishu": FeishuChannel},
+    ):
+        with pytest.raises(SystemExit):
+            ChannelManager(fake_config, MessageBus())
+
+        relaxed = ChannelManager(fake_config, MessageBus(), strict_allow_from=False)
+
+    assert "feishu" in relaxed.channels
+
+
+@pytest.mark.asyncio
+async def test_manager_refreshes_existing_channel_config_without_recreating_connection():
+    """A saved setting change should update the active channel instance in memory."""
+    from tokenmind.channels.feishu import FeishuChannel
+    from tokenmind.channels.manager import ChannelManager
+
+    fake_config = SimpleNamespace(
+        channels=ChannelsConfig.model_validate({
+            "feishu": {
+                "enabled": True,
+                "app_id": "cli_real",
+                "app_secret": "secret_real",
+                "allow_from": [],
+            },
+        }),
+        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+    )
+
+    with patch(
+        "tokenmind.channels.registry.discover_all",
+        return_value={"feishu": FeishuChannel},
+    ):
+        manager = ChannelManager(fake_config, MessageBus(), strict_allow_from=False)
+        existing = manager.channels["feishu"]
+
+        refreshed = await manager.refresh_channel(
+            "feishu",
+            {
+                "enabled": True,
+                "app_id": "cli_real",
+                "app_secret": "secret_real",
+                "allow_from": ["*"],
+            },
+        )
+
+    assert refreshed is existing
+    assert existing.config.allow_from == ["*"]

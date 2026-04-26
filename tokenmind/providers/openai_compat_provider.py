@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 import json_repair
+from loguru import logger
 from openai import AsyncOpenAI
 
 from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
@@ -75,6 +76,40 @@ class OpenAICompatProvider(LLMProvider):
             resolved = resolved.split("/", 1)[1]
         return resolved
 
+    def _requires_reasoning_echo(self, resolved_model: str) -> bool:
+        if not self.spec or self.spec.name != "deepseek":
+            return False
+        model_lower = resolved_model.lower()
+        return any(marker in model_lower for marker in ("reasoner", "thinking", "v4"))
+
+    @staticmethod
+    def _drop_legacy_tool_turns_without_reasoning(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Remove old assistant/tool turns that DeepSeek thinking mode cannot replay."""
+        repaired: list[dict[str, Any]] = []
+        skip_tool_ids: set[str] = set()
+        dropped = 0
+
+        for msg in messages:
+            if msg.get("role") == "tool" and msg.get("tool_call_id") in skip_tool_ids:
+                dropped += 1
+                continue
+
+            if msg.get("role") == "assistant" and msg.get("tool_calls") and not msg.get("reasoning_content"):
+                for tool_call in msg.get("tool_calls") or []:
+                    if isinstance(tool_call, dict) and tool_call.get("id"):
+                        skip_tool_ids.add(str(tool_call["id"]))
+                dropped += 1
+                continue
+
+            repaired.append(msg)
+
+        if dropped:
+            logger.warning(
+                "Dropped {} legacy DeepSeek thinking message(s) without reasoning_content",
+                dropped,
+            )
+        return repaired
+
     def _apply_model_overrides(self, resolved_model: str, kwargs: dict[str, Any]) -> None:
         if not self.spec:
             return
@@ -143,6 +178,8 @@ class OpenAICompatProvider(LLMProvider):
         resolved_model = self._resolve_model(model or self.default_model)
         if self._supports_cache_control(resolved_model):
             messages, tools = self._apply_cache_control(messages, tools)
+        if self._requires_reasoning_echo(resolved_model):
+            messages = self._drop_legacy_tool_turns_without_reasoning(messages)
 
         kwargs: dict[str, Any] = {
             "model": resolved_model,

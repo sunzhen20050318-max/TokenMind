@@ -14,7 +14,7 @@ The public CLI entry point is `tokenmind`. Config lives at `~/.tokenmind/config.
 # Install & run
 pip install -e ".[dev]"
 tokenmind onboard          # setup wizard
-tokenmind web --port 8080  # start FastAPI + Web UI
+tokenmind web --port 18888  # start FastAPI + Web UI
 tokenmind agent            # headless CLI agent mode
 tokenmind gateway          # channel gateway
 

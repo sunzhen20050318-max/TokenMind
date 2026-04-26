@@ -87,6 +87,14 @@ class MessageTool(Tool):
         chat_id = chat_id or self._default_chat_id
         message_id = message_id or self._default_message_id
 
+        if (
+            channel == "web"
+            and chat_id == "web"
+            and self._default_channel == "web"
+            and self._default_chat_id
+        ):
+            chat_id = self._default_chat_id
+
         if not channel or not chat_id:
             return "Error: No target channel/chat specified"
 
@@ -105,7 +113,7 @@ class MessageTool(Tool):
 
         try:
             same_target = channel == self._default_channel and chat_id == self._default_chat_id
-            defer_to_current_web_turn = same_target and channel == "web" and bool(media)
+            defer_to_current_web_turn = same_target and channel == "web"
 
             if not defer_to_current_web_turn:
                 await self._send_callback(msg)

@@ -57,7 +57,7 @@ class QQConfig(Base):
     enabled: bool = False
     app_id: str = ""
     secret: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: list[str] = Field(default_factory=lambda: ["*"])
     msg_format: Literal["plain", "markdown"] = "plain"
 
 

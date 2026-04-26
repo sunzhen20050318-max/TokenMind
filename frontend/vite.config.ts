@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-const tokenMindApiTarget = process.env.TOKENMIND_API_PROXY || 'http://localhost:8080'
+const tokenMindApiTarget = process.env.TOKENMIND_API_PROXY || 'http://localhost:18888'
 
 export default defineConfig({
   plugins: [react()],

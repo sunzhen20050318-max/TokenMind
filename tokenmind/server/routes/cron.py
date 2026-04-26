@@ -178,7 +178,7 @@ def _build_schedule(payload: CronJobCreateRequest) -> tuple[CronSchedule, bool]:
                 status_code=400,
                 detail="Invalid datetime format. Expected YYYY-MM-DDTHH:MM:SS",
             ) from exc
-        return CronSchedule(kind="at", at_ms=int(dt.timestamp() * 1000)), True
+        return CronSchedule(kind="at", at_ms=int(dt.timestamp() * 1000)), False
 
     raise HTTPException(status_code=400, detail="Unsupported schedule type")
 

@@ -44,6 +44,28 @@ app = typer.Typer(
 
 console = Console()
 EXIT_COMMANDS = {"exit", "quit", "/exit", "/quit", ":q"}
+DEFAULT_WEB_PORT = 18888
+
+
+def _cron_execution_session_key(job: Any) -> str:
+    """Return the session where a cron run should save its turn and timeline."""
+    channel = (getattr(job.payload, "channel", None) or "").strip()
+    target = (getattr(job.payload, "to", None) or "").strip()
+    if (
+        getattr(job.payload, "deliver", False)
+        and target.startswith("web:")
+        and channel in {"", "web"}
+    ):
+        return target
+    return f"cron:{job.id}"
+
+
+def _build_cron_prompt(job: Any) -> str:
+    """Build the instruction passed to the agent for a scheduled run."""
+    from tokenmind.cron.delivery import build_task_trigger_message
+
+    return build_task_trigger_message(job.name, job.payload.message)
+
 
 # ---------------------------------------------------------------------------
 # CLI input: prompt_toolkit for editing, paste, history, and display
@@ -270,6 +292,7 @@ def onboard(
     from tokenmind.config.loader import get_config_path, load_config, save_config, set_config_path
     from tokenmind.config.schema import Config
 
+    explicit_config_path = config is not None
     if config:
         config_path = Path(config).expanduser().resolve()
         set_config_path(config_path)
@@ -332,14 +355,31 @@ def onboard(
 
     sync_workspace_templates(workspace_path)
 
-    web_cmd = "tokenmind web --port 8080"
-    if config:
+    web_cmd = f"tokenmind web --port {DEFAULT_WEB_PORT}"
+    if explicit_config_path:
         web_cmd += f" --config {config_path}"
 
     console.print(f"\n{__logo__} TokenMind is ready!")
     console.print("\nNext steps:")
     console.print(f"  1. Start Web UI: [cyan]{web_cmd}[/cyan]")
-    console.print("  2. Open [cyan]http://localhost:8080[/cyan], add your API key in Settings, and enable the model you want to use.")
+    console.print(f"  2. Open [cyan]http://localhost:{DEFAULT_WEB_PORT}[/cyan], add your API key in Settings, and enable the model you want to use.")
+    if _source_checkout_needs_frontend_build():
+        console.print("\n[yellow]Source checkout note:[/yellow]")
+        console.print("  This repository does not have built Web UI assets yet.")
+        console.print(f"  Before opening [cyan]http://localhost:{DEFAULT_WEB_PORT}[/cyan], run:")
+        console.print("  [cyan]cd frontend && npm install && npm run build && cd ..[/cyan]")
+        console.print("  For frontend development, keep the backend running and open [cyan]http://localhost:5173[/cyan] after [cyan]npm run dev[/cyan].")
+
+
+def _source_checkout_needs_frontend_build() -> bool:
+    """Return True when an editable/source checkout lacks built Web UI assets."""
+    source_root = Path(__file__).resolve().parents[2]
+    if not (source_root / "frontend" / "package.json").is_file():
+        return False
+
+    from tokenmind.server.frontend import resolve_frontend_dist_dir
+
+    return resolve_frontend_dist_dir() is None
 
 
 def _merge_missing_defaults(existing: Any, defaults: Any) -> Any:
@@ -417,6 +457,25 @@ def _make_provider_for_web(config: Config):
         reasoning_effort=defaults.reasoning_effort,
     )
     return provider
+
+
+async def _route_web_outbound_message(
+    msg: Any,
+    web_channel: Any,
+    external_channels: Any,
+    logger: Any,
+) -> None:
+    """Route web-runtime outbound messages to WebSocket or enabled chat channels."""
+    if msg.channel == "web":
+        await web_channel.send(msg)
+        return
+
+    channel = external_channels.get_channel(msg.channel) if external_channels else None
+    if channel:
+        await channel.send(msg)
+        return
+
+    logger.warning("Unknown channel in web runtime: {}", msg.channel)
 
 
 def _make_provider(config: Config):
@@ -595,11 +654,8 @@ def gateway(
         from tokenmind.agent.tools.message import MessageTool
         from tokenmind.utils.evaluator import evaluate_response
 
-        reminder_note = (
-            "[Scheduled Task] Timer finished.\n\n"
-            f"Task '{job.name}' has been triggered.\n"
-            f"Scheduled instruction: {job.payload.message}"
-        )
+        reminder_note = _build_cron_prompt(job)
+        execution_session_key = _cron_execution_session_key(job)
 
         cron_tool = agent.tools.get("cron")
         cron_token = None
@@ -608,7 +664,7 @@ def gateway(
         try:
             response = await agent.process_direct(
                 reminder_note,
-                session_key=f"cron:{job.id}",
+                session_key=execution_session_key,
                 channel=job.payload.channel or "cli",
                 chat_id=job.payload.to or "direct",
             )
@@ -725,7 +781,7 @@ def gateway(
 
 @app.command()
 def web(
-    port: int = typer.Option(8080, "--port", "-p", help="Web server port"),
+    port: int = typer.Option(DEFAULT_WEB_PORT, "--port", "-p", help="Web server port"),
     workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
 ):
@@ -735,12 +791,15 @@ def web(
 
     from tokenmind.agent.loop import AgentLoop
     from tokenmind.bus.queue import MessageBus
+    from tokenmind.channels.manager import ChannelManager
     from tokenmind.config.loader import get_config_path
     from tokenmind.config.paths import get_cron_dir
     from tokenmind.cron.service import CronService
     from tokenmind.cron.types import CronJob
     from tokenmind.server.app import create_app
     from tokenmind.server.channel.web import WebChannel, WebChannelConfig
+    from tokenmind.server.dependencies import set_channel_manager
+    from tokenmind.server.frontend import resolve_frontend_dist_dir
     from tokenmind.server.websocket.manager import ConnectionManager
     from tokenmind.session.manager import SessionManager
 
@@ -784,11 +843,8 @@ def web(
         from tokenmind.agent.tools.message import MessageTool
         from tokenmind.cron.delivery import persist_task_result
 
-        reminder_note = (
-            "[Scheduled Task] Timer finished.\n\n"
-            f"Task '{job.name}' has been triggered.\n"
-            f"Scheduled instruction: {job.payload.message}"
-        )
+        reminder_note = _build_cron_prompt(job)
+        execution_session_key = _cron_execution_session_key(job)
 
         cron_tool = agent.tools.get("cron")
         cron_token = None
@@ -797,7 +853,7 @@ def web(
         try:
             response = await agent.process_direct(
                 reminder_note,
-                session_key=f"cron:{job.id}",
+                session_key=execution_session_key,
                 channel=job.payload.channel or "web",
                 chat_id=job.payload.to or "web",
             )
@@ -805,21 +861,24 @@ def web(
             if isinstance(cron_tool, CronTool) and cron_token is not None:
                 cron_tool.reset_cron_context(cron_token)
 
+        effective_channel = job.payload.channel or "web"
         message_tool = agent.tools.get("message")
-        if isinstance(message_tool, MessageTool) and message_tool._sent_in_turn:
+        message_was_sent = isinstance(message_tool, MessageTool) and message_tool._sent_in_turn
+        if message_was_sent and effective_channel != "web":
             return response
 
         if job.payload.deliver and job.payload.to and response:
-            persist_task_result(
-                session_manager=session_manager,
-                session_id=job.payload.to,
-                job_name=job.name,
-                instruction=job.payload.message,
-                response=response,
-            )
+            if execution_session_key != job.payload.to:
+                persist_task_result(
+                    session_manager=session_manager,
+                    session_id=job.payload.to,
+                    job_name=job.name,
+                    instruction=job.payload.message,
+                    response=response,
+                )
             from tokenmind.bus.events import OutboundMessage
             await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel or "web",
+                channel=effective_channel,
                 chat_id=job.payload.to,
                 content=response,
             ))
@@ -830,6 +889,8 @@ def web(
     # Create WebChannel and ConnectionManager
     web_channel_config = WebChannelConfig(allow_from=["*"])
     web_channel = WebChannel(web_channel_config, bus)
+    external_channels = ChannelManager(config, bus, strict_allow_from=False)
+    set_channel_manager(external_channels)
     connection_manager = ConnectionManager()
 
     # Create FastAPI app
@@ -840,18 +901,23 @@ def web(
         connection_manager=connection_manager,
         web_channel=web_channel,
     )
+    frontend_dir = resolve_frontend_dist_dir()
+    if frontend_dir is None:
+        console.print("[yellow]Web UI assets were not found for this source checkout.[/yellow]")
+        console.print(f"  Build once for {DEFAULT_WEB_PORT}: [cyan]cd frontend && npm install && npm run build && cd ..[/cyan]")
+        console.print("  Or use dev mode: keep this backend running, run [cyan]cd frontend && npm install && npm run dev[/cyan], then open [cyan]http://localhost:5173[/cyan].")
+    else:
+        console.print(f"[green]✓[/green] Web UI ready: [cyan]http://localhost:{port}[/cyan]")
 
     # Outbound message dispatcher task
     outbound_dispatcher_task: asyncio.Task | None = None
 
     async def dispatch_outbound():
-        """Forward outbound messages to WebSocket clients."""
+        """Forward outbound messages to WebSocket clients and enabled external channels."""
         while True:
             try:
                 msg = await bus.consume_outbound()
-                # Only forward web channel messages to WebSocket
-                if msg.channel == "web":
-                    await web_channel.send(msg)
+                await _route_web_outbound_message(msg, web_channel, external_channels, logger)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -863,9 +929,13 @@ def web(
 
     async def run():
         nonlocal outbound_dispatcher_task
+        agent_task: asyncio.Task | None = None
         try:
             await cron.start()
             await web_channel.start()
+            for name in external_channels.channels:
+                logger.info("Starting {} channel in web runtime...", name)
+                external_channels.start_channel_background(name)
             # Start outbound dispatcher
             outbound_dispatcher_task = asyncio.create_task(dispatch_outbound())
             # Start agent loop in background
@@ -881,11 +951,12 @@ def web(
             console.print("\n[red]Error: Web server crashed unexpectedly[/red]")
             console.print(traceback.format_exc())
         finally:
-            agent_task.cancel()
-            try:
-                await agent_task
-            except asyncio.CancelledError:
-                pass
+            if agent_task:
+                agent_task.cancel()
+                try:
+                    await agent_task
+                except asyncio.CancelledError:
+                    pass
             if outbound_dispatcher_task:
                 outbound_dispatcher_task.cancel()
                 try:
@@ -895,6 +966,7 @@ def web(
             await agent.close_mcp()
             cron.stop()
             agent.stop()
+            await external_channels.stop_all()
             await web_channel.stop()
 
     asyncio.run(run())

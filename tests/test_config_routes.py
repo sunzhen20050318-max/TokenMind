@@ -364,6 +364,33 @@ async def test_update_provider_config_syncs_active_agent_model(temp_config_path)
 
 
 @pytest.mark.asyncio
+async def test_first_provider_config_becomes_default_when_agent_still_initial(temp_config_path):
+    """A first saved provider should replace the initial auto/Claude default."""
+    from tokenmind.config.loader import load_config, save_config
+    from tokenmind.config.schema import Config
+    from tokenmind.server.routes.config import ProviderConfigUpdate, update_provider_config
+
+    config = Config()
+    save_config(config, temp_config_path)
+
+    response = await update_provider_config(
+        "minimax",
+        ProviderConfigUpdate(
+            api_key="minimax-key",
+            default_model="MiniMax-M2.7",
+        ),
+    )
+
+    updated = load_config(temp_config_path)
+    assert response["defaults"] == {
+        "provider": "minimax",
+        "model": "MiniMax-M2.7",
+    }
+    assert updated.agents.defaults.provider == "minimax"
+    assert updated.agents.defaults.model == "MiniMax-M2.7"
+
+
+@pytest.mark.asyncio
 async def test_update_defaults_uses_provider_default_model_when_model_is_omitted(temp_config_path):
     """Activating a provider should adopt its saved default model when no model is passed."""
     from tokenmind.config.loader import load_config, save_config
@@ -452,6 +479,9 @@ async def test_list_channels_returns_chinese_app_catalog(temp_config_path):
     assert feishu["label"] == "飞书"
     assert feishu["enabled"] is False
     assert "app_id" in feishu["fields"]
+    for channel in response["channels"]:
+        assert "allow_from" in channel["fields"]
+        assert "allow_from" in channel["required"]
 
 
 @pytest.mark.asyncio
@@ -481,6 +511,55 @@ async def test_update_channel_persists_per_channel_config(temp_config_path):
 
 
 @pytest.mark.asyncio
+async def test_update_channel_normalizes_aliased_existing_config(temp_config_path):
+    """Updating a channel should not leave camelCase/snake_case duplicates behind."""
+    from tokenmind.config.loader import load_config, save_config
+    from tokenmind.config.schema import ChannelsConfig, Config
+    from tokenmind.server.routes.config import ChannelConfigUpdate, update_channel
+
+    save_config(
+        Config(
+            channels=ChannelsConfig.model_validate({
+                "feishu": {
+                    "enabled": True,
+                    "appId": "",
+                    "appSecret": "",
+                    "encryptKey": "",
+                    "verificationToken": "",
+                    "allowFrom": [],
+                    "reactEmoji": "THUMBSUP",
+                    "groupPolicy": "mention",
+                    "replyToMessage": False,
+                },
+            }),
+        ),
+        temp_config_path,
+    )
+
+    response = await update_channel(
+        "feishu",
+        ChannelConfigUpdate.model_validate({
+            "enabled": True,
+            "app_id": "cli_real",
+            "app_secret": "secret_real",
+            "allow_from": ["*"],
+        }),
+    )
+
+    assert response["config"]["app_id"] == "cli_real"
+    assert response["config"]["app_secret"] == "secret_real"
+    assert response["config"]["allow_from"] == ["*"]
+    assert "appId" not in response["config"]
+    assert "appSecret" not in response["config"]
+
+    saved = getattr(load_config(temp_config_path).channels, "feishu")
+    assert saved["app_id"] == "cli_real"
+    assert saved["app_secret"] == "secret_real"
+    assert "appId" not in saved
+    assert "appSecret" not in saved
+
+
+@pytest.mark.asyncio
 async def test_update_channel_rejects_unknown_name(temp_config_path):
     """PUT /channels/{name} returns 404 for channels outside the supported registry."""
     from fastapi import HTTPException
@@ -507,6 +586,54 @@ async def test_update_channel_blocks_enable_without_required_fields(temp_config_
     assert exc.value.status_code == 400
     assert "app_id" in str(exc.value.detail)
     assert "app_secret" in str(exc.value.detail)
+    assert "allow_from" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_update_channel_blocks_enable_with_empty_allow_from(temp_config_path):
+    """An enabled external channel must explicitly define who is allowed to use it."""
+    from fastapi import HTTPException
+
+    from tokenmind.server.routes.config import ChannelConfigUpdate, update_channel
+
+    with pytest.raises(HTTPException) as exc:
+        await update_channel(
+            "feishu",
+            ChannelConfigUpdate.model_validate({
+                "enabled": True,
+                "app_id": "cli_xxx",
+                "app_secret": "secret_yyy",
+                "allow_from": [],
+            }),
+        )
+    assert exc.value.status_code == 400
+    assert "allow_from" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_update_channel_refreshes_running_channel_manager(temp_config_path, monkeypatch):
+    """Saving channel settings should hot-refresh an already running web channel."""
+    from unittest.mock import AsyncMock
+
+    from tokenmind.server.routes.config import ChannelConfigUpdate, update_channel
+
+    refresh_channel = AsyncMock()
+    monkeypatch.setattr(
+        "tokenmind.server.dependencies.get_channel_manager",
+        lambda: type("Manager", (), {"refresh_channel": refresh_channel})(),
+    )
+
+    response = await update_channel(
+        "feishu",
+        ChannelConfigUpdate.model_validate({
+            "enabled": True,
+            "app_id": "cli_xxx",
+            "app_secret": "secret_yyy",
+            "allow_from": ["*"],
+        }),
+    )
+
+    refresh_channel.assert_awaited_once_with("feishu", response["config"])
 
 
 @pytest.mark.asyncio

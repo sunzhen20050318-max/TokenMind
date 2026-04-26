@@ -34,13 +34,13 @@ tokenmind onboard
 Run the backend web service:
 
 ```bash
-tokenmind web --port 8080
+tokenmind web --port 18888
 ```
 
 Then open:
 
 ```text
-http://localhost:8080
+http://localhost:18888
 ```
 
 ## Notes

@@ -74,7 +74,9 @@ def test_onboard_does_not_crash_with_legacy_memory_window(tmp_path, monkeypatch)
     monkeypatch.setattr("tokenmind.cli.commands.get_workspace_path", lambda _workspace=None: workspace)
 
     from typer.testing import CliRunner
+
     from tokenmind.cli.commands import app
+
     runner = CliRunner()
     result = runner.invoke(app, ["onboard"], input="n\n")
 
@@ -120,7 +122,9 @@ def test_onboard_refresh_backfills_missing_channel_fields(tmp_path, monkeypatch)
     )
 
     from typer.testing import CliRunner
+
     from tokenmind.cli.commands import app
+
     runner = CliRunner()
     result = runner.invoke(app, ["onboard"], input="n\n")
 
@@ -134,8 +138,10 @@ def test_get_config_path_prefers_tokenmind_home_and_migrates_legacy(tmp_path, mo
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     loader.set_config_path(None)
+    legacy_root = tmp_path / ".legacy-tokenmind"
+    monkeypatch.setattr(loader, "get_legacy_app_dir", lambda: legacy_root)
 
-    legacy_config = tmp_path / ".tokenmind" / "config.json"
+    legacy_config = legacy_root / "config.json"
     legacy_config.parent.mkdir(parents=True, exist_ok=True)
     legacy_config.write_text(json.dumps({"agents": {"defaults": {"model": "openai/gpt-4.1-mini"}}}), encoding="utf-8")
 
@@ -152,12 +158,14 @@ def test_get_config_path_uses_existing_tokenmind_config_without_legacy_copy(tmp_
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     loader.set_config_path(None)
+    legacy_root = tmp_path / ".legacy-tokenmind"
+    monkeypatch.setattr(loader, "get_legacy_app_dir", lambda: legacy_root)
 
     current_config = tmp_path / ".tokenmind" / "config.json"
     current_config.parent.mkdir(parents=True, exist_ok=True)
     current_config.write_text(json.dumps({"agents": {"defaults": {"model": "openai/gpt-5"}}}), encoding="utf-8")
 
-    legacy_config = tmp_path / ".tokenmind" / "config.json"
+    legacy_config = legacy_root / "config.json"
     legacy_config.parent.mkdir(parents=True, exist_ok=True)
     legacy_config.write_text(json.dumps({"agents": {"defaults": {"model": "legacy/model"}}}), encoding="utf-8")
 
@@ -182,6 +190,34 @@ def test_load_config_migrates_legacy_default_workspace_to_tokenmind_home(tmp_pat
     config = loader.load_config(config_path)
 
     assert config.agents.defaults.workspace == "~/.tokenmind/workspace"
+
+
+def test_load_config_adopts_configured_provider_when_defaults_are_initial(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "defaults": {
+                        "provider": "auto",
+                        "model": "anthropic/claude-opus-4-5",
+                    }
+                },
+                "providers": {
+                    "minimax": {
+                        "apiKey": "minimax-key",
+                        "defaultModel": "MiniMax-M2.7",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.agents.defaults.provider == "minimax"
+    assert config.agents.defaults.model == "MiniMax-M2.7"
 
 
 def test_load_config_accepts_utf8_bom_encoded_json(tmp_path) -> None:

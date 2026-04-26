@@ -552,19 +552,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       }
 
       return (
-        <div
-          className="message-row is-assistant"
+        <MessageBubble
           key={`toolchain-standalone-${keySeed}`}
-        >
-          <div className="message-row__avatar is-assistant">
-            <BrandMark
-              size={24}
-              alt=""
-              className="message-row__assistant-mark"
-              variant="icon"
-            />
-          </div>
-          <div className="message-row__body">
+          message={{ role: 'assistant', content: '' }}
+          embeddedToolChain={
             <ToolChain
               toolCalls={pendingArtifacts.toolCalls}
               isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
@@ -576,9 +567,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               displayCount={pendingArtifacts.toolCalls.length}
               activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
               timelineEvents={pendingArtifacts.timelineEvents}
+              variant="embedded"
             />
-          </div>
-        </div>
+          }
+        />
       );
     };
 

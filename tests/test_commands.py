@@ -2,11 +2,13 @@ import json
 import re
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
+from tokenmind.bus.events import OutboundMessage
 from tokenmind.cli.commands import _make_provider, app
 from tokenmind.config.schema import Config
 from tokenmind.providers.openai_codex_provider import _strip_model_prefix
@@ -62,8 +64,9 @@ def test_onboard_fresh_install(mock_paths):
     assert "Created config" in result.stdout
     assert "Created workspace" in result.stdout
     assert "TokenMind is ready" in result.stdout
-    assert "tokenmind web --port 8080" in result.stdout
-    assert "Open http://localhost:8080" in result.stdout
+    assert "tokenmind web --port 18888" in result.stdout
+    assert "tokenmind web --port 18888 --config" not in result.stdout
+    assert "Open http://localhost:18888" in result.stdout
     assert "Add your API key" not in result.stdout
     assert 'tokenmind agent -m "Hello!"' not in result.stdout
     assert "Want Telegram/WhatsApp" not in result.stdout
@@ -113,6 +116,17 @@ def test_onboard_existing_workspace_safe_create(mock_paths):
     assert "Created workspace" not in result.stdout
     assert "Created AGENTS.md" in result.stdout
     assert (workspace_dir / "AGENTS.md").exists()
+
+
+def test_onboard_warns_source_checkout_when_frontend_is_not_built(mock_paths, monkeypatch):
+    monkeypatch.setattr("tokenmind.cli.commands._source_checkout_needs_frontend_build", lambda: True)
+
+    result = runner.invoke(app, ["onboard"])
+
+    assert result.exit_code == 0
+    assert "Source checkout note" in result.stdout
+    assert "cd frontend && npm install && npm run build && cd .." in result.stdout
+    assert "http://localhost:5173" in result.stdout
 
 
 def _strip_ansi(text):
@@ -195,10 +209,50 @@ def test_onboard_wizard_preserves_explicit_config_in_next_steps(tmp_path, monkey
     stripped_output = _strip_ansi(result.stdout)
     compact_output = stripped_output.replace("\n", "")
     resolved_config = str(config_path.resolve())
-    assert f"tokenmind web --port 8080 --config {resolved_config}" in compact_output
-    assert "Open http://localhost:8080" in compact_output
+    assert f"tokenmind web --port 18888 --config {resolved_config}" in compact_output
+    assert "Open http://localhost:18888" in compact_output
     assert 'tokenmind agent -m "Hello!"' not in compact_output
     assert "tokenmind gateway" not in compact_output
+
+
+@pytest.mark.asyncio
+async def test_web_outbound_router_sends_external_channel_messages():
+    from tokenmind.cli.commands import _route_web_outbound_message
+
+    web_channel = SimpleNamespace(send=AsyncMock())
+    feishu_channel = SimpleNamespace(send=AsyncMock())
+    channels = SimpleNamespace(
+        get_channel=lambda name: feishu_channel if name == "feishu" else None,
+    )
+
+    await _route_web_outbound_message(
+        OutboundMessage(channel="feishu", chat_id="oc_demo", content="hello"),
+        web_channel,
+        channels,
+        MagicMock(),
+    )
+
+    feishu_channel.send.assert_awaited_once()
+    web_channel.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_web_outbound_router_keeps_web_messages_on_websocket():
+    from tokenmind.cli.commands import _route_web_outbound_message
+
+    web_channel = SimpleNamespace(send=AsyncMock())
+    feishu_channel = SimpleNamespace(send=AsyncMock())
+    channels = SimpleNamespace(get_channel=lambda _name: feishu_channel)
+
+    await _route_web_outbound_message(
+        OutboundMessage(channel="web", chat_id="web", content="hello"),
+        web_channel,
+        channels,
+        MagicMock(),
+    )
+
+    web_channel.send.assert_awaited_once()
+    feishu_channel.send.assert_not_awaited()
 
 
 def test_config_matches_github_copilot_codex_with_hyphen_prefix():

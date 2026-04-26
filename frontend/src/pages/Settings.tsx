@@ -109,7 +109,6 @@ const CREATIVE_CAPABILITY_META: Record<
 
 const LEGACY_SECTION_META = [
   { id: 'models', title: '模型', copy: '管理提供商、API Key 和默认模型。' },
-  { id: 'agent', title: '智能体', copy: '管理默认模型参数、工作目录和工具预算。' },
   { id: 'tools', title: '工具', copy: '管理搜索、代理、命令执行和安全边界。' },
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。' },
   { id: 'runtime', title: '运行时', copy: '管理渠道进度、网关和心跳设置。' },
@@ -129,7 +128,6 @@ void LEGACY_REASONING_OPTIONS;
 
 const SECTION_META = [
   { id: 'models', title: '模型', copy: '管理提供商、API Key 和默认模型。', group: 'core' },
-  { id: 'agent', title: '智能体', copy: '管理默认模型参数、工作目录和工具预算。', group: 'core' },
   { id: 'tools', title: '工具', copy: '管理搜索、命令执行、上传和安全边界。', group: 'core' },
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。', group: 'core' },
   { id: 'channels', title: '外部渠道', copy: '接入飞书、钉钉、企业微信等中国主流应用。', group: 'core' },
@@ -558,15 +556,6 @@ function SettingsNavIcon({ section }: { section: SectionId }) {
       </svg>
     );
   }
-  if (section === 'agent') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M12 2v4" />
-        <path d="M8 7h8a4 4 0 0 1 4 4v3a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6v-3a4 4 0 0 1 4-4Z" />
-        <path d="M8 15h8" />
-      </svg>
-    );
-  }
   if (section === 'tools') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -774,6 +763,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
 
     void load();
   }, [loadSessions]);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setNotice(null);
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    setNotice(null);
+  }, [selectedSection]);
 
   useEffect(() => {
     setProviderForm(buildProviderForm(selectedProviderId, providers[selectedProviderId]));
@@ -1096,6 +1100,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
     return () => window.clearTimeout(timer);
   }, [memoryArchiveQuery, currentSession, selectedSection]);
 
+  useEffect(() => {
+    if (loading || selectedSection !== 'automation') {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void loadAutomationData(true);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [loading, selectedSection]);
+
   const openProviderEditor = (providerId: string) => {
     setSelectedProviderId(providerId);
     setEditingProviderId(providerId);
@@ -1142,6 +1157,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
     }
   };
 
+  const persistModelDefaults = async (draft: AgentSettings) => {
+    const response = await api.updateAgentConfig({
+      ...draft,
+      reasoning_effort: draft.reasoning_effort || null,
+    });
+    setAgentDraft(response.agent);
+    return response.agent;
+  };
+
   const handleSaveProvider = async () => {
     setSavingSection('models');
     setNotice(null);
@@ -1162,20 +1186,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
         apiKey: '',
         extraHeadersText: prettyJson(response.config.extra_headers),
       }));
-      setAgentDraft((current) =>
-        current
-          ? {
-              ...current,
-              provider: response.defaults.provider,
-              model: response.defaults.model,
-            }
-          : current
-      );
+      if (agentDraft) {
+        await persistModelDefaults({
+          ...agentDraft,
+          provider: response.defaults.provider,
+          model: response.defaults.model,
+        });
+      }
       setEditingProviderId(null);
       await fetchModelProviders();
-      setSuccess(`${PROVIDER_META[selectedProviderId]?.label || selectedProviderId} 配置已保存`);
+      setSuccess(`${PROVIDER_META[selectedProviderId]?.label || selectedProviderId} 模型配置已保存`);
     } catch (error) {
-      setFailure(error, '保存提供商配置失败');
+      setFailure(error, '保存模型配置失败');
     } finally {
       setSavingSection(null);
     }
@@ -1253,28 +1275,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
       );
     } catch (error) {
       setFailure(error, '更新创作能力状态失败');
-    } finally {
-      setSavingSection(null);
-    }
-  };
-
-  const handleSaveAgent = async () => {
-    if (!agentDraft) {
-      return;
-    }
-
-    setSavingSection('agent');
-    setNotice(null);
-    try {
-      const response = await api.updateAgentConfig({
-        ...agentDraft,
-        reasoning_effort: agentDraft.reasoning_effort || null,
-      });
-      setAgentDraft(response.agent);
-      await fetchModelProviders();
-      setSuccess('智能体默认参数已保存');
-    } catch (error) {
-      setFailure(error, '保存智能体参数失败');
     } finally {
       setSavingSection(null);
     }
@@ -1924,7 +1924,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
         <div className="settings-provider-grid">
           {providerCards.map((provider) => (
             <div
-              className={`settings-provider-card ${selectedProviderId === provider.id ? 'active' : ''}`}
+              className={`settings-provider-card ${provider.active ? 'active' : ''} ${
+                selectedProviderId === provider.id ? 'is-selected' : ''
+              }`}
               key={provider.id}
             >
               <div className="settings-provider-head">
@@ -1970,7 +1972,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
         <div className="settings-provider-grid">
           {creativeCards.map((capability) => (
             <div
-              className={`settings-provider-card ${selectedCreativeId === capability.id ? 'active' : ''}`}
+              className={`settings-provider-card ${capability.enabled ? 'active' : ''} ${
+                selectedCreativeId === capability.id ? 'is-selected' : ''
+              }`}
               key={capability.id}
             >
               <div className="settings-provider-head">
@@ -2209,6 +2213,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
                   />
                 </Field>
               </div>
+              <div className="settings-provider-advanced-fields">
+                {renderModelAdvancedFields()}
+              </div>
               <div className="settings-actions">
                 <button
                   className="settings-button"
@@ -2216,7 +2223,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
                   onClick={() => void handleSaveProvider()}
                   type="button"
                 >
-                  保存提供商配置
+                  保存模型配置
                 </button>
               </div>
             </div>
@@ -2226,65 +2233,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
     );
   };
 
-  const renderAgent = () => {
+  const renderModelAdvancedFields = () => {
     if (!agentDraft) {
       return null;
     }
 
     return (
-      <div className="settings-section">
-        <div className="settings-mcp-toolbar">
-          <div className="settings-mcp-toolbar__text">
-            <h3>智能体默认参数</h3>
-            <p>这些参数会影响新的会话和默认执行行为。改完记得点「保存」。</p>
-          </div>
-          <div className="settings-mcp-toolbar__actions">
-            <button
-              className="settings-button"
-              disabled={savingSection === 'agent'}
-              onClick={() => void handleSaveAgent()}
-              type="button"
-            >
-              {savingSection === 'agent' ? '保存中…' : '保存'}
-            </button>
-          </div>
+      <div className="settings-provider-advanced">
+        <div className="settings-provider-advanced-head">
+          <h4>模型高级参数</h4>
+          <p>这些参数会随本次模型配置一起保存，用于后续对话和工具执行。</p>
         </div>
-
         <div className="settings-flat-panel">
           <div className="settings-grid">
-            <Field label="提供商" copy="可以保留 auto，也可以固定某一个提供商。">
-              <select
-                className="settings-select"
-                onChange={(event) =>
-                  setAgentDraft((current) =>
-                    current ? { ...current, provider: event.target.value } : current
-                  )
-                }
-                value={agentDraft.provider}
-              >
-                <option value="auto">auto</option>
-                {Object.entries(PROVIDER_META).map(([id, meta]) => (
-                  <option key={id} value={id}>
-                    {meta.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="模型" copy="默认模型字符串。">
-              <input
-                className="settings-input"
-                onChange={(event) =>
-                  setAgentDraft((current) =>
-                    current ? { ...current, model: event.target.value } : current
-                  )
-                }
-                type="text"
-                value={agentDraft.model}
-              />
-            </Field>
-          </div>
-          <div className="settings-grid">
-            <Field label="工作目录" copy="智能体默认使用的 workspace。">
+            <Field label="工作目录" copy="模型调用和工具执行使用的 workspace。">
               <input
                 className="settings-input"
                 onChange={(event) =>
@@ -3835,6 +3797,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
                 job.schedule.kind === 'at' && job.schedule.at_ms
                   ? formatTimestamp(job.schedule.at_ms)
                   : job.schedule.label || '--';
+              const isCompleted = cronTab === 'completed';
+              const statusTone = job.state.last_status === 'error' ? 'error' : 'ok';
+              const statusText = statusTone === 'error' ? '执行失败' : '已完成';
               return (
                 <div className="settings-cron-row" key={job.id}>
                   <button
@@ -3846,15 +3811,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
                     {job.name}
                   </button>
                   <span className="settings-cron-row__schedule">{scheduleText}</span>
-                  <button
-                    className={`settings-toggle ${job.enabled ? 'on' : ''}`}
-                    disabled={cronActioningId === job.id}
-                    onClick={() => void handleToggleCronJob(job)}
-                    type="button"
-                    aria-label={job.enabled ? '点击停用' : '点击启用'}
-                  >
-                    {job.enabled ? '已启用' : '已停用'}
-                  </button>
+                  {isCompleted ? (
+                    <span className={`settings-cron-status settings-cron-status--${statusTone}`}>
+                      {statusText}
+                    </span>
+                  ) : (
+                    <button
+                      className={`settings-toggle ${job.enabled ? 'on' : ''}`}
+                      disabled={cronActioningId === job.id}
+                      onClick={() => void handleToggleCronJob(job)}
+                      type="button"
+                      aria-label={job.enabled ? '点击停用' : '点击启用'}
+                    >
+                      {job.enabled ? '已启用' : '已停用'}
+                    </button>
+                  )}
                   <div className="settings-cron-row__menu">
                     <button
                       className="settings-cron-menu-trigger"
@@ -3875,7 +3846,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
                           }}
                           type="button"
                         >
-                          立即执行
+                          重新执行
                         </button>
                         <button
                           onClick={() => {
@@ -5011,7 +4982,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
 
     const missingRequired = entry.required.filter((field) => {
       const v = channelDraft[field];
-      return v == null || (typeof v === 'string' && !v.trim());
+      return v == null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
     });
     const canEnable = missingRequired.length === 0;
 
@@ -5323,8 +5294,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
     switch (selectedSection) {
       case 'models':
         return renderModelsPanel();
-      case 'agent':
-        return renderAgent();
       case 'tools':
         return renderTools();
       case 'memory':

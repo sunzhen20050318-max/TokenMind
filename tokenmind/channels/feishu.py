@@ -10,13 +10,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 from loguru import logger
+from pydantic import Field, model_validator
 
 from tokenmind.bus.events import OutboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.channels.base import BaseChannel
 from tokenmind.config.paths import get_media_dir
 from tokenmind.config.schema import Base
-from pydantic import Field
+from pydantic.alias_generators import to_camel
 
 import importlib.util
 
@@ -244,10 +245,42 @@ class FeishuConfig(Base):
     app_secret: str = ""
     encrypt_key: str = ""
     verification_token: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: list[str] = Field(default_factory=lambda: ["*"])
     react_emoji: str = "THUMBSUP"
     group_policy: Literal["open", "mention"] = "mention"
     reply_to_message: bool = False  # If True, bot replies quote the user's original message
+
+    @model_validator(mode="before")
+    @classmethod
+    def _prefer_non_empty_field_names(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        for field in (
+            "app_id",
+            "app_secret",
+            "encrypt_key",
+            "verification_token",
+            "allow_from",
+            "react_emoji",
+            "group_policy",
+            "reply_to_message",
+        ):
+            alias = to_camel(field)
+            if field not in data or alias not in data:
+                continue
+            alias_value = data[alias]
+            field_value = data[field]
+            alias_empty = alias_value is None or (
+                isinstance(alias_value, str) and not alias_value.strip()
+            )
+            field_non_empty = not (
+                field_value is None or (isinstance(field_value, str) and not field_value.strip())
+            )
+            if alias_empty and field_non_empty:
+                normalized[alias] = field_value
+        return normalized
 
 
 class FeishuChannel(BaseChannel):
