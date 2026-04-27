@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Attachment } from '../types';
+import type { AssetItem } from '../types/assets';
 import type { CreativeCapabilitySettings } from '../types/config';
 import { api } from '../services/api';
 import {
@@ -192,6 +193,54 @@ function persistStoredMusicState(tracks: GeneratedTrack[], favoriteTrackIds: Set
   }
 }
 
+function isGeneratedMusicAsset(asset: AssetItem): boolean {
+  return asset.session_id === 'creative:music' || asset.name.toLowerCase().startsWith('generated-music-');
+}
+
+function stripFileExtension(filename: string): string {
+  return filename.replace(/\.[^/.]+$/, '');
+}
+
+function assetToMusicTrack(asset: AssetItem): GeneratedTrack {
+  const attachment: Attachment = {
+    id: asset.id,
+    name: asset.name,
+    mime_type: asset.mime_type ?? undefined,
+    size: asset.size,
+    category: asset.category,
+    is_image: asset.is_image,
+    origin: 'assistant_generated',
+    status: 'saved',
+    preview_text: asset.preview_text ?? undefined,
+  };
+
+  return {
+    id: asset.id,
+    title: stripFileExtension(asset.name) || asset.name || '已保存音乐',
+    description: '已保存音乐',
+    status: 'ready',
+    attachment,
+    filename: asset.name,
+    durationMs: null,
+    traceId: null,
+    createdAt: asset.created_at || new Date().toISOString(),
+  };
+}
+
+function mergeMusicTracks(current: GeneratedTrack[], libraryTracks: GeneratedTrack[]): GeneratedTrack[] {
+  const byId = new Map<string, GeneratedTrack>();
+  for (const track of libraryTracks) {
+    byId.set(track.id, track);
+  }
+  for (const track of current) {
+    const libraryTrack = byId.get(track.id);
+    byId.set(track.id, libraryTrack ? { ...libraryTrack, ...track } : track);
+  }
+  return Array.from(byId.values())
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .slice(0, MUSIC_TRACK_STORAGE_LIMIT);
+}
+
 export const MusicPage: React.FC<{
   capability: CreativeCapabilitySettings | null | undefined;
   coverCapability?: CreativeCapabilitySettings | null;
@@ -207,6 +256,8 @@ export const MusicPage: React.FC<{
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tracks, setTracks] = useState<GeneratedTrack[]>(() => restoreStoredMusicTracks());
+  const [isLoadingLibraryTracks, setIsLoadingLibraryTracks] = useState(false);
+  const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'works' | 'favorites'>('works');
   const [favoriteTrackIds, setFavoriteTrackIds] = useState<Set<string>>(() => restoreStoredMusicFavorites());
@@ -249,6 +300,55 @@ export const MusicPage: React.FC<{
   useEffect(() => {
     persistStoredMusicState(tracks, favoriteTrackIds);
   }, [tracks, favoriteTrackIds]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLibraryTracks() {
+      setIsLoadingLibraryTracks(true);
+      try {
+        const libraryAssets: AssetItem[] = [];
+        let cursor: number | null | undefined = 0;
+        let pageCount = 0;
+        while (cursor !== null && pageCount < 10 && libraryAssets.length < MUSIC_TRACK_STORAGE_LIMIT) {
+          const page = await api.listAssets({
+            category: 'music',
+            cursor: cursor ?? 0,
+            limit: 100,
+          });
+          libraryAssets.push(...page.items.filter(isGeneratedMusicAsset));
+          cursor = page.next_cursor;
+          pageCount += 1;
+        }
+        if (!isMounted) {
+          return;
+        }
+        const libraryTracks = libraryAssets.map(assetToMusicTrack);
+        setTracks((current) => mergeMusicTracks(current, libraryTracks));
+        setFavoriteTrackIds((current) => {
+          const next = new Set(current);
+          for (const asset of libraryAssets) {
+            if (asset.favorite) {
+              next.add(asset.id);
+            }
+          }
+          return next;
+        });
+      } catch {
+        // The studio should remain usable even if the asset index is unavailable.
+      } finally {
+        if (isMounted) {
+          setIsLoadingLibraryTracks(false);
+        }
+      }
+    }
+
+    void loadLibraryTracks();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((current) => {
@@ -333,6 +433,40 @@ export const MusicPage: React.FC<{
     setCurrentTime(nextTime);
     if (audioRef.current) {
       audioRef.current.currentTime = nextTime;
+    }
+  };
+
+  const handleDeleteTrack = async (track: GeneratedTrack) => {
+    if (!window.confirm(`确定删除“${track.title}”吗？音频文件也会从本地资产库移除。`)) {
+      return;
+    }
+    setDeletingTrackId(track.id);
+    setError(null);
+    try {
+      if (track.attachment?.id && track.status === 'ready') {
+        await api.deleteAsset(track.attachment.id);
+      }
+      setTracks((current) => current.filter((item) => item.id !== track.id));
+      setFavoriteTrackIds((current) => {
+        const next = new Set(current);
+        next.delete(track.id);
+        if (track.attachment?.id) {
+          next.delete(track.attachment.id);
+        }
+        return next;
+      });
+      if (selectedTrackId === track.id) {
+        audioRef.current?.pause();
+        setSelectedTrackId(null);
+        setIsPlayerOpen(false);
+        setIsPlaying(false);
+        setCurrentTime(0);
+        setDuration(0);
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '删除音乐失败，请稍后重试');
+    } finally {
+      setDeletingTrackId(null);
     }
   };
 
@@ -613,7 +747,12 @@ export const MusicPage: React.FC<{
         </div>
 
         <div className="music-maker__track-list">
-          {visibleTracks.length === 0 ? (
+          {isLoadingLibraryTracks && visibleTracks.length === 0 ? (
+            <div className="music-maker__empty">
+              <span>正在加载历史音乐</span>
+              <p>正在从本地资产库恢复之前生成的音乐作品。</p>
+            </div>
+          ) : visibleTracks.length === 0 ? (
             <div className="music-maker__empty">
               <span>{activeTab === 'favorites' ? '暂无收藏' : '暂无作品'}</span>
               <p>
@@ -710,6 +849,14 @@ export const MusicPage: React.FC<{
             <a href={playerTrackUrl} download={playerTrack.filename || 'tokenmind-music.mp3'}>
               下载
             </a>
+            <button
+              type="button"
+              className="is-danger"
+              disabled={deletingTrackId === playerTrack.id}
+              onClick={() => void handleDeleteTrack(playerTrack)}
+            >
+              {deletingTrackId === playerTrack.id ? '删除中...' : '删除'}
+            </button>
           </div>
         </footer>
       ) : null}

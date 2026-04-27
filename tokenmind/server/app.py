@@ -527,6 +527,7 @@ class ChatService:
         content: str | bytes,
         mime_type: str | None = None,
         message_id: str | None = None,
+        preview_text: str | None = None,
     ) -> dict[str, Any]:
         return self.attachments.create_generated(
             session_id,
@@ -535,6 +536,7 @@ class ChatService:
             mime_type=mime_type,
             retention=self._upload_policy()["retention"],
             message_id=message_id,
+            preview_text=preview_text,
         )
 
     def create_local_attachment(
@@ -706,6 +708,7 @@ class ChatService:
                     content=audio_bytes,
                     mime_type=mime_type,
                     message_id=f"voice-clone-{result.voice_id}",
+                    preview_text=preview_text,
                 )
                 retained = self.retain_attachment(attachment["id"])
                 demo_attachment_id = retained.get("id") or attachment["id"]
@@ -771,6 +774,7 @@ class ChatService:
             content=result.trial_audio,
             mime_type=result.mime_type,
             message_id=f"voice-design-{result.voice_id}",
+            preview_text=preview_text,
         )
         retained = self.retain_attachment(attachment["id"])
         demo_attachment_id = retained.get("id") or attachment["id"]
@@ -859,6 +863,7 @@ class ChatService:
             content=result.data,
             mime_type=result.mime_type,
             message_id=f"tts-{result.voice_id}",
+            preview_text=text.strip()[:500],
         )
         retained = self.retain_attachment(attachment["id"])
         attachment_id = retained.get("id") or attachment["id"]

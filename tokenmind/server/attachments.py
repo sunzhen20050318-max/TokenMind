@@ -230,6 +230,7 @@ class AttachmentStore:
         mime_type: str | None,
         retention: timedelta,  # kept for API compatibility; ignored in auto-save mode
         message_id: str | None = None,
+        preview_text: str | None = None,
     ) -> dict[str, Any]:
         del retention  # auto-saved attachments never expire
         safe_name = safe_filename(filename or "attachment.txt")
@@ -257,7 +258,7 @@ class AttachmentStore:
             created_at=now_iso,
             expires_at=None,
             retained_at=now_iso,
-            preview_text=self._preview_text(content, resolved_mime),
+            preview_text=preview_text if preview_text is not None else self._preview_text(content, resolved_mime),
         )
         return self._write_record(record)
 

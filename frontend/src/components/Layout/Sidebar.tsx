@@ -461,7 +461,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ) : (
               <div className="shell-sidebar__session-body">
                 <div className="shell-sidebar__session-title">
-                  {title}
+                  <span className="shell-sidebar__session-title-text">{title}</span>
                   {busy ? (
                     <span
                       className="shell-sidebar__session-busy"

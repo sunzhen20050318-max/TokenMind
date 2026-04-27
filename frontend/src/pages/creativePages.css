@@ -1337,6 +1337,14 @@
   color: var(--music-faint);
 }
 
+.music-maker__player-actions button.is-danger {
+  color: #f1b9b9;
+}
+
+.music-maker__player-actions button.is-danger:hover:not(:disabled) {
+  color: #ffffff;
+}
+
 @media (max-width: 1120px) {
   .music-maker {
     grid-template-columns: minmax(0, 1fr);

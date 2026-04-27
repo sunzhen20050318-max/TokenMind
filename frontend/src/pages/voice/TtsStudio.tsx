@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import type { CreativeCapabilitySettings } from '../../types/config';
 import { isCreativeCapabilityConfigured } from '../../types/config';
 import type { TtsVoiceListResponse, TtsVoiceOption } from '../../types';
+import type { AssetItem } from '../../types/assets';
 import {
   TTS_MODELS,
   TTS_TEXT_LIMIT,
@@ -56,6 +57,36 @@ function loadSplit(): number {
   return 0.56;
 }
 
+function ttsHistoryFromAsset(asset: AssetItem): TtsHistoryItem {
+  return {
+    id: asset.id,
+    attachment_id: asset.id,
+    voice_id: 'saved',
+    voice_label: '历史语音',
+    model: '已保存音频',
+    text: asset.preview_text?.trim() || asset.name,
+    usage_characters: asset.preview_text?.length ?? null,
+    created_at: asset.created_at || new Date().toISOString(),
+    filename: asset.name,
+    mime_type: asset.mime_type ?? 'audio/mpeg',
+    trace_id: null,
+  };
+}
+
+function mergeTtsHistory(current: TtsHistoryItem[], libraryItems: TtsHistoryItem[]): TtsHistoryItem[] {
+  const byAttachment = new Map<string, TtsHistoryItem>();
+  for (const item of libraryItems) {
+    byAttachment.set(item.attachment_id, item);
+  }
+  for (const item of current) {
+    const fallback = byAttachment.get(item.attachment_id);
+    byAttachment.set(item.attachment_id, fallback ? { ...fallback, ...item } : item);
+  }
+  return Array.from(byAttachment.values())
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    .slice(0, 50);
+}
+
 export function TtsPage({ capability }: TtsPageProps) {
   const [text, setText] = useState<string>('');
   const [voiceId, setVoiceId] = useState<string>('');
@@ -70,6 +101,8 @@ export function TtsPage({ capability }: TtsPageProps) {
   const [voicesLoading, setVoicesLoading] = useState<boolean>(true);
   const [voicesError, setVoicesError] = useState<string | null>(null);
   const [history, setHistory] = useState<TtsHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState<boolean>(true);
+  const [deletingHistoryId, setDeletingHistoryId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [leftFraction, setLeftFraction] = useState<number>(loadSplit);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -77,6 +110,48 @@ export function TtsPage({ capability }: TtsPageProps) {
 
   useEffect(() => {
     setHistory(loadTtsHistory());
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLibraryHistory() {
+      setHistoryLoading(true);
+      try {
+        const libraryAssets: AssetItem[] = [];
+        let cursor: number | null | undefined = 0;
+        let pageCount = 0;
+        while (cursor !== null && pageCount < 10 && libraryAssets.length < 50) {
+          const page = await api.listAssets({
+            category: 'tts',
+            cursor: cursor ?? 0,
+            limit: 100,
+          });
+          libraryAssets.push(...page.items);
+          cursor = page.next_cursor;
+          pageCount += 1;
+        }
+        if (!isMounted) return;
+        const libraryHistory = libraryAssets.map(ttsHistoryFromAsset);
+        setHistory((current) => {
+          const next = mergeTtsHistory(current, libraryHistory);
+          saveTtsHistory(next);
+          return next;
+        });
+      } catch {
+        // Keep the TTS page usable when the asset index cannot be loaded.
+      } finally {
+        if (isMounted) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadLibraryHistory();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -196,6 +271,30 @@ export function TtsPage({ capability }: TtsPageProps) {
       setError(err instanceof Error ? err.message : '合成失败，请稍后重试。');
     }
   }, [canSubmit, emotion, history, model, pitch, selectedVoice, speed, text, voiceId, volume]);
+
+  const handleDeleteHistoryItem = useCallback(
+    async (item: TtsHistoryItem) => {
+      if (!window.confirm('确定删除这条语音合成记录吗？音频文件也会从本地资产库移除。')) {
+        return;
+      }
+      setDeletingHistoryId(item.id);
+      setError(null);
+      try {
+        await api.deleteAsset(item.attachment_id);
+        const next = history.filter((historyItem) => historyItem.id !== item.id);
+        setHistory(next);
+        saveTtsHistory(next);
+        if (selectedId === item.id) {
+          setSelectedId(next[0]?.id ?? null);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '删除语音失败，请稍后重试。');
+      } finally {
+        setDeletingHistoryId(null);
+      }
+    },
+    [history, selectedId],
+  );
 
   const selectedItem = useMemo(
     () => history.find((item) => item.id === selectedId) ?? null,
@@ -400,7 +499,12 @@ export function TtsPage({ capability }: TtsPageProps) {
           <span className="voice-maker__list-count">{history.length} / 50 · 本地保存</span>
         </header>
 
-        {history.length === 0 ? (
+        {historyLoading && history.length === 0 ? (
+          <div className="voice-maker__empty">
+            <div className="voice-maker__empty-title">正在加载历史语音</div>
+            <p>正在从本地资产库恢复之前合成的语音。</p>
+          </div>
+        ) : history.length === 0 ? (
           <div className="voice-maker__empty">
             <div className="voice-maker__empty-title">还没有合成记录</div>
             <p>在左侧填入文字并选择音色，点击合成后结果会展示在这里。</p>
@@ -462,6 +566,14 @@ export function TtsPage({ capability }: TtsPageProps) {
               >
                 下载 MP3
               </a>
+              <button
+                type="button"
+                className="voice-maker__ghost-btn is-danger"
+                disabled={deletingHistoryId === selectedItem.id}
+                onClick={() => void handleDeleteHistoryItem(selectedItem)}
+              >
+                {deletingHistoryId === selectedItem.id ? '删除中...' : '删除'}
+              </button>
             </div>
           </div>
         ) : null}

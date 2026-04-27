@@ -1,4 +1,12 @@
-export type AssetCategory = 'image' | 'video' | 'file';
+export type AssetCategory =
+  | 'image'
+  | 'video'
+  | 'music'
+  | 'tts'
+  | 'voice_clone'
+  | 'voice_design'
+  | 'audio'
+  | 'file';
 
 export interface AssetItem {
   id: string;
