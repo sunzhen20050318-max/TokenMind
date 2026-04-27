@@ -42,6 +42,7 @@ from tokenmind.server.frontend import (
     resolve_frontend_dist_dir,
 )
 from tokenmind.server.routes import (
+    assets_router,
     chat_router,
     config_router,
     creative_router,
@@ -1506,6 +1507,7 @@ def create_app(
     )
 
     # Include routers
+    app.include_router(assets_router)
     app.include_router(chat_router)
     app.include_router(config_router)
     app.include_router(creative_router)

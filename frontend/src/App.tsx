@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { shouldRestoreLastSession } from './app/sessionRestoreState';
 import { AttachmentPreview } from './components/AttachmentPreview/AttachmentPreview';
+import { CrossSessionApprovalToast } from './components/CrossSessionToast/CrossSessionApprovalToast';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
@@ -8,6 +9,7 @@ import { createProjectConversation } from './components/Projects/projectEntryFlo
 import { EntryGate } from './components/EntryGate/EntryGate';
 import { KnowledgePage } from './pages/Knowledge';
 import { MusicPage } from './pages/Music';
+import { AssetsPage } from './pages/Assets';
 import { ProjectHome } from './pages/ProjectHome';
 import { SettingsPage } from './pages/Settings';
 import { VideoPage } from './pages/Video';
@@ -17,12 +19,18 @@ import { VoiceDesignPage } from './pages/voice/VoiceDesignStudio';
 import { api } from './services/api';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
+import { useSessionOrchestrator } from './hooks/useSessionOrchestrator';
 import './app.css';
 
 const LAST_SESSION_KEY = 'tokenmind:last-session';
 const SIDEBAR_COLLAPSED_KEY = 'tokenmind:sidebar-collapsed';
 
 const App: React.FC = () => {
+  // Mount the WebSocket orchestrator at the app root so the chat WS lifecycle
+  // is independent of the ChatWindow component (which gets unmounted whenever
+  // the user navigates to settings, asset library, music studio, etc.).
+  useSessionOrchestrator();
+
   const {
     currentSession,
     creativeCapabilities,
@@ -31,6 +39,7 @@ const App: React.FC = () => {
     setCurrentSession,
     activeProjectId,
     activeProject,
+    openProject,
     queuePendingSessionStarter,
   } = useChatStore();
   const { sessions } = useSessions();
@@ -40,6 +49,7 @@ const App: React.FC = () => {
   const [mainView, setMainView] = useState<
     | 'chat'
     | 'knowledge'
+    | 'assets'
     | 'music'
     | 'voice-clone'
     | 'tts'
@@ -142,6 +152,26 @@ const App: React.FC = () => {
                   setMainView('chat');
                 }}
               />
+            ) : mainView === 'assets' ? (
+              <AssetsPage
+                onNavigateToSession={async (sessionId, projectId) => {
+                  if (projectId) {
+                    // Hydrate the project + its session list first so chatStore can
+                    // categorise the session correctly and the sidebar reflects the
+                    // right project workspace before we switch the view.
+                    try {
+                      await openProject(projectId);
+                    } catch {
+                      // Fall through and still try to open the session by id.
+                    }
+                    setCurrentSession(sessionId);
+                    setMainView('project-chat');
+                  } else {
+                    setCurrentSession(sessionId);
+                    setMainView('chat');
+                  }
+                }}
+              />
             ) : mainView === 'knowledge' ? (
               <KnowledgePage isActive />
             ) : mainView === 'music' ? (
@@ -194,6 +224,12 @@ const App: React.FC = () => {
         </div>
       </div>
       <AttachmentPreview />
+      <CrossSessionApprovalToast
+        onJumpToSession={(sessionId) => {
+          setCurrentSession(sessionId);
+          setMainView('chat');
+        }}
+      />
     </div>
   );
 };

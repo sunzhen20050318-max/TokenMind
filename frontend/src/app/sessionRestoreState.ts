@@ -5,6 +5,7 @@ interface SessionRestoreStateOptions {
   mainView:
     | 'chat'
     | 'knowledge'
+    | 'assets'
     | 'music'
     | 'voice-clone'
     | 'tts'

@@ -1,5 +1,6 @@
 """API routes for TokenMind Web UI."""
 
+from tokenmind.server.routes.assets import router as assets_router
 from tokenmind.server.routes.chat import router as chat_router
 from tokenmind.server.routes.config import router as config_router
 from tokenmind.server.routes.creative import router as creative_router
@@ -13,6 +14,7 @@ from tokenmind.server.routes.status import router as status_router
 from tokenmind.server.routes.storage import router as storage_router
 
 __all__ = [
+    "assets_router",
     "chat_router",
     "config_router",
     "creative_router",

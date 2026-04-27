@@ -23,6 +23,12 @@ import type {
   VoiceDesignCreateRequest,
   VoiceDesignCreateResponse,
 } from '../types';
+import type {
+  AssetActionResponse,
+  AssetCategory,
+  AssetItem,
+  AssetListResponse,
+} from '../types/assets';
 import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
 import type {
   DeleteStorageFileResponse,
@@ -484,6 +490,51 @@ export const api = {
     const res = await fetch(`${API_BASE}/status`);
     if (!res.ok) {
       throw new Error(`Failed to get status: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listAssets(params: {
+    category: AssetCategory;
+    favorite?: boolean;
+    cursor?: number;
+    limit?: number;
+  }): Promise<AssetListResponse> {
+    const search = new URLSearchParams({ category: params.category });
+    if (params.favorite !== undefined) {
+      search.set('favorite', String(params.favorite));
+    }
+    if (params.cursor !== undefined) {
+      search.set('cursor', String(params.cursor));
+    }
+    if (params.limit !== undefined) {
+      search.set('limit', String(params.limit));
+    }
+    const res = await fetch(`${API_BASE}/assets?${search.toString()}`);
+    if (!res.ok) {
+      throw new Error(`Failed to list assets: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async setAssetFavorite(assetId: string, favorite: boolean): Promise<AssetItem> {
+    const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(assetId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ favorite }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update asset: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async deleteAsset(assetId: string): Promise<AssetActionResponse> {
+    const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(assetId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to delete asset: ${res.statusText}`);
     }
     return res.json();
   },

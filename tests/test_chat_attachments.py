@@ -36,11 +36,13 @@ async def test_create_generated_attachment_persists_file_and_index(tmp_path: Pat
 
     assert ref["id"]
     assert ref["origin"] == "assistant_generated"
-    assert ref["status"] == "temporary"
+    # Auto-save: assistant-generated attachments now go straight to "saved".
+    assert ref["status"] == "saved"
 
     record = service.get_attachment_record(ref["id"])
     assert record is not None
     assert record["name"] == "summary.md"
+    assert "saved" in str(record["storage_path"])
     assert Path(record["storage_path"]).exists()
     assert Path(record["storage_path"]).read_text(encoding="utf-8") == "# hello world"
 
@@ -114,7 +116,8 @@ async def test_create_remote_attachment_downloads_and_indexes_file(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_retain_attachment_promotes_generated_file_to_saved_storage(tmp_path: Path) -> None:
+async def test_retain_attachment_is_idempotent_on_auto_saved_records(tmp_path: Path) -> None:
+    """Auto-save means new generated attachments are already saved; retain is a no-op."""
     service = make_service(tmp_path)
     ref = service.create_generated_attachment(
         "web:test-session",
@@ -126,6 +129,7 @@ async def test_retain_attachment_promotes_generated_file_to_saved_storage(tmp_pa
 
     before = service.get_attachment_record(ref["id"])
     assert before is not None
+    assert before["status"] == "saved"
     before_path = Path(before["storage_path"])
 
     retained = service.retain_attachment(ref["id"])
@@ -133,14 +137,13 @@ async def test_retain_attachment_promotes_generated_file_to_saved_storage(tmp_pa
     assert retained["status"] == "saved"
     after = service.get_attachment_record(ref["id"])
     assert after is not None
-    after_path = Path(after["storage_path"])
-    assert "saved" in str(after_path)
-    assert after_path.exists()
-    assert not before_path.exists()
+    assert Path(after["storage_path"]) == before_path
+    assert before_path.exists()
 
 
 @pytest.mark.asyncio
-async def test_cleanup_uploads_expires_temporary_assistant_attachments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cleanup_uploads_keeps_auto_saved_assistant_attachments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auto-saved assistant attachments must survive cleanup sweeps."""
     service = make_service(tmp_path)
     monkeypatch.setattr(
         service,
@@ -159,7 +162,7 @@ async def test_cleanup_uploads_expires_temporary_assistant_attachments(tmp_path:
 
     ref = service.create_generated_attachment(
         "web:test-session",
-        filename="stale.json",
+        filename="kept.json",
         content='{"ok": true}',
         mime_type="application/json",
         message_id="assistant-3",
@@ -170,13 +173,12 @@ async def test_cleanup_uploads_expires_temporary_assistant_attachments(tmp_path:
     stale = storage_path.stat().st_mtime - 3600
     os.utime(storage_path, (stale, stale))
 
-    result = service.cleanup_uploads(force=True)
+    service.cleanup_uploads(force=True)
 
-    assert result["deleted_files"] >= 1
-    expired = service.get_attachment_record(ref["id"])
-    assert expired is not None
-    assert expired["status"] == "expired"
-    assert not Path(expired["storage_path"]).exists()
+    after = service.get_attachment_record(ref["id"])
+    assert after is not None
+    assert after["status"] == "saved"
+    assert Path(after["storage_path"]).exists()
 
 
 @pytest.mark.asyncio
@@ -217,7 +219,8 @@ async def test_history_serialization_reflects_latest_attachment_status(tmp_path:
 
     history = await service.get_history("web:test-session")
 
-    assert history["messages"][0]["attachments"][0]["status"] == "expired"
+    # Auto-saved attachments survive cleanup, so the status stays "saved".
+    assert history["messages"][0]["attachments"][0]["status"] == "saved"
 
 
 def build_chat_test_client(service: ChatService) -> TestClient:

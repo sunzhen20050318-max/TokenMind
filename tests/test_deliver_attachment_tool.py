@@ -53,7 +53,8 @@ async def test_deliver_attachment_tool_attaches_generated_file_to_final_reply(tm
     attachments = result.metadata.get("_attachments") or []
     assert len(attachments) == 1
     assert attachments[0]["origin"] == "assistant_generated"
-    assert attachments[0]["status"] == "temporary"
+    # Auto-save: assistant attachments default to "saved" so they aren't swept.
+    assert attachments[0]["status"] == "saved"
 
     saved_session = loop.sessions.get_or_create(msg.session_key)
     assistant_messages = [item for item in saved_session.messages if item.get("role") == "assistant"]
@@ -168,3 +169,47 @@ async def test_repeated_invalid_deliver_attachment_call_stops_tool_loop(tmp_path
     assert result is not None
     assert "deliver_attachment was called repeatedly with invalid parameters" in result.content
     assert loop.provider.chat_with_retry.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_deliver_attachment_isolates_state_across_concurrent_sessions(tmp_path: Path) -> None:
+    """Two sessions delivering attachments concurrently must not see each other's files."""
+    import asyncio
+
+    from datetime import timedelta
+
+    from tokenmind.agent.tools.deliver_attachment import (
+        DeliverAttachmentTool,
+        _delivered_ctx,
+    )
+    from tokenmind.server.attachments import AttachmentStore
+
+    store = AttachmentStore(tmp_path)
+    tool = DeliverAttachmentTool(store, retention=timedelta(hours=1))
+
+    async def run_session(chat_id: str, filename: str) -> list[dict]:
+        # Each session would normally run inside its own AgentLoop task, which
+        # gives the ContextVar a fresh, isolated value automatically.
+        tool.set_context("web", chat_id, message_id=None)
+        tool.start_turn()
+        # Yield once so the scheduler can interleave with the other session.
+        await asyncio.sleep(0)
+        await tool.execute(
+            source_type="inline_content",
+            filename=filename,
+            content=f"payload-{filename}",
+            mime_type="text/plain",
+        )
+        await asyncio.sleep(0)
+        return tool.delivered
+
+    task_a = asyncio.create_task(run_session("web:session-1", "male.txt"))
+    task_b = asyncio.create_task(run_session("web:session-2", "female.txt"))
+    delivered_a, delivered_b = await asyncio.gather(task_a, task_b)
+
+    # Each session must only see its own attachment — no cross-pollination.
+    assert [item["name"] for item in delivered_a] == ["male.txt"]
+    assert [item["name"] for item in delivered_b] == ["female.txt"]
+
+    # ContextVar from outside the tasks remains the default (None list).
+    assert _delivered_ctx.get() is None or _delivered_ctx.get() == []

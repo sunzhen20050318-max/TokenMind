@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import type { Attachment, Message, MessageCitation } from '../../types';
 import { api } from '../../services/api';
 import { useChatStore } from '../../stores/chatStore';
+// retainAttachment / updateAttachment no longer used here — attachments are auto-saved.
 import { BrandMark } from '../BrandMark';
 import { AttachmentIcon } from './AttachmentIcon';
 import { extractTextContent, resolveVisibleCitations } from './messageBubbleContent';
@@ -29,7 +30,6 @@ function formatAttachmentSize(size?: number): string | null {
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedToolChain }) => {
   const isUser = message.role === 'user';
-  const updateAttachment = useChatStore((state) => state.updateAttachment);
   const openAttachmentPreview = useChatStore((state) => state.openAttachmentPreview);
   const renderedContent = extractTextContent(message.content, message.attachments);
   const visibleCitations = useMemo(
@@ -37,7 +37,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
     [message, renderedContent]
   );
   const [citationsExpanded, setCitationsExpanded] = useState(false);
-  const [retainingAttachmentId, setRetainingAttachmentId] = useState<string | null>(null);
   const hasVisibleContent =
     (renderedContent.trim().length > 0 && renderedContent !== '\u200b') ||
     !!message.attachments?.length ||
@@ -57,18 +56,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
   const blockBorder = isUser ? '#e0e3e8' : '#292b2f';
   const linkColor = isUser ? '#0a58ca' : '#f1f3f6';
 
-  const handleRetainAttachment = async (attachmentId: string) => {
-    setRetainingAttachmentId(attachmentId);
-    try {
-      const nextAttachment = await api.retainAttachment(attachmentId);
-      updateAttachment(attachmentId, nextAttachment);
-    } catch (error) {
-      console.error('Failed to retain attachment', error);
-    } finally {
-      setRetainingAttachmentId((current) => (current === attachmentId ? null : current));
-    }
-  };
-
   const renderCitation = (citation: MessageCitation, index: number) => (
     <div
       key={`${citation.id || citation.document_id || citation.document_name}-${index}`}
@@ -85,26 +72,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
 
   const renderAttachment = (attachment: Attachment) => {
     const attachmentHref = attachment.id ? api.getAttachmentUrl(attachment.id) : attachment.path;
-    const isUserUpload = attachment.origin === 'user_upload';
+    const inlineHref = attachment.id ? `${attachmentHref}?disposition=inline` : attachmentHref;
     const isExpired = attachment.status === 'expired';
-    const isSaved = attachment.status === 'saved' && !isUserUpload;
-    const isRetaining = !!attachment.id && retainingAttachmentId === attachment.id;
-    const canRetain = !!attachment.id && !isUserUpload && attachment.status === 'temporary';
-    const canDownload = !!attachmentHref && !isExpired;
-    const showStatus = !!attachment.status && (!isUserUpload || isExpired);
+    const canPreview = !!attachmentHref && !isExpired;
     const metaParts = [attachment.category, formatAttachmentSize(attachment.size)].filter(Boolean);
 
     const openPreview = () => {
-      if (!isExpired) {
+      if (canPreview) {
         openAttachmentPreview(attachment);
       }
     };
 
     const mainContent = (
       <>
-        {attachment.is_image && canDownload ? (
+        {attachment.is_image && canPreview ? (
           <img
-            src={attachmentHref}
+            src={inlineHref}
             alt={attachment.name}
             className="message-bubble__attachment-image"
           />
@@ -120,14 +103,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
             {metaParts.length > 0 ? (
               <span className="message-bubble__attachment-type">{metaParts.join(' · ')}</span>
             ) : null}
-            {showStatus ? (
-              <span className={`message-bubble__attachment-status is-${attachment.status}`}>
-                {attachment.status === 'temporary'
-                  ? '临时'
-                  : attachment.status === 'saved'
-                    ? '已保留'
-                    : '已过期'}
-              </span>
+            {isExpired ? (
+              <span className="message-bubble__attachment-status is-expired">已过期</span>
             ) : null}
           </div>
           {attachment.preview_text ? (
@@ -144,7 +121,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
         key={`${attachment.id || attachment.path || attachment.name}-${attachment.name}`}
         className={`message-bubble__attachment ${isUser ? 'is-user' : 'is-assistant'} ${attachment.is_image ? 'is-image' : ''} ${isExpired ? 'is-expired' : ''}`}
       >
-        {!isExpired ? (
+        {canPreview ? (
           <button
             type="button"
             className="message-bubble__attachment-main"
@@ -156,41 +133,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
         ) : (
           <div className="message-bubble__attachment-main is-static">{mainContent}</div>
         )}
-
-        <div className="message-bubble__attachment-actions">
-          {canDownload ? (
-            <a
-              href={attachmentHref}
-              target="_blank"
-              rel="noreferrer"
-              download={attachment.name}
-              className="message-bubble__attachment-action"
-              onClick={(event) => event.stopPropagation()}
-            >
-              下载
-            </a>
-          ) : (
-            <span className="message-bubble__attachment-action is-disabled">已过期</span>
-          )}
-
-          {canRetain ? (
-            <button
-              type="button"
-              className="message-bubble__attachment-action"
-              onClick={(event) => {
-                event.stopPropagation();
-                void handleRetainAttachment(attachment.id!);
-              }}
-              disabled={isRetaining}
-            >
-              {isRetaining ? '保留中' : '保留'}
-            </button>
-          ) : null}
-
-          {isSaved ? (
-            <span className="message-bubble__attachment-action is-muted">已转正</span>
-          ) : null}
-        </div>
       </div>
     );
   };

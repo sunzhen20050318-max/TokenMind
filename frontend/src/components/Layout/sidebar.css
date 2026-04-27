@@ -741,6 +741,31 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.shell-sidebar__session-busy {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #4f8eff;
+  box-shadow: 0 0 0 3px rgba(79, 142, 255, 0.18);
+  animation: shellSidebarBusyPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes shellSidebarBusyPulse {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
 }
 
 .shell-sidebar__session-avatar {

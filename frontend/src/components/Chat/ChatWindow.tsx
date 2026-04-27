@@ -7,7 +7,14 @@ import { hasFileTransfer } from './inputAreaDrag';
 import { ToolChain } from './ToolIndicator';
 import { ToolApprovalModal } from './ToolApprovalModal';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import {
+  isSessionConnected,
+  isSessionExecTrusted,
+  respondToToolApproval,
+  sendMessage as sendChatMessage,
+  setSessionExecTrust,
+  stopSessionTask,
+} from '../../hooks/useSessionOrchestrator';
 import { api } from '../../services/api';
 import type { Attachment, Message, UploadProgress } from '../../types';
 import './chatWindow.css';
@@ -261,20 +268,52 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setLinkedKnowledgeBases,
     pendingSessionStarter,
     clearPendingSessionStarter,
-  } = useChatStore();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const {
-    sendMessage,
-    stopMessage,
-    isConnected,
     pendingApproval,
     sessionExecTrusted,
-    enableExecForSession,
-    disableExecForSession,
-    approvePendingTool,
-    rejectPendingTool,
-    trustAndApprovePendingTool,
-  } = useWebSocket(sessionId);
+    setSessionPendingApproval,
+    setSessionExecTrusted,
+  } = useChatStore();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // The orchestrator owns the WebSocket lifecycle; ChatWindow only ever
+  // dispatches actions for its current session, never opens/closes sockets.
+  const sendMessage = useCallback(
+    (content: string, attachments: Parameters<typeof sendChatMessage>[2] = []) => {
+      sendChatMessage(sessionId, content, attachments);
+    },
+    [sessionId],
+  );
+  const stopMessage = useCallback(() => {
+    stopSessionTask(sessionId);
+  }, [sessionId]);
+  const isConnected = isSessionConnected(sessionId);
+  const enableExecForSession = useCallback(() => {
+    setSessionExecTrust(sessionId, true);
+  }, [sessionId]);
+  const disableExecForSession = useCallback(() => {
+    setSessionExecTrust(sessionId, false);
+  }, [sessionId]);
+  const approvePendingTool = useCallback(() => {
+    if (!pendingApproval) return;
+    respondToToolApproval(sessionId, pendingApproval.approval_id, true);
+    setSessionPendingApproval(sessionId, null);
+  }, [pendingApproval, sessionId, setSessionPendingApproval]);
+  const rejectPendingTool = useCallback(() => {
+    if (!pendingApproval) return;
+    respondToToolApproval(sessionId, pendingApproval.approval_id, false);
+    setSessionPendingApproval(sessionId, null);
+  }, [pendingApproval, sessionId, setSessionPendingApproval]);
+  const trustAndApprovePendingTool = useCallback(() => {
+    if (!pendingApproval) return;
+    setSessionExecTrust(sessionId, true);
+    respondToToolApproval(sessionId, pendingApproval.approval_id, true);
+    setSessionPendingApproval(sessionId, null);
+  }, [pendingApproval, sessionId, setSessionPendingApproval]);
+
+  // On mount/session change, hydrate the per-session exec-trust flag from
+  // localStorage so the toggle reflects the persisted preference.
+  useEffect(() => {
+    setSessionExecTrusted(sessionId, isSessionExecTrusted(sessionId));
+  }, [sessionId, setSessionExecTrusted]);
   const prevMessagesLenRef = useRef<number>(0);
   const dragDepthRef = useRef(0);
   const [draftMessage, setDraftMessage] = useState('');

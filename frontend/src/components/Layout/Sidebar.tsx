@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrandMark } from '../BrandMark';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
@@ -13,6 +13,7 @@ import './sidebar.css';
 export type SidebarMainView =
   | 'chat'
   | 'knowledge'
+  | 'assets'
   | 'music'
   | 'voice-clone'
   | 'tts'
@@ -54,6 +55,7 @@ function SidebarIcon({
     | 'collapse'
     | 'chats'
     | 'knowledge'
+    | 'assets'
     | 'music'
     | 'voice'
     | 'video'
@@ -100,6 +102,17 @@ function SidebarIcon({
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path d="M6 4.5h9a3 3 0 0 1 3 3v10.5H9a3 3 0 0 0-3 3V4.5Z" />
         <path d="M6 4.5h-.5A2.5 2.5 0 0 0 3 7v9.5A3.5 3.5 0 0 0 6.5 20H18" />
+      </svg>
+    );
+  }
+
+  if (id === 'assets') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="3.5" y="3.5" width="7" height="7" rx="1.4" />
+        <rect x="13.5" y="3.5" width="7" height="7" rx="1.4" />
+        <rect x="3.5" y="13.5" width="7" height="7" rx="1.4" />
+        <rect x="13.5" y="13.5" width="7" height="7" rx="1.4" />
       </svg>
     );
   }
@@ -196,7 +209,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
     openProject,
     deleteProject,
     leaveProject,
+    sessionsState,
+    isLoading,
+    pendingApproval,
+    activeTool,
   } = useChatStore();
+
+  /**
+   * Returns true when the given session has any in-flight work (loading,
+   * pending approval, or active tool execution) — drives the busy dot in
+   * the sidebar.
+   */
+  const sessionIsBusy = useCallback(
+    (sessionId: string): boolean => {
+      if (sessionId === currentSession) {
+        return isLoading || !!pendingApproval || !!activeTool;
+      }
+      const slice = sessionsState[sessionId];
+      if (!slice) return false;
+      return slice.isLoading || !!slice.pendingApproval || !!slice.activeTool;
+    },
+    [currentSession, sessionsState, isLoading, pendingApproval, activeTool],
+  );
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [moveTargetSessionId, setMoveTargetSessionId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -385,6 +419,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const isActive = currentSession === session.session_id && mainView === 'chat';
       const title = session.title || session.first_message || '新对话';
       const compactLabel = title.trim().slice(0, 1).toUpperCase() || 'T';
+      const busy = sessionIsBusy(session.session_id);
 
       return (
         <div
@@ -425,7 +460,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
             ) : (
               <div className="shell-sidebar__session-body">
-                <div className="shell-sidebar__session-title">{title}</div>
+                <div className="shell-sidebar__session-title">
+                  {title}
+                  {busy ? (
+                    <span
+                      className="shell-sidebar__session-busy"
+                      title="此会话有任务正在进行"
+                      aria-label="任务进行中"
+                    />
+                  ) : null}
+                </div>
                 <div className="shell-sidebar__session-meta">
                   {formatSessionTime(session.updated_at || session.created_at)}
                 </div>
@@ -520,6 +564,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <SidebarIcon id="knowledge" />
               </span>
               <span>知识库</span>
+            </button>
+
+            <button
+              className={`shell-sidebar__nav-item ${mainView === 'assets' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onSelectMainView('assets')}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="assets" />
+              </span>
+              <span>资产库</span>
             </button>
 
             <button

@@ -1,0 +1,340 @@
+/* Asset Library page — uses the same dark palette as the music studio. */
+
+.assets-page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 36px 56px;
+  color: #ececef;
+}
+
+.assets-page__header h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #f6f7fb;
+}
+
+.assets-page__header p {
+  margin: 8px 0 0;
+  color: #a8abb8;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.assets-page__tabs {
+  display: inline-flex;
+  margin-top: 24px;
+  padding: 4px;
+  gap: 2px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.assets-page__tab {
+  padding: 8px 22px;
+  border: none;
+  background: transparent;
+  color: #a8abb8;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.assets-page__tab:hover {
+  color: #f6f7fb;
+}
+
+.assets-page__tab.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f6f7fb;
+}
+
+.assets-page__subtabs {
+  display: flex;
+  gap: 18px;
+  margin-top: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+
+.assets-page__subtab {
+  position: relative;
+  padding: 6px 0 10px;
+  border: none;
+  background: transparent;
+  color: #8e90a0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assets-page__subtab:hover {
+  color: #d3d4dc;
+}
+
+.assets-page__subtab.is-active {
+  color: #f6f7fb;
+}
+
+.assets-page__subtab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: #f6f7fb;
+  border-radius: 2px;
+}
+
+.assets-page__subtab-count {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c4c7d1;
+  font-weight: 500;
+}
+
+.assets-page__error {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(241, 185, 185, 0.08);
+  border: 1px solid rgba(241, 185, 185, 0.3);
+  color: #f1b9b9;
+  font-size: 13px;
+}
+
+.assets-page__empty {
+  margin-top: 56px;
+  text-align: center;
+}
+
+.assets-page__empty-title {
+  color: #f6f7fb;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.assets-page__empty-hint {
+  margin-top: 8px;
+  color: #8e90a0;
+  font-size: 13px;
+}
+
+.assets-page__loading,
+.assets-page__end {
+  text-align: center;
+  margin-top: 32px;
+  color: #8e90a0;
+  font-size: 13px;
+}
+
+/* ───── Date group ───── */
+.assets-group {
+  margin-top: 28px;
+}
+
+.assets-group__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.assets-group__date {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f6f7fb;
+  letter-spacing: -0.01em;
+}
+
+.assets-group__jump {
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #c4c7d1;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.assets-group__jump:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f6f7fb;
+}
+
+/* ───── Card grids ───── */
+.assets-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.assets-grid--image,
+.assets-grid--video {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.assets-grid--file {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+/* ───── Card ───── */
+.asset-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.asset-card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.asset-card.is-favorite {
+  border-color: rgba(255, 211, 138, 0.45);
+}
+
+.asset-card__media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.asset-card--file .asset-card__media {
+  aspect-ratio: 16 / 9;
+}
+
+.asset-card__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.asset-card__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  display: block;
+}
+
+.asset-card__file-icon-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  color: #c4c7d1;
+}
+
+.asset-card__file-icon-wrap svg {
+  width: 42px;
+  height: 42px;
+}
+
+.asset-card__overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.asset-card:hover .asset-card__overlay,
+.asset-card.is-favorite .asset-card__overlay,
+.asset-card:focus-within .asset-card__overlay {
+  opacity: 1;
+}
+
+.asset-card__action {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 15, 18, 0.7);
+  backdrop-filter: blur(6px);
+  color: #f6f7fb;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.asset-card__action:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.asset-card__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.asset-card.is-favorite .asset-card__action:not(.asset-card__action--danger) {
+  color: #ffd38a;
+  border-color: rgba(255, 211, 138, 0.45);
+}
+
+.asset-card__action--danger {
+  color: #f1b9b9;
+}
+
+.asset-card__action--danger svg {
+  width: 14px;
+  height: 14px;
+}
+
+.asset-card__action--danger:hover {
+  background: rgba(241, 185, 185, 0.12);
+  border-color: rgba(241, 185, 185, 0.3);
+}
+
+.asset-card__meta {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.asset-card__name {
+  color: #f6f7fb;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-card__sub {
+  color: #8e90a0;
+  font-size: 12px;
+}

@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import type { Attachment, Message, MessageCitation, Project, Session } from '../types';
+import type {
+  Attachment,
+  Message,
+  MessageCitation,
+  PendingToolApproval,
+  Project,
+  Session,
+} from '../types';
 import { api } from '../services/api';
 import type { CreativeSettings } from '../types/config';
 import type { KnowledgeBase } from '../types/knowledge';
@@ -35,6 +42,36 @@ export interface ModelProvider {
   defaultModel: string;
 }
 
+/**
+ * Snapshot of "transient per-session" state. The foreground session keeps
+ * a mirror in the top-level fields (for compat with existing components);
+ * background sessions store theirs here so navigation away from chat does
+ * not drop in-flight work.
+ */
+export interface SessionSlice {
+  messages: Message[];
+  toolCalls: ToolCall[];
+  timelineEvents: TimelineEvent[];
+  activeTool: string | null;
+  isLoading: boolean;
+  currentTurnId: string | null;
+  linkedKnowledgeBaseIds: string[];
+  pendingApproval: PendingToolApproval | null;
+  sessionExecTrusted: boolean;
+}
+
+const EMPTY_SLICE: SessionSlice = {
+  messages: [],
+  toolCalls: [],
+  timelineEvents: [],
+  activeTool: null,
+  isLoading: false,
+  currentTurnId: null,
+  linkedKnowledgeBaseIds: [],
+  pendingApproval: null,
+  sessionExecTrusted: false,
+};
+
 interface ChatState {
   currentSession: string | null;
   messages: Message[];
@@ -50,6 +87,9 @@ interface ChatState {
   currentTurnId: string | null; // The turnId for the current conversation turn
   toolCalls: ToolCall[];
   timelineEvents: TimelineEvent[];
+  pendingApproval: PendingToolApproval | null;
+  sessionExecTrusted: boolean;
+  sessionsState: Record<string, SessionSlice>;
   modelProviders: ModelProvider[];
   activeModelId: string | null;
   modelProvidersStatus: 'idle' | 'loading' | 'ready' | 'error';
@@ -103,6 +143,39 @@ interface ChatState {
   clearPendingSessionStarter: (sessionId?: string) => void;
   openAttachmentPreview: (attachment: Attachment) => void;
   closeAttachmentPreview: () => void;
+
+  // ── Per-session mutators (used by WebSocket pool for any session) ──
+  /** Returns true if the session is the current foreground session. */
+  isCurrentSession: (sessionId: string) => boolean;
+  /** Read-only snapshot of a session's slice (foreground or background). */
+  getSessionSlice: (sessionId: string) => SessionSlice;
+  ensureSessionSlice: (sessionId: string) => void;
+
+  setSessionLoading: (sessionId: string, loading: boolean) => void;
+  setSessionActiveTool: (sessionId: string, tool: string | null) => void;
+  setSessionCurrentTurnId: (sessionId: string, turnId: string | null) => void;
+
+  startSessionStreamingAssistant: (sessionId: string) => void;
+  appendSessionStreamingAssistant: (sessionId: string, chunk: string) => void;
+  finishSessionStreamingAssistant: (
+    sessionId: string,
+    content?: string,
+    citations?: MessageCitation[],
+    attachments?: Message['attachments'],
+  ) => void;
+
+  addSessionToolCall: (sessionId: string, tool: string, toolId?: string) => string;
+  completeSessionToolCall: (sessionId: string, id: string, duration: number) => void;
+  failSessionToolCall: (sessionId: string, id: string) => void;
+  completeAllSessionRunningTools: (sessionId: string, duration: number) => void;
+  addSessionTimelineEvent: (
+    sessionId: string,
+    event: Omit<TimelineEvent, 'id' | 'timestamp' | 'turnId'>,
+  ) => void;
+
+  setSessionPendingApproval: (sessionId: string, approval: PendingToolApproval | null) => void;
+  setSessionExecTrusted: (sessionId: string, trusted: boolean) => void;
+  setSessionError: (sessionId: string, error: string | null) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -120,6 +193,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toolCalls: [],
   timelineEvents: [],
   currentTurnId: null,
+  pendingApproval: null,
+  sessionExecTrusted: false,
+  sessionsState: {},
   modelProviders: [],
   activeModelId: null,
   modelProvidersStatus: 'idle',
@@ -165,7 +241,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setCurrentSession: (sessionId) => {
-    const { sessions, projectSessions, activeProjectId, activeProject, projects } = get();
+    const state = get();
+    const { sessions, projectSessions, activeProjectId, activeProject, projects } = state;
     const existingGlobal = sessions.find((session) => session.session_id === sessionId);
     const existingProject = projectSessions.find((session) => session.session_id === sessionId);
     const resolvedProjectId = existingProject?.project_id || activeProjectId || null;
@@ -181,24 +258,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
         project_id: shouldTreatAsProject ? resolvedProjectId || undefined : undefined,
       };
       if (shouldTreatAsProject) {
-        set((state) => ({ projectSessions: [newSession, ...state.projectSessions] }));
+        set((current) => ({ projectSessions: [newSession, ...current.projectSessions] }));
       } else {
-        set((state) => ({ sessions: [newSession, ...state.sessions] }));
+        set((current) => ({ sessions: [newSession, ...current.sessions] }));
       }
     }
+
+    // Snapshot the previous foreground session into sessionsState so its
+    // in-flight task progress survives the navigation away.
+    const previousId = state.currentSession;
+    const nextSessionsState = { ...state.sessionsState };
+    if (previousId && previousId !== sessionId) {
+      nextSessionsState[previousId] = {
+        messages: state.messages,
+        toolCalls: state.toolCalls,
+        timelineEvents: state.timelineEvents,
+        activeTool: state.activeTool,
+        isLoading: state.isLoading,
+        currentTurnId: state.currentTurnId,
+        linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+        pendingApproval: state.pendingApproval,
+        sessionExecTrusted: state.sessionExecTrusted,
+      };
+    }
+
+    const restored = nextSessionsState[sessionId];
     set({
       currentSession: sessionId,
-      messages: [],
+      sessionsState: nextSessionsState,
+      messages: restored?.messages ?? [],
+      toolCalls: restored?.toolCalls ?? [],
+      timelineEvents: restored?.timelineEvents ?? [],
+      activeTool: restored?.activeTool ?? null,
+      isLoading: restored?.isLoading ?? false,
+      currentTurnId: restored?.currentTurnId ?? null,
+      linkedKnowledgeBaseIds: restored?.linkedKnowledgeBaseIds ?? [],
+      pendingApproval: restored?.pendingApproval ?? null,
+      sessionExecTrusted: restored?.sessionExecTrusted ?? false,
       error: null,
-      activeTool: null,
-      toolCalls: [],
-      timelineEvents: [],
-      currentTurnId: null,
-      linkedKnowledgeBaseIds: [],
       activeProjectId: shouldTreatAsProject ? resolvedProjectId : null,
       activeProject: shouldTreatAsProject ? resolvedProject : null,
     });
-    get().loadHistory(sessionId);
+
+    // Only fetch history when we don't already have a slice in memory — otherwise
+    // we'd clobber the live streaming progress accumulated in the background.
+    if (!restored) {
+      get().loadHistory(sessionId);
+    }
   },
 
   addMessage: (message) => {
@@ -717,4 +823,250 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ error: e instanceof Error ? e.message : 'Failed to update linked knowledge bases' });
     }
   },
+
+  // ───────────────────── Per-session helpers ─────────────────────
+
+  isCurrentSession: (sessionId) => get().currentSession === sessionId,
+
+  getSessionSlice: (sessionId) => {
+    const state = get();
+    if (state.currentSession === sessionId) {
+      return {
+        messages: state.messages,
+        toolCalls: state.toolCalls,
+        timelineEvents: state.timelineEvents,
+        activeTool: state.activeTool,
+        isLoading: state.isLoading,
+        currentTurnId: state.currentTurnId,
+        linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+        pendingApproval: state.pendingApproval,
+        sessionExecTrusted: state.sessionExecTrusted,
+      };
+    }
+    return state.sessionsState[sessionId] ?? EMPTY_SLICE;
+  },
+
+  ensureSessionSlice: (sessionId) => {
+    const state = get();
+    if (state.currentSession === sessionId) return;
+    if (state.sessionsState[sessionId]) return;
+    set((current) => ({
+      sessionsState: { ...current.sessionsState, [sessionId]: { ...EMPTY_SLICE } },
+    }));
+  },
+
+  setSessionLoading: (sessionId, loading) => {
+    applySliceUpdate(set, get, sessionId, () => ({ isLoading: loading }));
+  },
+
+  setSessionActiveTool: (sessionId, tool) => {
+    applySliceUpdate(set, get, sessionId, () => ({ activeTool: tool }));
+  },
+
+  setSessionCurrentTurnId: (sessionId, turnId) => {
+    applySliceUpdate(set, get, sessionId, () => ({ currentTurnId: turnId }));
+  },
+
+  startSessionStreamingAssistant: (sessionId) => {
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      messages: [
+        ...slice.messages,
+        {
+          role: 'assistant' as const,
+          content: '',
+          timestamp: new Date().toISOString(),
+          isStreaming: true,
+        },
+      ],
+    }));
+  },
+
+  appendSessionStreamingAssistant: (sessionId, chunk) => {
+    applySliceUpdate(set, get, sessionId, (slice) => {
+      const messages = [...slice.messages];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant' && messages[i].isStreaming) {
+          messages[i] = {
+            ...messages[i],
+            content: `${messages[i].content}${chunk}`,
+          };
+          return { messages };
+        }
+      }
+      return {
+        messages: [
+          ...slice.messages,
+          {
+            role: 'assistant' as const,
+            content: chunk,
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          },
+        ],
+      };
+    });
+  },
+
+  finishSessionStreamingAssistant: (sessionId, content, citations, attachments) => {
+    applySliceUpdate(set, get, sessionId, (slice) => {
+      const messages = [...slice.messages];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant' && messages[i].isStreaming) {
+          messages[i] = {
+            ...messages[i],
+            content: content ?? messages[i].content,
+            isStreaming: false,
+            citations: citations ?? messages[i].citations,
+            attachments: attachments ?? messages[i].attachments,
+          };
+          return { messages };
+        }
+      }
+      if (content) {
+        return {
+          messages: [
+            ...slice.messages,
+            {
+              role: 'assistant' as const,
+              content,
+              timestamp: new Date().toISOString(),
+              isStreaming: false,
+              citations,
+              attachments,
+            },
+          ],
+        };
+      }
+      return {};
+    });
+  },
+
+  addSessionToolCall: (sessionId, tool, toolId) => {
+    const id = toolId || `tool-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    let resolvedId = id;
+    applySliceUpdate(set, get, sessionId, (slice) => {
+      const turnId = slice.currentTurnId;
+      if (turnId) {
+        const dupById = slice.toolCalls.find(
+          (tc) => tc.id === id && tc.status === 'running' && tc.turnId === turnId,
+        );
+        if (dupById) {
+          resolvedId = dupById.id;
+          return {};
+        }
+        const dupByName = slice.toolCalls.find(
+          (tc) => tc.tool === tool && tc.status === 'running' && tc.turnId === turnId,
+        );
+        if (dupByName) {
+          resolvedId = dupByName.id;
+          return {};
+        }
+      }
+      const newCall: ToolCall = {
+        id,
+        tool,
+        status: 'running',
+        timestamp: new Date().toISOString(),
+        turnId: turnId || '',
+      };
+      return { toolCalls: [...slice.toolCalls, newCall] };
+    });
+    return resolvedId;
+  },
+
+  completeSessionToolCall: (sessionId, id, duration) => {
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      toolCalls: slice.toolCalls.map((tc) =>
+        tc.id === id ? { ...tc, status: 'completed' as const, duration } : tc,
+      ),
+    }));
+  },
+
+  failSessionToolCall: (sessionId, id) => {
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      toolCalls: slice.toolCalls.map((tc) =>
+        tc.id === id ? { ...tc, status: 'error' as const } : tc,
+      ),
+    }));
+  },
+
+  completeAllSessionRunningTools: (sessionId, duration) => {
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      toolCalls: slice.toolCalls.map((tc) =>
+        tc.status === 'running' && tc.turnId === slice.currentTurnId
+          ? { ...tc, status: 'completed' as const, duration }
+          : tc,
+      ),
+    }));
+  },
+
+  addSessionTimelineEvent: (sessionId, event) => {
+    applySliceUpdate(set, get, sessionId, (slice) => {
+      const turnId = slice.currentTurnId || '';
+      const newEvent: TimelineEvent = {
+        id: `timeline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: new Date().toISOString(),
+        turnId,
+        ...event,
+      };
+      return { timelineEvents: [...slice.timelineEvents, newEvent] };
+    });
+  },
+
+  setSessionPendingApproval: (sessionId, approval) => {
+    applySliceUpdate(set, get, sessionId, () => ({ pendingApproval: approval }));
+  },
+
+  setSessionExecTrusted: (sessionId, trusted) => {
+    applySliceUpdate(set, get, sessionId, () => ({ sessionExecTrusted: trusted }));
+  },
+
+  setSessionError: (sessionId, error) => {
+    if (get().currentSession === sessionId) {
+      set({ error });
+    }
+    // Background sessions surface errors lazily — store on the slice so the
+    // sidebar / orchestrator can flag them if needed.
+    applySliceUpdate(set, get, sessionId, () => ({}));
+  },
 }));
+
+/**
+ * Apply a slice update either to the foreground top-level fields (when the
+ * sessionId matches the current session) or to the appropriate background
+ * slice in `sessionsState`. Keeps both paths in lockstep.
+ */
+function applySliceUpdate(
+  set: (partial: Partial<ChatState>) => void,
+  get: () => ChatState,
+  sessionId: string,
+  updater: (slice: SessionSlice) => Partial<SessionSlice>,
+): void {
+  const state = get();
+  if (state.currentSession === sessionId) {
+    const currentSlice: SessionSlice = {
+      messages: state.messages,
+      toolCalls: state.toolCalls,
+      timelineEvents: state.timelineEvents,
+      activeTool: state.activeTool,
+      isLoading: state.isLoading,
+      currentTurnId: state.currentTurnId,
+      linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+      pendingApproval: state.pendingApproval,
+      sessionExecTrusted: state.sessionExecTrusted,
+    };
+    const patch = updater(currentSlice);
+    set(patch);
+    return;
+  }
+
+  const existing = state.sessionsState[sessionId] ?? EMPTY_SLICE;
+  const patch = updater(existing);
+  if (Object.keys(patch).length === 0 && state.sessionsState[sessionId]) {
+    return;
+  }
+  const merged: SessionSlice = { ...existing, ...patch };
+  set({
+    sessionsState: { ...state.sessionsState, [sessionId]: merged },
+  });
+}

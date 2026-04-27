@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from datetime import timedelta
 from typing import Any
 
 from tokenmind.agent.tools.base import Tool
 from tokenmind.server.attachments import AttachmentStore
+
+
+# Per-asyncio-task context. The agent loop dispatches each session message into
+# its own asyncio.Task (see AgentLoop.run), and asyncio.create_task copies the
+# current context to the new task — so each in-flight session sees its own
+# isolated turn-state instead of clobbering a shared singleton.
+_channel_ctx: ContextVar[str] = ContextVar("deliver_attachment_channel", default="")
+_chat_id_ctx: ContextVar[str] = ContextVar("deliver_attachment_chat_id", default="")
+_message_id_ctx: ContextVar[str | None] = ContextVar(
+    "deliver_attachment_message_id", default=None
+)
+_delivered_ctx: ContextVar[list[dict[str, Any]] | None] = ContextVar(
+    "deliver_attachment_delivered", default=None
+)
 
 
 class DeliverAttachmentTool(Tool):
@@ -15,10 +30,6 @@ class DeliverAttachmentTool(Tool):
     def __init__(self, store: AttachmentStore, retention: timedelta):
         self._store = store
         self._retention = retention
-        self._channel = ""
-        self._chat_id = ""
-        self._message_id: str | None = None
-        self._delivered: list[dict[str, Any]] = []
 
     @property
     def name(self) -> str:
@@ -74,16 +85,27 @@ class DeliverAttachmentTool(Tool):
         }
 
     def set_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
-        self._channel = channel
-        self._chat_id = chat_id
-        self._message_id = message_id
+        _channel_ctx.set(channel)
+        _chat_id_ctx.set(chat_id)
+        _message_id_ctx.set(message_id)
 
     def start_turn(self) -> None:
-        self._delivered = []
+        # Allocate a fresh list per turn — never share across sessions.
+        _delivered_ctx.set([])
 
     @property
     def delivered(self) -> list[dict[str, Any]]:
-        return list(self._delivered)
+        bucket = _delivered_ctx.get()
+        if bucket is None:
+            return []
+        return list(bucket)
+
+    def _record(self, ref: dict[str, Any]) -> None:
+        bucket = _delivered_ctx.get()
+        if bucket is None:
+            bucket = []
+            _delivered_ctx.set(bucket)
+        bucket.append(ref)
 
     @staticmethod
     def _is_blankish(value: Any) -> bool:
@@ -120,47 +142,50 @@ class DeliverAttachmentTool(Tool):
         mime_type: str | None = None,
         **_: Any,
     ) -> str:
-        if self._channel != "web" or not self._chat_id:
+        channel = _channel_ctx.get()
+        chat_id = _chat_id_ctx.get()
+        message_id = _message_id_ctx.get()
+        if channel != "web" or not chat_id:
             return "Error: deliver_attachment is only available in the current web chat."
 
         if source_type == "inline_content":
             if not filename or content is None:
                 return "Error: inline_content requires filename and content"
             ref = self._store.create_generated(
-                self._chat_id,
+                chat_id,
                 filename=filename,
                 content=content,
                 mime_type=mime_type,
                 retention=self._retention,
-                message_id=self._message_id,
+                message_id=message_id,
             )
-            self._delivered.append(ref)
+            self._record(ref)
             return f"Prepared attachment {ref['name']}."
 
         if source_type == "local_file":
             if not path:
                 return "Error: local_file requires path"
             ref = self._store.create_local(
-                self._chat_id,
+                chat_id,
                 source_path=path,
                 retention=self._retention,
-                message_id=self._message_id,
+                message_id=message_id,
                 attachment_name=filename,
             )
-            self._delivered.append(ref)
+            self._record(ref)
             return f"Prepared attachment {ref['name']}."
 
         if source_type == "remote_url":
             if not url:
                 return "Error: remote_url requires url"
             ref = self._store.create_remote(
-                self._chat_id,
+                chat_id,
                 source_url=url,
                 retention=self._retention,
-                message_id=self._message_id,
+                message_id=message_id,
                 filename=filename,
             )
-            self._delivered.append(ref)
+            self._record(ref)
             return f"Prepared attachment {ref['name']}."
 
         return f"Error: unsupported source_type '{source_type}'"

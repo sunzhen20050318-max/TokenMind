@@ -6,7 +6,7 @@ import json
 import mimetypes
 import secrets
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -25,6 +25,8 @@ def categorize_attachment(filename: str, mime_type: str | None) -> tuple[str, bo
     mime = (mime_type or "").lower()
     if mime.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}:
         return "image", True
+    if mime.startswith("video/") or suffix in {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}:
+        return "video", False
     if mime.startswith("audio/") or suffix in {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}:
         return "audio", False
     if suffix in {".md", ".markdown"}:
@@ -77,6 +79,7 @@ class AttachmentRecord:
     retained_at: str | None = None
     preview_text: str | None = None
     error: str | None = None
+    favorite: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -151,7 +154,10 @@ class AttachmentStore:
         payload = self._load_index().get(attachment_id)
         if not isinstance(payload, dict):
             return None
-        return AttachmentRecord(**payload)
+        # Defensive: drop unknown keys so older schemas can still be loaded.
+        known = {field.name for field in fields(AttachmentRecord)}
+        clean = {key: value for key, value in payload.items() if key in known}
+        return AttachmentRecord(**clean)
 
     @staticmethod
     def _preview_text(content: bytes | str | None, mime_type: str | None) -> str | None:
@@ -222,31 +228,35 @@ class AttachmentStore:
         filename: str,
         content: str | bytes,
         mime_type: str | None,
-        retention: timedelta,
+        retention: timedelta,  # kept for API compatibility; ignored in auto-save mode
         message_id: str | None = None,
     ) -> dict[str, Any]:
+        del retention  # auto-saved attachments never expire
         safe_name = safe_filename(filename or "attachment.txt")
         payload = content.encode("utf-8") if isinstance(content, str) else content
         resolved_mime = mime_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
         attachment_id = f"att_{secrets.token_hex(8)}"
-        directory = self._attachment_dir(session_id, attachment_id, saved=False)
+        # Auto-save: place directly in the "saved" subtree so it persists.
+        directory = self._attachment_dir(session_id, attachment_id, saved=True)
         destination = directory / safe_name
         destination.write_bytes(payload)
+        now_iso = datetime.now().isoformat()
         record = AttachmentRecord(
             id=attachment_id,
             session_id=session_id,
             message_id=message_id,
             owner_role="assistant",
             origin="assistant_generated",
-            status="temporary",
+            status="saved",
             name=safe_name,
             mime_type=resolved_mime,
             size=len(payload),
             category=categorize_attachment(safe_name, resolved_mime)[0],
             is_image=categorize_attachment(safe_name, resolved_mime)[1],
             storage_path=str(destination),
-            created_at=datetime.now().isoformat(),
-            expires_at=(datetime.now() + retention).isoformat(),
+            created_at=now_iso,
+            expires_at=None,
+            retained_at=now_iso,
             preview_text=self._preview_text(content, resolved_mime),
         )
         return self._write_record(record)
@@ -256,10 +266,11 @@ class AttachmentStore:
         session_id: str,
         *,
         source_path: str | Path,
-        retention: timedelta,
+        retention: timedelta,  # kept for API compatibility; ignored in auto-save mode
         message_id: str | None = None,
         attachment_name: str | None = None,
     ) -> dict[str, Any]:
+        del retention
         source = Path(source_path)
         try:
             resolved = source.resolve(strict=True)
@@ -272,9 +283,10 @@ class AttachmentStore:
         safe_name = safe_filename(attachment_name or resolved.name or "attachment.bin")
         mime_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
         attachment_id = f"att_{secrets.token_hex(8)}"
-        directory = self._attachment_dir(session_id, attachment_id, saved=False)
+        directory = self._attachment_dir(session_id, attachment_id, saved=True)
         destination = directory / safe_name
         shutil.copy2(resolved, destination)
+        now_iso = datetime.now().isoformat()
 
         record = AttachmentRecord(
             id=attachment_id,
@@ -282,15 +294,16 @@ class AttachmentStore:
             message_id=message_id,
             owner_role="assistant",
             origin="assistant_local",
-            status="temporary",
+            status="saved",
             name=safe_name,
             mime_type=mime_type,
             size=destination.stat().st_size,
             category=categorize_attachment(safe_name, mime_type)[0],
             is_image=categorize_attachment(safe_name, mime_type)[1],
             storage_path=str(destination),
-            created_at=datetime.now().isoformat(),
-            expires_at=(datetime.now() + retention).isoformat(),
+            created_at=now_iso,
+            expires_at=None,
+            retained_at=now_iso,
         )
         return self._write_record(record)
 
@@ -299,34 +312,37 @@ class AttachmentStore:
         session_id: str,
         *,
         source_url: str,
-        retention: timedelta,
+        retention: timedelta,  # kept for API compatibility; ignored in auto-save mode
         message_id: str | None = None,
         filename: str | None = None,
         downloader: AttachmentDownloader | None = None,
     ) -> dict[str, Any]:
+        del retention
         payload, content_type = (downloader or self._default_remote_downloader)(source_url)
         inferred_name = filename or Path(source_url.split("?", 1)[0]).name or "download.bin"
         safe_name = safe_filename(inferred_name)
         mime_type = content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
         attachment_id = f"att_{secrets.token_hex(8)}"
-        directory = self._attachment_dir(session_id, attachment_id, saved=False)
+        directory = self._attachment_dir(session_id, attachment_id, saved=True)
         destination = directory / safe_name
         destination.write_bytes(payload)
+        now_iso = datetime.now().isoformat()
         record = AttachmentRecord(
             id=attachment_id,
             session_id=session_id,
             message_id=message_id,
             owner_role="assistant",
             origin="assistant_remote",
-            status="temporary",
+            status="saved",
             name=safe_name,
             mime_type=mime_type,
             size=len(payload),
             category=categorize_attachment(safe_name, mime_type)[0],
             is_image=categorize_attachment(safe_name, mime_type)[1],
             storage_path=str(destination),
-            created_at=datetime.now().isoformat(),
-            expires_at=(datetime.now() + retention).isoformat(),
+            created_at=now_iso,
+            expires_at=None,
+            retained_at=now_iso,
             source_url=source_url,
         )
         return self._write_record(record)
@@ -488,6 +504,52 @@ class AttachmentStore:
                 record = self._record_from_index(str(attachment_id)) or record
             hydrated.append({**dict(attachment), **record.to_message_ref()})
         return hydrated
+
+    def set_favorite(self, attachment_id: str, favorite: bool) -> AttachmentRecord:
+        record = self._record_from_index(attachment_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        if record.favorite == favorite:
+            return record
+        updated_payload = {**record.to_dict(), "favorite": favorite}
+        # Favoriting an item should also retain it (so it doesn't get auto-cleaned later).
+        if favorite and record.status == "temporary":
+            updated_payload["status"] = "saved"
+            updated_payload["retained_at"] = datetime.now().isoformat()
+            updated_payload["expires_at"] = None
+        updated = AttachmentRecord(**updated_payload)
+        self._write_record(updated)
+        return updated
+
+    def remove(self, attachment_id: str) -> AttachmentRecord:
+        record = self._record_from_index(attachment_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        path = Path(record.storage_path)
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"Failed to delete file: {exc}") from exc
+            self._prune_empty_parents(path.parent)
+        index = self._load_index()
+        index.pop(attachment_id, None)
+        self._save_index(index)
+        return record
+
+    def list_records(self) -> list[AttachmentRecord]:
+        records: list[AttachmentRecord] = []
+        index = self._load_index()
+        known = {field.name for field in fields(AttachmentRecord)}
+        for payload in index.values():
+            if not isinstance(payload, dict):
+                continue
+            try:
+                clean = {key: value for key, value in payload.items() if key in known}
+                records.append(AttachmentRecord(**clean))
+            except TypeError:
+                continue
+        return records
 
     def managed_paths(self) -> set[str]:
         paths = {str(self.index_path.resolve())}
