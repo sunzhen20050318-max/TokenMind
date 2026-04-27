@@ -5,6 +5,9 @@
 *.pyc
 dist/
 build/
+dist-windows/
+build-windows/
+dist-installer/
 *.egg-info/
 *.egg
 *.pycs
@@ -27,4 +30,6 @@ node_modules/
 frontend/.vite/
 tokenmind/webui/
 .claude/
+tmp-*
+tmp_*
 

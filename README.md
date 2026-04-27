@@ -215,6 +215,43 @@ npm run build
 
 启动后会显示二维码，用 WhatsApp 扫码登录。
 
+## Windows 安装包构建
+
+如果要把 TokenMind 做成普通用户可双击安装的 Windows 程序，使用仓库内置的 `PyInstaller + Inno Setup` 流程。
+
+构建机器需要先准备：
+
+- Python 3.11+
+- Node.js 20+
+- Inno Setup 6
+- PyInstaller：`python -m pip install ".[windows]"`
+
+然后在项目根目录运行：
+
+```powershell
+.\packaging\windows\build-installer.ps1
+```
+
+如果 PowerShell 执行策略拦截脚本，可以用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\packaging\windows\build-installer.ps1
+```
+
+脚本会自动执行：
+
+1. 构建 `frontend/dist`
+2. 用 PyInstaller 生成 `dist-windows\TokenMind\TokenMind.exe`
+3. 用 Inno Setup 生成安装包 `dist-installer\TokenMindSetup-版本号.exe`
+
+最终交给用户的是 `dist-installer` 里的单个安装包 exe。用户安装后点击桌面图标即可启动 TokenMind，本机 Web UI 会自动打开；用户电脑不需要安装 Node.js。
+
+如果只想测试 PyInstaller 产物，不生成安装包：
+
+```powershell
+.\packaging\windows\build-installer.ps1 -SkipInstaller
+```
+
 ## Web 控制台
 
 Web UI 覆盖了日常使用的核心能力：

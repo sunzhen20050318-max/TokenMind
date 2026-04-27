@@ -430,6 +430,21 @@ def test_agent_config_sets_active_path(monkeypatch, tmp_path: Path) -> None:
     assert seen["config_path"] == config_file.resolve()
 
 
+def test_runtime_config_initializes_missing_default_config(tmp_path: Path, monkeypatch) -> None:
+    """Starting a runtime entrypoint should create a complete default config."""
+    from tokenmind.cli.commands import _load_runtime_config
+
+    config_file = tmp_path / "instance" / "config.json"
+    monkeypatch.setattr("tokenmind.config.loader.get_config_path", lambda: config_file)
+
+    loaded = _load_runtime_config()
+
+    assert loaded == Config()
+    assert config_file.exists()
+    saved = json.loads(config_file.read_text(encoding="utf-8"))
+    assert {"agents", "providers", "creative", "channels", "gateway", "tools", "templates", "skills"} <= set(saved)
+
+
 def test_agent_overrides_workspace_path(mock_agent_runtime):
     workspace_path = Path("/tmp/agent-workspace")
 

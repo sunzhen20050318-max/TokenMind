@@ -531,7 +531,7 @@ def _make_provider(config: Config):
 
 def _load_runtime_config(config: str | None = None, workspace: str | None = None) -> Config:
     """Load config and optionally override the active workspace."""
-    from tokenmind.config.loader import load_config, set_config_path
+    from tokenmind.config.loader import get_config_path, load_config, save_config, set_config_path
 
     config_path = None
     if config:
@@ -543,6 +543,10 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
         console.print(f"[dim]Using config: {config_path}[/dim]")
 
     loaded = load_config(config_path)
+    if config_path is None:
+        default_config_path = get_config_path()
+        if not default_config_path.exists():
+            save_config(loaded, default_config_path)
     _warn_deprecated_config_keys(config_path)
     if workspace:
         loaded.agents.defaults.workspace = workspace
