@@ -120,6 +120,7 @@ function TaskList({ items, selectedId, loading, error, onSelect, onRefresh }: Ta
                   <div className="browser-agent__list-item-instr">{item.instruction}</div>
                   <div className="browser-agent__list-item-meta">
                     {item.step_count} 步 · {item.artifact_count} 个产物
+                    {item.session_id ? <span> · 来自会话</span> : null}
                   </div>
                 </button>
               </li>

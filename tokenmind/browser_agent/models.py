@@ -103,6 +103,7 @@ class TaskListItem(BaseModel):
 
     id: str
     project_id: str
+    session_id: Optional[str] = None
     instruction: str
     status: TaskStatus
     created_at: datetime

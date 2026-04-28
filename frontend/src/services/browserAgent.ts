@@ -28,9 +28,14 @@ export const browserAgentApi = {
     return jsonOrThrow<BrowserAgentEnvCheck>(res, 'env-check');
   },
 
-  async listTasks(params?: { projectId?: string; limit?: number }): Promise<BrowserTaskListResponse> {
+  async listTasks(params?: {
+    projectId?: string;
+    sessionId?: string;
+    limit?: number;
+  }): Promise<BrowserTaskListResponse> {
     const search = new URLSearchParams();
     if (params?.projectId) search.set('project_id', params.projectId);
+    if (params?.sessionId) search.set('session_id', params.sessionId);
     if (params?.limit) search.set('limit', String(params.limit));
     const suffix = search.toString();
     const res = await fetch(`${API_BASE}/browser-tasks${suffix ? `?${suffix}` : ''}`);

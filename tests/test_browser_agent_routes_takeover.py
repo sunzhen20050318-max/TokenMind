@@ -213,6 +213,39 @@ async def test_intervene_rejects_unknown_action(app_and_svc) -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_filters_by_session_id(app_and_svc) -> None:
+    """Tasks scoped to a chat session are filtered by ?session_id=."""
+    app, svc, _ = app_and_svc
+
+    a = svc.create_task(
+        CreateTaskRequest(
+            project_id="proj_a",
+            instruction="task A",
+            start_url="https://x",
+            session_id="web:abc",
+        )
+    )
+    b = svc.create_task(
+        CreateTaskRequest(
+            project_id="proj_a",
+            instruction="task B",
+            start_url="https://x",
+            session_id="web:other",
+        )
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        all_resp = await client.get("/api/browser-tasks")
+        scoped = await client.get("/api/browser-tasks?session_id=web:abc")
+
+    assert {item["id"] for item in all_resp.json()["items"]} == {a.id, b.id}
+    scoped_items = scoped.json()["items"]
+    assert {item["id"] for item in scoped_items} == {a.id}
+    assert scoped_items[0]["session_id"] == "web:abc"
+
+
+@pytest.mark.asyncio
 async def test_intervene_returns_502_on_cli_error(app_and_svc) -> None:
     app, svc, cli = app_and_svc
 

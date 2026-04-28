@@ -41,7 +41,7 @@ interface BrowserAgentState {
   submitError: string | null;
 
   refreshEnvCheck: () => Promise<void>;
-  refreshTasks: (params?: { projectId?: string }) => Promise<void>;
+  refreshTasks: (params?: { projectId?: string; sessionId?: string }) => Promise<void>;
   selectTask: (taskId: string | null) => void;
   refreshDetail: () => Promise<void>;
   focusStep: (stepIndex: number | null) => void;

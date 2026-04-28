@@ -374,6 +374,7 @@ class BrowserTaskStorage:
         return TaskListItem(
             id=row["id"],
             project_id=row["project_id"],
+            session_id=row["session_id"],
             instruction=row["instruction"],
             status=TaskStatus(row["status"]),
             created_at=_datetime_from_ms(row["created_at"]) or datetime.now(),

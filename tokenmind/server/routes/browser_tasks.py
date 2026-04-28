@@ -70,10 +70,16 @@ async def create_browser_task(payload: CreateTaskRequest) -> dict:
 @router.get("/browser-tasks")
 async def list_browser_tasks(
     project_id: Optional[str] = Query(default=None),
+    session_id: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict:
     service = _service_or_503()
     items = service.storage.list_tasks(project_id=project_id, limit=limit)
+    if session_id:
+        # session_id filter is post-storage because the SQLite query already
+        # filters by project_id; tasks created via the chat tool tag the
+        # session id directly so this stays cheap (≤ limit rows).
+        items = [t for t in items if (t.session_id or "") == session_id]
     payload = []
     for task in items:
         artifacts = service.storage.list_artifacts(task.id)
@@ -81,6 +87,7 @@ async def list_browser_tasks(
             {
                 "id": task.id,
                 "project_id": task.project_id,
+                "session_id": task.session_id,
                 "instruction": task.instruction,
                 "status": task.status.value,
                 "created_at": task.created_at.isoformat(),

@@ -67,6 +67,7 @@ export interface BrowserArtifact {
 export interface BrowserTaskListItem {
   id: string;
   project_id: string;
+  session_id?: string | null;
   instruction: string;
   status: BrowserTaskStatus;
   created_at: string;

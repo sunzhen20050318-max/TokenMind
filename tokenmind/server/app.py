@@ -1518,6 +1518,23 @@ def create_app(
     )
     set_browser_task_service(browser_task_service)
 
+    # Expose the browser service to the chat agent via a tool so the user can
+    # trigger web tasks straight from a normal chat message. The chat
+    # service's attachment store is reused so artifacts auto-surface as
+    # downloadable attachments alongside the agent's reply.
+    try:
+        from tokenmind.agent.tools.browser_task import RunBrowserTaskTool
+
+        if hasattr(agent_loop, "tools") and agent_loop.tools is not None:
+            agent_loop.tools.register(
+                RunBrowserTaskTool(
+                    service=browser_task_service,
+                    attachment_store=chat_service.attachments,
+                )
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to register run_browser_task tool on agent loop")
+
     # Create FastAPI app
     app = FastAPI(
         title="TokenMind Web UI",

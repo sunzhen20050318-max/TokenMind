@@ -300,7 +300,14 @@ class AgentLoop:
 
     def _set_tool_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron", "deliver_attachment", "generate_image"):
+        for name in (
+            "message",
+            "spawn",
+            "cron",
+            "deliver_attachment",
+            "generate_image",
+            "run_browser_task",
+        ):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     tool.set_context(
