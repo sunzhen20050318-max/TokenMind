@@ -2,8 +2,12 @@ import { create } from 'zustand';
 import { browserAgentApi } from '../services/browserAgent';
 import type {
   BrowserAgentEnvCheck,
+  BrowserArtifact,
+  BrowserStep,
+  BrowserStreamEvent,
   BrowserTaskDetailResponse,
   BrowserTaskListItem,
+  BrowserTaskStatus,
   CreateBrowserTaskRequest,
 } from '../types/browserAgent';
 
@@ -11,8 +15,9 @@ import type {
  * State for the Web Agent module. Survives across navigation so that a long
  * running browser task keeps progressing while the user is in chat / settings.
  *
- * M1 polls task detail every 2s when a task is selected and is in a non-final
- * state. M2 will replace this with a WebSocket subscription.
+ * Detail subscriptions use a WebSocket: the initial GET fetches the historical
+ * snapshot and then the WS streams live deltas. We only fall back to polling
+ * if the WS open fails outright.
  */
 
 interface BrowserAgentState {
@@ -28,7 +33,9 @@ interface BrowserAgentState {
   detail: BrowserTaskDetailResponse | null;
   detailLoading: boolean;
   detailError: string | null;
-  detailPollHandle: number | null;
+  detailSocket: WebSocket | null;
+  /** ID of the step the user clicked to "scrub" the screenshot replay. */
+  focusedStepIndex: number | null;
 
   submitInFlight: boolean;
   submitError: string | null;
@@ -37,12 +44,25 @@ interface BrowserAgentState {
   refreshTasks: (params?: { projectId?: string }) => Promise<void>;
   selectTask: (taskId: string | null) => void;
   refreshDetail: () => Promise<void>;
+  focusStep: (stepIndex: number | null) => void;
   createTask: (payload: CreateBrowserTaskRequest) => Promise<string | null>;
   cancelTask: (taskId: string) => Promise<void>;
 }
 
-const POLL_INTERVAL_MS = 2000;
-const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+const FINAL_STATUSES = new Set<BrowserTaskStatus>(['completed', 'failed', 'cancelled']);
+
+function mergeStep(existing: BrowserStep[], incoming: BrowserStep): BrowserStep[] {
+  const idx = existing.findIndex((s) => s.id === incoming.id || s.step_index === incoming.step_index);
+  if (idx === -1) return [...existing, incoming];
+  const next = existing.slice();
+  next[idx] = incoming;
+  return next;
+}
+
+function mergeArtifact(existing: BrowserArtifact[], incoming: BrowserArtifact): BrowserArtifact[] {
+  if (existing.some((a) => a.id === incoming.id)) return existing;
+  return [...existing, incoming];
+}
 
 export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
   envCheck: null,
@@ -57,7 +77,8 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
   detail: null,
   detailLoading: false,
   detailError: null,
-  detailPollHandle: null,
+  detailSocket: null,
+  focusedStepIndex: null,
 
   submitInFlight: false,
   submitError: null,
@@ -89,9 +110,9 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
   },
 
   selectTask(taskId) {
-    const { detailPollHandle } = get();
-    if (detailPollHandle !== null) {
-      window.clearInterval(detailPollHandle);
+    const { detailSocket } = get();
+    if (detailSocket) {
+      detailSocket.close();
     }
 
     if (!taskId) {
@@ -100,7 +121,8 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
         detail: null,
         detailError: null,
         detailLoading: false,
-        detailPollHandle: null,
+        detailSocket: null,
+        focusedStepIndex: null,
       });
       return;
     }
@@ -110,27 +132,83 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
       detail: null,
       detailError: null,
       detailLoading: true,
-      detailPollHandle: null,
+      detailSocket: null,
+      focusedStepIndex: null,
     });
 
     void get().refreshDetail();
 
-    const handle = window.setInterval(() => {
-      const state = get();
-      if (state.selectedTaskId !== taskId) {
-        window.clearInterval(handle);
-        return;
-      }
-      const status = state.detail?.task.status;
-      if (status && FINAL_STATUSES.has(status)) {
-        window.clearInterval(handle);
-        set({ detailPollHandle: null });
-        return;
-      }
-      void get().refreshDetail();
-    }, POLL_INTERVAL_MS);
+    let socket: WebSocket;
+    try {
+      socket = browserAgentApi.openStream(taskId);
+    } catch (err) {
+      // If WS construction throws (rare), fall back to no-stream mode and
+      // surface the error in the detail panel.
+      set({
+        detailError: err instanceof Error ? err.message : 'WebSocket 连接失败',
+      });
+      return;
+    }
 
-    set({ detailPollHandle: handle });
+    socket.onmessage = (event) => {
+      let payload: BrowserStreamEvent;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      // Drop events for stale subscriptions (user switched tasks fast).
+      if (get().selectedTaskId !== taskId) return;
+
+      set((state) => {
+        const detail = state.detail;
+        if (!detail) return {};
+        if (payload.type === 'step') {
+          return {
+            detail: {
+              ...detail,
+              steps: mergeStep(detail.steps, payload.step),
+              task: { ...detail.task, step_count: payload.step.step_index },
+            },
+          };
+        }
+        if (payload.type === 'artifact') {
+          return {
+            detail: {
+              ...detail,
+              artifacts: mergeArtifact(detail.artifacts, payload.artifact),
+            },
+          };
+        }
+        if (payload.type === 'status') {
+          return {
+            detail: {
+              ...detail,
+              task: {
+                ...detail.task,
+                status: payload.status,
+                result_summary: payload.result_summary ?? detail.task.result_summary,
+                error_detail: payload.error ?? detail.task.error_detail,
+              },
+            },
+          };
+        }
+        return {};
+      });
+    };
+
+    socket.onerror = () => {
+      // Stream errors aren't fatal — REST detail still works. Surface a hint.
+      set((state) => ({
+        detailError: state.detailError ?? '实时连接中断，下次进入会重新订阅',
+      }));
+    };
+
+    socket.onclose = () => {
+      set((state) => (state.detailSocket === socket ? { detailSocket: null } : {}));
+    };
+
+    set({ detailSocket: socket });
   },
 
   async refreshDetail() {
@@ -153,6 +231,10 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
     }
   },
 
+  focusStep(stepIndex) {
+    set({ focusedStepIndex: stepIndex });
+  },
+
   async createTask(payload) {
     set({ submitInFlight: true, submitError: null });
     try {
@@ -173,6 +255,7 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
   async cancelTask(taskId) {
     try {
       await browserAgentApi.cancelTask(taskId);
+      // Status update will arrive via WS; refresh as a fallback.
       await get().refreshDetail();
     } catch (err) {
       set({
@@ -181,3 +264,29 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
     }
   },
 }));
+
+/** Selector: pick the screenshot artifact tied to a given step (if any). */
+export function selectScreenshotForStep(
+  detail: BrowserTaskDetailResponse | null,
+  stepIndex: number | null,
+): BrowserArtifact | null {
+  if (!detail || stepIndex == null) return null;
+  return (
+    detail.artifacts.find(
+      (a) => a.step_index === stepIndex && a.kind === 'screenshot',
+    ) ?? null
+  );
+}
+
+/** Selector: latest screenshot in chronological order (for live panel). */
+export function selectLatestScreenshot(
+  detail: BrowserTaskDetailResponse | null,
+): BrowserArtifact | null {
+  if (!detail) return null;
+  for (let i = detail.artifacts.length - 1; i >= 0; i--) {
+    if (detail.artifacts[i].kind === 'screenshot') return detail.artifacts[i];
+  }
+  return null;
+}
+
+export { FINAL_STATUSES };

@@ -101,3 +101,27 @@ export interface BrowserAgentEnvCheck {
   version: string | null;
   issues: string[];
 }
+
+// ── WebSocket stream events ────────────────────────────────────────────────
+
+export interface BrowserStreamStepEvent {
+  type: 'step';
+  step: BrowserStep;
+}
+
+export interface BrowserStreamArtifactEvent {
+  type: 'artifact';
+  artifact: BrowserArtifact;
+}
+
+export interface BrowserStreamStatusEvent {
+  type: 'status';
+  status: BrowserTaskStatus;
+  error?: string;
+  result_summary?: string;
+}
+
+export type BrowserStreamEvent =
+  | BrowserStreamStepEvent
+  | BrowserStreamArtifactEvent
+  | BrowserStreamStatusEvent;

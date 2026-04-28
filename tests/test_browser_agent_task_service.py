@@ -9,6 +9,7 @@ persistence is validated.
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -205,3 +206,376 @@ async def test_request_cancel_marks_task_cancelled(tmp_path: Path, env_ready) ->
     # event and short-circuit to CANCELLED before issuing a snapshot call.
     assert final.status is TaskStatus.CANCELLED
     assert "snapshot" not in cli.calls
+
+
+# ── ReAct loop tests (M2.3) ────────────────────────────────────────────────
+
+from tokenmind.browser_agent.decision import Decision, DecisionMaker, DecisionParseError
+
+
+class _ReactFakeCLI(_FakeCLI):
+    """Extended fake CLI that records every dispatched method + lets snapshot
+    return scripted texts so we can drive the ReAct loop deterministically."""
+
+    def __init__(self, snapshots: list[str]) -> None:
+        super().__init__()
+        self._snapshots = list(snapshots)
+        self._snapshot_idx = 0
+
+    async def snapshot(self, project_id: str, *, interactive_only: bool = True,
+                       compact: bool = False, depth=None, selector=None,
+                       timeout: float = 30.0) -> dict:
+        self.calls.append("snapshot")
+        text = self._snapshots[min(self._snapshot_idx, len(self._snapshots) - 1)]
+        self._snapshot_idx += 1
+        return {"success": True, "data": {"snapshot": text}, "error": None}
+
+    async def fill(self, project_id: str, selector: str, text: str, timeout: float = 30.0) -> dict:
+        self.calls.append(f"fill({selector},{text})")
+        return {"success": True, "data": {}, "error": None}
+
+    async def press(self, project_id: str, key: str, timeout: float = 30.0) -> dict:
+        self.calls.append(f"press({key})")
+        return {"success": True, "data": {}, "error": None}
+
+    async def click(self, project_id: str, selector: str, timeout: float = 30.0) -> dict:
+        self.calls.append(f"click({selector})")
+        return {"success": True, "data": {}, "error": None}
+
+
+class _ScriptedDecisionMaker:
+    """Returns a queued list of Decision objects, in order."""
+
+    def __init__(self, decisions: list[Decision]) -> None:
+        self._queue = list(decisions)
+        self.calls: list[dict] = []
+
+    async def decide(self, *, instruction: str, snapshot: str, history) -> Decision:
+        self.calls.append({"snapshot": snapshot, "history_len": len(history)})
+        if not self._queue:
+            raise DecisionParseError("no more scripted decisions")
+        return self._queue.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_react_loop_runs_decisions_until_finish(tmp_path: Path, env_ready) -> None:
+    cli = _ReactFakeCLI([
+        "snap1: textbox @e1",
+        "snap2: textbox filled",
+        "snap3: results loaded",
+    ])
+    decisions = [
+        Decision(action="fill", args={"selector": "@e1", "text": "TokenMind"}, thinking="填关键词"),
+        Decision(action="press", args={"key": "Enter"}, thinking="提交"),
+        Decision(action="finish", args={"summary": "找到了搜索结果"}, thinking="完成"),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="搜 TokenMind", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+    assert final.result_summary == "找到了搜索结果"
+
+    # Verify the three planned actions actually hit the CLI in order.
+    assert "fill(@e1,TokenMind)" in cli.calls
+    assert "press(Enter)" in cli.calls
+
+    # Decision maker was called once per non-finish iteration plus the finish call (3 total).
+    assert len(maker.calls) == 3
+    # History grows with each completed action (open + fill + press = 2 history entries
+    # observed by the time of the finish call, since open is recorded as a step but not
+    # added to history — only LLM-driven actions are).
+    assert maker.calls[2]["history_len"] == 2
+
+
+@pytest.mark.asyncio
+async def test_react_loop_stops_when_decision_parse_fails(tmp_path: Path, env_ready) -> None:
+    cli = _ReactFakeCLI(["snap"])
+
+    class _AlwaysFailMaker:
+        async def decide(self, *, instruction: str, snapshot: str, history) -> Decision:
+            raise DecisionParseError("bad output")
+
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: _AlwaysFailMaker())
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=5.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.FAILED
+    assert "LLM 决策失败" in (final.error_detail or "")
+
+
+@pytest.mark.asyncio
+async def test_react_loop_breaks_on_stuck_observation(tmp_path: Path, env_ready) -> None:
+    """Three identical snapshots in a row should terminate with auto-summary."""
+    cli = _ReactFakeCLI(["same", "same", "same", "same", "same", "same", "same"])
+    decisions = [Decision(action="click", args={"selector": "@e1"}) for _ in range(10)]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x", max_steps=20)
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+    assert "页面没有变化" in (final.result_summary or "")
+
+
+@pytest.mark.asyncio
+async def test_react_loop_respects_max_steps(tmp_path: Path, env_ready) -> None:
+    """When LLM never says finish and snapshots vary, max_steps caps the loop."""
+    cli = _ReactFakeCLI([f"snap-{i}" for i in range(50)])
+    decisions = [Decision(action="click", args={"selector": "@e1"}) for _ in range(50)]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x", max_steps=3)
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+    assert "达到最大步数" in (final.result_summary or "")
+
+
+@pytest.mark.asyncio
+async def test_decision_factory_can_be_async(tmp_path: Path, env_ready) -> None:
+    cli = _ReactFakeCLI(["snap"])
+    decisions = [Decision(action="finish", args={"summary": "ok"})]
+    maker = _ScriptedDecisionMaker(decisions)
+
+    async def async_factory(task):
+        return maker
+
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=async_factory)
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=5.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+
+
+# ── Artifact landing tests (M2.4) ──────────────────────────────────────────
+
+
+class _ArtifactCLI(_ReactFakeCLI):
+    """Fake CLI that returns canned eval/get responses for artifact tests."""
+
+    def __init__(self, snapshots: list[str], eval_responses: dict[str, str]) -> None:
+        super().__init__(snapshots)
+        self._eval_responses = eval_responses
+
+    async def eval_js(self, project_id: str, expression: str, *, timeout: float = 30.0) -> dict:
+        self.calls.append(f"eval({expression[:40]}...)")
+        # Return whatever the test queued for the matching key (matched by
+        # whether the key string appears in the expression).
+        for key, value in self._eval_responses.items():
+            if key in expression:
+                return {"success": True, "data": {"result": value}, "error": None}
+        return {"success": True, "data": {"result": ""}, "error": None}
+
+
+@pytest.mark.asyncio
+async def test_save_page_text_persists_artifact(tmp_path: Path, env_ready) -> None:
+    cli = _ArtifactCLI(
+        snapshots=["snap1", "snap2"],
+        eval_responses={"document.body": "Hello world\n这是页面正文"},
+    )
+    decisions = [
+        Decision(action="save_page_text", args={"label": "首页正文"}),
+        Decision(action="finish", args={"summary": "ok"}),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+
+    artifacts = svc.storage.list_artifacts(task.id)
+    text_artifacts = [a for a in artifacts if a.kind.value == "page_text"]
+    assert len(text_artifacts) == 1
+    art = text_artifacts[0]
+    assert art.metadata.get("label") == "首页正文"
+    saved = Path(art.file_path).read_text(encoding="utf-8")
+    assert "Hello world" in saved
+    assert "页面正文" in saved
+
+
+@pytest.mark.asyncio
+async def test_extract_persists_json_artifact(tmp_path: Path, env_ready) -> None:
+    cli = _ArtifactCLI(
+        snapshots=["snap1", "snap2"],
+        eval_responses={
+            "JSON.stringify": '{"title":"TokenMind","author":"作者X"}',
+        },
+    )
+    decisions = [
+        Decision(
+            action="extract",
+            args={
+                "fields": {"title": ".h1", "author": ".byline"},
+                "label": "GitHub README",
+            },
+        ),
+        Decision(action="finish", args={"summary": "ok"}),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    artifacts = svc.storage.list_artifacts(task.id)
+    json_artifacts = [a for a in artifacts if a.kind.value == "extract_json"]
+    assert len(json_artifacts) == 1
+    art = json_artifacts[0]
+    assert art.metadata.get("label") == "GitHub README"
+    assert art.metadata.get("fields") == ["title", "author"]
+    saved = json.loads(Path(art.file_path).read_text(encoding="utf-8"))
+    assert saved == {"title": "TokenMind", "author": "作者X"}
+
+
+@pytest.mark.asyncio
+async def test_extract_rejects_empty_fields(tmp_path: Path, env_ready) -> None:
+    cli = _ArtifactCLI(snapshots=["snap"] * 5, eval_responses={})
+    # First decision: extract with empty fields → ValueError captured as
+    # action error. Loop should keep going (not fatal).
+    decisions = [
+        Decision(action="extract", args={"fields": {}}),
+        Decision(action="finish", args={"summary": "give up"}),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED  # graceful finish via second decision
+    steps = svc.storage.list_steps(task.id)
+    extract_steps = [s for s in steps if s.action_name == "extract"]
+    assert len(extract_steps) == 1
+    assert extract_steps[0].success is False
+    assert "fields" in (extract_steps[0].error or "")
+
+
+# ── Event emitter integration (M2.5) ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_task_emits_status_step_and_artifact_events(tmp_path: Path, env_ready) -> None:
+    cli = _ReactFakeCLI(["snap1", "snap2", "snap3"])
+    # First decision triggers an action → automatic screenshot artifact emit.
+    decisions = [
+        Decision(action="click", args={"selector": "@e1"}),
+        Decision(action="finish", args={"summary": "ok"}),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+
+    received: list[dict] = []
+
+    async def emitter(task_id: str, event: dict) -> None:
+        received.append({"task": task_id, **event})
+
+    svc = BrowserTaskService(
+        tmp_path,
+        cli=cli,
+        decision_factory=lambda task: maker,
+        event_emitter=emitter,
+    )
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+    # Allow the loop to drain queued create_task callbacks for emit.
+    await asyncio.sleep(0.1)
+
+    types = [e["type"] for e in received]
+    assert "status" in types  # running + completed
+    assert "step" in types
+    assert "artifact" in types
+    statuses = [e["status"] for e in received if e["type"] == "status"]
+    assert statuses[0] == "running"
+    assert statuses[-1] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_emit_swallows_subscriber_errors(tmp_path: Path, env_ready) -> None:
+    """A failing emitter must not crash the task loop."""
+    cli = _ReactFakeCLI(["snap"])
+    decisions = [Decision(action="finish", args={"summary": "ok"})]
+    maker = _ScriptedDecisionMaker(decisions)
+
+    async def angry_emitter(task_id: str, event: dict) -> None:
+        raise RuntimeError("subscriber blew up")
+
+    svc = BrowserTaskService(
+        tmp_path,
+        cli=cli,
+        decision_factory=lambda task: maker,
+        event_emitter=angry_emitter,
+    )
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+    await asyncio.sleep(0.1)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_model_override_persisted_in_metadata(tmp_path: Path, env_ready) -> None:
+    cli = _FakeCLI()
+    svc = BrowserTaskService(tmp_path, cli=cli)
+    task = svc.create_task(
+        CreateTaskRequest(
+            project_id="p",
+            instruction="x",
+            start_url="https://x",
+            model_override="anthropic/claude-haiku-4-5",
+        )
+    )
+    fetched = svc.storage.get_task(task.id)
+    assert fetched is not None
+    assert fetched.metadata.get("model_override") == "anthropic/claude-haiku-4-5"

@@ -1,21 +1,26 @@
-"""Browser Agent REST API endpoints.
+"""Browser Agent REST + WebSocket API endpoints.
 
-M1 surface area:
+REST:
 - ``POST   /api/browser-tasks``        — create + schedule a scripted task
 - ``GET    /api/browser-tasks``        — list tasks (optionally by project)
 - ``GET    /api/browser-tasks/{id}``   — task detail (task + steps + artifacts)
 - ``POST   /api/browser-tasks/{id}/cancel`` — request cancellation
 - ``GET    /api/browser-tasks/artifacts/{id}/file`` — download artifact bytes
 - ``GET    /api/browser-agent/env-check`` — driver/CLI/Chrome readiness
+
+WebSocket:
+- ``WS     /api/browser-tasks/{id}/stream`` — live step / artifact / status
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import mimetypes
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from tokenmind.browser_agent.env_check import check_environment
@@ -24,7 +29,10 @@ from tokenmind.browser_agent.models import (
     EnvCheckResponse,
     TaskDetailResponse,
 )
+from tokenmind.browser_agent.stream import default_hub
 from tokenmind.server.dependencies import get_browser_task_service
+
+logger = logging.getLogger("tokenmind.server.routes.browser_tasks")
 
 router = APIRouter(prefix="/api", tags=["browser-agent"])
 
@@ -119,3 +127,29 @@ async def download_browser_artifact(artifact_id: str) -> FileResponse:
         media_type=media_type,
         filename=file_path.name,
     )
+
+
+@router.websocket("/browser-tasks/{task_id}/stream")
+async def stream_browser_task(websocket: WebSocket, task_id: str) -> None:
+    """Live event stream for a single browser task.
+
+    On connect we flush the replay buffer (previous steps + artifacts that
+    happened before the client subscribed), then forward any new events as
+    they're emitted by the TaskService until the WS closes.
+    """
+    await websocket.accept()
+    queue, buffered = await default_hub.subscribe(task_id)
+    try:
+        for event in buffered:
+            await websocket.send_json(event)
+        while True:
+            event = await queue.get()
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        pass
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001
+        logger.exception("browser-task stream WS for %s crashed", task_id)
+    finally:
+        await default_hub.unsubscribe(task_id, queue)

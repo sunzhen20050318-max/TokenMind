@@ -1,8 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { browserAgentApi } from '../services/browserAgent';
-import { useBrowserAgentStore } from '../stores/browserAgentStore';
+import {
+  selectLatestScreenshot,
+  selectScreenshotForStep,
+  useBrowserAgentStore,
+} from '../stores/browserAgentStore';
 import { useChatStore } from '../stores/chatStore';
-import type { BrowserTaskListItem, BrowserTaskStatus } from '../types/browserAgent';
+import type {
+  BrowserStep,
+  BrowserTaskListItem,
+  BrowserTaskStatus,
+} from '../types/browserAgent';
 import './browserAgent.css';
 
 const STATUS_LABELS: Record<BrowserTaskStatus, string> = {
@@ -23,6 +31,7 @@ function formatDateTime(value: string | null | undefined): string {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   });
 }
 
@@ -121,8 +130,59 @@ function TaskList({ items, selectedId, loading, error, onSelect, onRefresh }: Ta
   );
 }
 
+interface StepRowProps {
+  step: BrowserStep;
+  isFocused: boolean;
+  onFocus: (stepIndex: number) => void;
+}
+
+function StepRow({ step, isFocused, onFocus }: StepRowProps) {
+  return (
+    <li
+      className={`browser-agent__step browser-agent__step--${step.phase} ${
+        isFocused ? 'is-focused' : ''
+      }`}
+    >
+      <button
+        type="button"
+        className="browser-agent__step-button"
+        onClick={() => onFocus(step.step_index)}
+      >
+        <div className="browser-agent__step-head">
+          <span className="browser-agent__step-index">#{step.step_index}</span>
+          <span className="browser-agent__step-phase">{step.phase}</span>
+          {step.action_name ? (
+            <span className="browser-agent__step-action">{step.action_name}</span>
+          ) : null}
+          {!step.success ? <span className="browser-agent__step-fail">失败</span> : null}
+          <span className="browser-agent__step-time">{formatDateTime(step.timestamp)}</span>
+        </div>
+        {step.thinking ? (
+          <div className="browser-agent__step-thinking">💭 {step.thinking}</div>
+        ) : null}
+        {step.action_args ? (
+          <pre className="browser-agent__step-args">{JSON.stringify(step.action_args, null, 2)}</pre>
+        ) : null}
+        {step.observation ? (
+          <pre className="browser-agent__step-observation">{step.observation}</pre>
+        ) : null}
+        {step.error ? <div className="browser-agent__step-error">{step.error}</div> : null}
+      </button>
+    </li>
+  );
+}
+
 function TaskDetail() {
-  const { detail, detailLoading, detailError, cancelTask, refreshDetail } = useBrowserAgentStore();
+  const {
+    detail,
+    detailLoading,
+    detailError,
+    cancelTask,
+    refreshDetail,
+    focusedStepIndex,
+    focusStep,
+  } = useBrowserAgentStore();
+
   if (!detail) {
     return (
       <div className="browser-agent__detail browser-agent__detail--empty">
@@ -133,8 +193,15 @@ function TaskDetail() {
   }
 
   const { task, steps, artifacts } = detail;
-  const screenshot = artifacts.find((a) => a.kind === 'screenshot');
   const isRunning = task.status === 'running' || task.status === 'pending';
+
+  // The focused step (if user clicked one) drives which screenshot is shown.
+  // Otherwise we always show the latest one — i.e. live preview.
+  const focusedShot = selectScreenshotForStep(detail, focusedStepIndex);
+  const latestShot = selectLatestScreenshot(detail);
+  const displayedShot = focusedShot ?? latestShot;
+
+  const nonScreenshotArtifacts = artifacts.filter((a) => a.kind !== 'screenshot');
 
   return (
     <div className="browser-agent__detail">
@@ -185,33 +252,64 @@ function TaskDetail() {
         </div>
       ) : null}
 
-      {screenshot ? (
-        <div className="browser-agent__screenshot">
-          <img src={browserAgentApi.artifactUrl(screenshot.id)} alt="任务截图" />
-        </div>
-      ) : null}
-
-      <ol className="browser-agent__steps">
-        {steps.map((step) => (
-          <li key={step.id} className={`browser-agent__step browser-agent__step--${step.phase}`}>
-            <div className="browser-agent__step-head">
-              <span className="browser-agent__step-index">#{step.step_index}</span>
-              <span className="browser-agent__step-phase">{step.phase}</span>
-              {step.action_name ? (
-                <span className="browser-agent__step-action">{step.action_name}</span>
-              ) : null}
-              <span className="browser-agent__step-time">{formatDateTime(step.timestamp)}</span>
+      <div className="browser-agent__panes">
+        <div className="browser-agent__live">
+          <div className="browser-agent__live-head">
+            <span>
+              {focusedShot
+                ? `步骤 #${focusedShot.step_index} 截图`
+                : isRunning
+                  ? '实时画面'
+                  : '最终画面'}
+            </span>
+            {focusedStepIndex !== null ? (
+              <button type="button" onClick={() => focusStep(null)}>
+                回到最新
+              </button>
+            ) : null}
+          </div>
+          {displayedShot ? (
+            <img
+              src={browserAgentApi.artifactUrl(displayedShot.id)}
+              alt="任务截图"
+              className="browser-agent__live-img"
+            />
+          ) : (
+            <div className="browser-agent__live-placeholder">
+              {isRunning ? '等待第一帧画面…' : '本任务没有截图。'}
             </div>
-            {step.action_args ? (
-              <pre className="browser-agent__step-args">{JSON.stringify(step.action_args, null, 2)}</pre>
-            ) : null}
-            {step.observation ? (
-              <pre className="browser-agent__step-observation">{step.observation}</pre>
-            ) : null}
-            {step.error ? <div className="browser-agent__step-error">{step.error}</div> : null}
-          </li>
-        ))}
-      </ol>
+          )}
+          {nonScreenshotArtifacts.length > 0 ? (
+            <div className="browser-agent__artifacts">
+              <div className="browser-agent__artifacts-head">已落地的数据产物</div>
+              <ul>
+                {nonScreenshotArtifacts.map((art) => (
+                  <li key={art.id}>
+                    <a
+                      href={browserAgentApi.artifactUrl(art.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {art.kind} · {(art.metadata?.label as string) || art.file_path.split('/').pop()}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+
+        <ol className="browser-agent__steps">
+          {steps.map((step) => (
+            <StepRow
+              key={step.id}
+              step={step}
+              isFocused={focusedStepIndex === step.step_index}
+              onFocus={focusStep}
+            />
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }
@@ -265,7 +363,7 @@ export const BrowserAgentPage: React.FC = () => {
         <div>
           <h1>Web Agent</h1>
           <p className="browser-agent__subtitle">
-            让 AI 在隔离的浏览器里替你完成网页任务（M1 版本会先自动打开页面并截图）。
+            让 AI 在隔离的浏览器里替你完成网页任务（M2 起由 LLM 决策每一步）。
           </p>
         </div>
         {envCheck ? (
@@ -292,7 +390,7 @@ export const BrowserAgentPage: React.FC = () => {
                 value={instruction}
                 onChange={(event) => setInstruction(event.target.value)}
                 rows={3}
-                placeholder="例如：打开 baidu.com 并截图首页"
+                placeholder="例如：在 GitHub 搜索 browser-use 提取 README 重点"
               />
             </label>
             <label>

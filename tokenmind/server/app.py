@@ -1496,7 +1496,26 @@ def create_app(
     set_inbound_queue(bus.inbound)
     set_cron_service(getattr(agent_loop, "cron_service", None))
 
-    browser_task_service = BrowserTaskService(session_manager.workspace)
+    from tokenmind.browser_agent.decision import DecisionMaker
+    from tokenmind.browser_agent.stream import default_hub as _browser_stream_hub
+
+    def _make_browser_decision_maker(task):
+        # Lazy provider creation per task so model overrides are honored.
+        cfg = load_config()
+        try:
+            from tokenmind.cli.commands import _make_provider as _provider_factory
+            provider = _provider_factory(cfg)
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to build LLM provider for browser task {}", task.id)
+            raise
+        model = task.metadata.get("model_override") or cfg.agents.defaults.model
+        return DecisionMaker(provider, model=model)
+
+    browser_task_service = BrowserTaskService(
+        session_manager.workspace,
+        decision_factory=_make_browser_decision_maker,
+        event_emitter=_browser_stream_hub.emit,
+    )
     set_browser_task_service(browser_task_service)
 
     # Create FastAPI app

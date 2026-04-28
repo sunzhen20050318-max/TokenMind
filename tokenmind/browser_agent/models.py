@@ -93,6 +93,9 @@ class CreateTaskRequest(BaseModel):
     session_id: Optional[str] = None
     max_steps: int = 50
     timeout_seconds: int = 1800
+    # Optional override for the LLM model used to drive the ReAct loop.
+    # When None, falls back to ``config.agents.defaults.model``.
+    model_override: Optional[str] = None
 
 
 class TaskListItem(BaseModel):

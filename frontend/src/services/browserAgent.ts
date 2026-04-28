@@ -61,4 +61,14 @@ export const browserAgentApi = {
   artifactUrl(artifactId: string): string {
     return `${API_BASE}/browser-tasks/artifacts/${encodeURIComponent(artifactId)}/file`;
   },
+
+  /**
+   * Open a WebSocket subscription for live task events. The server flushes
+   * the replay buffer first, so the caller always sees the full timeline.
+   */
+  openStream(taskId: string): WebSocket {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${window.location.host}${API_BASE}/browser-tasks/${encodeURIComponent(taskId)}/stream`;
+    return new WebSocket(url);
+  },
 };
