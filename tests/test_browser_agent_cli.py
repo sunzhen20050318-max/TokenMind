@@ -203,3 +203,97 @@ async def test_batch_rejects_empty_commands() -> None:
     cli = AgentBrowserCLI()
     with pytest.raises(ValueError, match="at least one"):
         await cli.batch("p", [])
+
+
+# ── M3.1: takeover (mouse / keyboard / viewport) ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_mouse_move_passes_integer_coords() -> None:
+    cli = AgentBrowserCLI()
+    cmd = await _capture_cmd(lambda c: c.mouse_move("p", 123, 456), cli)
+    assert cmd[-4:] == ["mouse", "move", "123", "456"]
+
+
+@pytest.mark.asyncio
+async def test_mouse_move_truncates_floats_to_int() -> None:
+    cli = AgentBrowserCLI()
+    cmd = await _capture_cmd(lambda c: c.mouse_move("p", 100.7, 200.3), cli)
+    assert cmd[-4:] == ["mouse", "move", "100", "200"]
+
+
+@pytest.mark.asyncio
+async def test_mouse_down_up_default_left_button() -> None:
+    cli = AgentBrowserCLI()
+    down = await _capture_cmd(lambda c: c.mouse_down("p"), cli)
+    up = await _capture_cmd(lambda c: c.mouse_up("p"), cli)
+    assert down[-3:] == ["mouse", "down", "left"]
+    assert up[-3:] == ["mouse", "up", "left"]
+
+
+@pytest.mark.asyncio
+async def test_mouse_down_validates_button() -> None:
+    cli = AgentBrowserCLI()
+    with pytest.raises(ValueError, match="invalid mouse button"):
+        await cli.mouse_down("p", "foot")
+
+
+@pytest.mark.asyncio
+async def test_mouse_wheel_passes_dy_then_dx() -> None:
+    cli = AgentBrowserCLI()
+    cmd = await _capture_cmd(lambda c: c.mouse_wheel("p", -120, 30), cli)
+    assert cmd[-4:] == ["mouse", "wheel", "-120", "30"]
+
+
+@pytest.mark.asyncio
+async def test_click_xy_uses_batched_move_down_up() -> None:
+    cli = AgentBrowserCLI()
+    cmd = await _capture_cmd(lambda c: c.click_xy("p", 50, 75), cli)
+    # Last 5 args: batch + --bail + 3 quoted command strings
+    assert cmd[-5:] == [
+        "batch",
+        "--bail",
+        "mouse move 50 75",
+        "mouse down left",
+        "mouse up left",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_click_xy_validates_button() -> None:
+    cli = AgentBrowserCLI()
+    with pytest.raises(ValueError, match="invalid mouse button"):
+        await cli.click_xy("p", 1, 2, button="foot")
+
+
+@pytest.mark.asyncio
+async def test_keyboard_type_passes_raw_text() -> None:
+    cli = AgentBrowserCLI()
+    cmd = await _capture_cmd(lambda c: c.keyboard_type("p", "hello world"), cli)
+    assert cmd[-3:] == ["keyboard", "type", "hello world"]
+
+
+@pytest.mark.asyncio
+async def test_keyboard_insert_uses_inserttext_subcommand() -> None:
+    cli = AgentBrowserCLI()
+    cmd = await _capture_cmd(lambda c: c.keyboard_insert("p", "abc"), cli)
+    assert cmd[-3:] == ["keyboard", "inserttext", "abc"]
+
+
+@pytest.mark.asyncio
+async def test_set_viewport_basic_and_with_scale() -> None:
+    cli = AgentBrowserCLI()
+    plain = await _capture_cmd(lambda c: c.set_viewport("p", 1280, 800), cli)
+    assert plain[-4:] == ["set", "viewport", "1280", "800"]
+
+    scaled = await _capture_cmd(lambda c: c.set_viewport("p", 1280, 800, scale=2), cli)
+    assert scaled[-5:] == ["set", "viewport", "1280", "800", "2"]
+
+
+@pytest.mark.asyncio
+async def test_set_viewport_validates_size_and_scale() -> None:
+    cli = AgentBrowserCLI()
+    with pytest.raises(ValueError, match="invalid viewport size"):
+        await cli.set_viewport("p", 0, 100)
+    with pytest.raises(ValueError, match="invalid device scale"):
+        await cli.set_viewport("p", 100, 100, scale=0)

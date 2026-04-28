@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { browserAgentApi } from '../services/browserAgent';
 import {
   selectLatestScreenshot,
@@ -7,6 +7,7 @@ import {
 } from '../stores/browserAgentStore';
 import { useChatStore } from '../stores/chatStore';
 import type {
+  BrowserArtifact,
   BrowserStep,
   BrowserTaskListItem,
   BrowserTaskStatus,
@@ -172,6 +173,45 @@ function StepRow({ step, isFocused, onFocus }: StepRowProps) {
   );
 }
 
+interface InteractiveScreenshotProps {
+  artifact: BrowserArtifact;
+  enabled: boolean;
+  onClick: (x: number, y: number) => void;
+}
+
+/**
+ * Renders a screenshot. When ``enabled`` (i.e. task is awaiting_user), clicks
+ * are translated from the rendered <img> coordinate space back to the actual
+ * pixel coordinates the browser used when taking the shot, then forwarded
+ * via ``onClick``.
+ *
+ * We rely on naturalWidth/Height vs the bounding rect to compute the scale,
+ * which works regardless of how the image is sized by CSS.
+ */
+function InteractiveScreenshot({ artifact, enabled, onClick }: InteractiveScreenshotProps) {
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const handleClick = (event: React.MouseEvent<HTMLImageElement>) => {
+    if (!enabled) return;
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth || !img.naturalHeight) return;
+    const rect = img.getBoundingClientRect();
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
+    const x = Math.round((event.clientX - rect.left) * scaleX);
+    const y = Math.round((event.clientY - rect.top) * scaleY);
+    onClick(x, y);
+  };
+  return (
+    <img
+      ref={imgRef}
+      src={browserAgentApi.artifactUrl(artifact.id)}
+      alt="任务截图"
+      className={`browser-agent__live-img ${enabled ? 'is-interactive' : ''}`}
+      onClick={handleClick}
+    />
+  );
+}
+
 function TaskDetail() {
   const {
     detail,
@@ -181,7 +221,12 @@ function TaskDetail() {
     refreshDetail,
     focusedStepIndex,
     focusStep,
+    takeoverTask,
+    resumeTask,
+    intervene,
   } = useBrowserAgentStore();
+  const [interveneText, setInterveneText] = useState('');
+  const [intervening, setIntervening] = useState(false);
 
   if (!detail) {
     return (
@@ -194,6 +239,7 @@ function TaskDetail() {
 
   const { task, steps, artifacts } = detail;
   const isRunning = task.status === 'running' || task.status === 'pending';
+  const isAwaitingUser = task.status === 'awaiting_user';
 
   // The focused step (if user clicked one) drives which screenshot is shown.
   // Otherwise we always show the latest one — i.e. live preview.
@@ -202,6 +248,34 @@ function TaskDetail() {
   const displayedShot = focusedShot ?? latestShot;
 
   const nonScreenshotArtifacts = artifacts.filter((a) => a.kind !== 'screenshot');
+
+  const dispatch = async (
+    action: Parameters<typeof intervene>[1],
+    args: Record<string, unknown>,
+  ) => {
+    setIntervening(true);
+    try {
+      await intervene(task.id, action, args);
+    } finally {
+      setIntervening(false);
+    }
+  };
+
+  const handleScreenshotClick = (x: number, y: number) => {
+    if (!isAwaitingUser) return;
+    void dispatch('click_xy', { x, y });
+  };
+
+  const handleSendText = async () => {
+    const text = interveneText;
+    if (!text) return;
+    setInterveneText('');
+    await dispatch('type', { text });
+  };
+
+  const handlePressKey = (key: string) => {
+    void dispatch('press', { key });
+  };
 
   return (
     <div className="browser-agent__detail">
@@ -213,6 +287,23 @@ function TaskDetail() {
             {detailLoading ? '刷新中…' : '刷新'}
           </button>
           {isRunning ? (
+            <button
+              type="button"
+              onClick={() => void takeoverTask(task.id)}
+            >
+              立即接管
+            </button>
+          ) : null}
+          {isAwaitingUser ? (
+            <button
+              type="button"
+              className="browser-agent__primary"
+              onClick={() => void resumeTask(task.id)}
+            >
+              继续 AI
+            </button>
+          ) : null}
+          {(isRunning || isAwaitingUser) ? (
             <button
               type="button"
               className="browser-agent__danger"
@@ -258,9 +349,11 @@ function TaskDetail() {
             <span>
               {focusedShot
                 ? `步骤 #${focusedShot.step_index} 截图`
-                : isRunning
-                  ? '实时画面'
-                  : '最终画面'}
+                : isAwaitingUser
+                  ? '🎮 接管中（点击截图操作）'
+                  : isRunning
+                    ? '实时画面'
+                    : '最终画面'}
             </span>
             {focusedStepIndex !== null ? (
               <button type="button" onClick={() => focusStep(null)}>
@@ -269,16 +362,84 @@ function TaskDetail() {
             ) : null}
           </div>
           {displayedShot ? (
-            <img
-              src={browserAgentApi.artifactUrl(displayedShot.id)}
-              alt="任务截图"
-              className="browser-agent__live-img"
+            <InteractiveScreenshot
+              artifact={displayedShot}
+              enabled={isAwaitingUser && focusedStepIndex === null}
+              onClick={handleScreenshotClick}
             />
           ) : (
             <div className="browser-agent__live-placeholder">
               {isRunning ? '等待第一帧画面…' : '本任务没有截图。'}
             </div>
           )}
+
+          {isAwaitingUser ? (
+            <div className="browser-agent__intervene">
+              <div className="browser-agent__intervene-row">
+                <input
+                  type="text"
+                  placeholder="输入文字（发送到当前焦点）"
+                  value={interveneText}
+                  onChange={(event) => setInterveneText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void handleSendText();
+                    }
+                  }}
+                  disabled={intervening}
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSendText()}
+                  disabled={intervening || !interveneText}
+                >
+                  发送
+                </button>
+              </div>
+              <div className="browser-agent__intervene-keys">
+                {['Enter', 'Tab', 'Escape', 'Backspace', 'ArrowDown', 'ArrowUp'].map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handlePressKey(key)}
+                    disabled={intervening}
+                  >
+                    {key}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => void dispatch('scroll', { direction: 'down' })}
+                  disabled={intervening}
+                >
+                  向下滚
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void dispatch('scroll', { direction: 'up' })}
+                  disabled={intervening}
+                >
+                  向上滚
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void dispatch('back', {})}
+                  disabled={intervening}
+                >
+                  后退
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void dispatch('reload', {})}
+                  disabled={intervening}
+                >
+                  刷新
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {nonScreenshotArtifacts.length > 0 ? (
             <div className="browser-agent__artifacts">
               <div className="browser-agent__artifacts-head">已落地的数据产物</div>

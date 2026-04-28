@@ -242,6 +242,10 @@ class _ReactFakeCLI(_FakeCLI):
         self.calls.append(f"click({selector})")
         return {"success": True, "data": {}, "error": None}
 
+    async def scroll(self, project_id: str, direction: str, pixels=None, timeout: float = 15.0) -> dict:
+        self.calls.append(f"scroll({direction},{pixels})")
+        return {"success": True, "data": {}, "error": None}
+
 
 class _ScriptedDecisionMaker:
     """Returns a queued list of Decision objects, in order."""
@@ -317,10 +321,16 @@ async def test_react_loop_stops_when_decision_parse_fails(tmp_path: Path, env_re
 
 
 @pytest.mark.asyncio
-async def test_react_loop_breaks_on_stuck_observation(tmp_path: Path, env_ready) -> None:
-    """Three identical snapshots in a row should terminate with auto-summary."""
-    cli = _ReactFakeCLI(["same", "same", "same", "same", "same", "same", "same"])
-    decisions = [Decision(action="click", args={"selector": "@e1"}) for _ in range(10)]
+async def test_react_loop_pauses_on_stuck_observation(tmp_path: Path, env_ready) -> None:
+    """Identical snapshots beyond the threshold pause the loop for user takeover.
+
+    Replaces the M2 behaviour (auto-complete) with M3's AWAITING_USER.
+    """
+    cli = _ReactFakeCLI(["same"] * 12)
+    # Vary the actions so DECISION_INSTABILITY doesn't fire before NO_CHANGE.
+    decisions = [
+        Decision(action="click", args={"selector": f"@e{i}"}) for i in range(10)
+    ]
     maker = _ScriptedDecisionMaker(decisions)
     svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
 
@@ -328,12 +338,20 @@ async def test_react_loop_breaks_on_stuck_observation(tmp_path: Path, env_ready)
         CreateTaskRequest(project_id="p", instruction="x", start_url="https://x", max_steps=20)
     )
     svc.schedule(task)
-    await _wait_until(svc, task.id, timeout=10.0)
 
+    # Wait until the loop hits AWAITING_USER.
+    for _ in range(200):
+        await asyncio.sleep(0.02)
+        current = svc.storage.get_task(task.id)
+        if current and current.status is TaskStatus.AWAITING_USER:
+            break
     final = svc.storage.get_task(task.id)
     assert final is not None
-    assert final.status is TaskStatus.COMPLETED
-    assert "页面没有变化" in (final.result_summary or "")
+    assert final.status is TaskStatus.AWAITING_USER
+
+    # Cancel to clean up the running task fixture.
+    svc.request_cancel(task.id)
+    await _wait_until(svc, task.id, timeout=5.0)
 
 
 @pytest.mark.asyncio
@@ -493,6 +511,222 @@ async def test_extract_rejects_empty_fields(tmp_path: Path, env_ready) -> None:
     assert len(extract_steps) == 1
     assert extract_steps[0].success is False
     assert "fields" in (extract_steps[0].error or "")
+
+
+# ── Takeover / resume (M3.2) ───────────────────────────────────────────────
+
+
+class _BlockingDecisionMaker:
+    """Decision maker whose decide() blocks on an event so tests can race it."""
+
+    def __init__(self, decisions: list[Decision]) -> None:
+        self._queue = list(decisions)
+        self.unblock = asyncio.Event()
+        self.entered = asyncio.Event()
+        self.calls = 0
+
+    async def decide(self, *, instruction, snapshot, history) -> Decision:
+        self.calls += 1
+        self.entered.set()
+        await self.unblock.wait()
+        self.unblock.clear()
+        return self._queue.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_user_initiated_takeover_pauses_until_resume(tmp_path: Path, env_ready) -> None:
+    """request_takeover pauses before LLM decide; request_resume continues."""
+    cli = _ReactFakeCLI(["snap1", "snap2", "snap3"])
+    maker = _BlockingDecisionMaker([
+        Decision(action="click", args={"selector": "@e1"}),
+        Decision(action="finish", args={"summary": "ok"}),
+    ])
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+
+    # Wait until the loop is blocked inside the first decide() call.
+    await asyncio.wait_for(maker.entered.wait(), timeout=2.0)
+    # Issue takeover NOW — loop will see it on the next iteration after we unblock.
+    assert svc.request_takeover(task.id, "用户测试接管") is True
+    # Let the first decision finish so the loop reaches the takeover checkpoint.
+    maker.entered.clear()
+    maker.unblock.set()
+
+    # Wait for AWAITING_USER (loop's next-iter checkpoint will catch it).
+    for _ in range(200):
+        await asyncio.sleep(0.02)
+        current = svc.storage.get_task(task.id)
+        if current and current.status is TaskStatus.AWAITING_USER:
+            break
+    current = svc.storage.get_task(task.id)
+    assert current.status is TaskStatus.AWAITING_USER
+
+    # Resume → should re-enter decide() for second decision.
+    assert svc.request_resume(task.id) is True
+    await asyncio.wait_for(maker.entered.wait(), timeout=2.0)
+    maker.unblock.set()  # release the finish decision
+    await _wait_until(svc, task.id, timeout=5.0)
+    final = svc.storage.get_task(task.id)
+    assert final.status is TaskStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_stuck_detector_triggers_awaiting_user(tmp_path: Path, env_ready) -> None:
+    """When snapshots stop changing, the loop should auto-pause for user help."""
+    # Same snapshot 6+ times — detector default threshold is 4 unchanged.
+    cli = _ReactFakeCLI(["same"] * 12)
+    # LLM keeps proposing different actions (so REPEATED_FAILURE doesn't trip first).
+    decisions = [
+        Decision(action="click", args={"selector": "@e1"}),
+        Decision(action="scroll", args={"direction": "down"}),
+        Decision(action="click", args={"selector": "@e2"}),
+        Decision(action="scroll", args={"direction": "up"}),
+        Decision(action="click", args={"selector": "@e3"}),
+        Decision(action="finish", args={"summary": "after resume"}),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x", max_steps=20)
+    )
+    svc.schedule(task)
+
+    # Wait for AWAITING_USER.
+    for _ in range(200):
+        await asyncio.sleep(0.02)
+        current = svc.storage.get_task(task.id)
+        if current and current.status is TaskStatus.AWAITING_USER:
+            break
+    current = svc.storage.get_task(task.id)
+    assert current is not None
+    assert current.status is TaskStatus.AWAITING_USER, f"expected AWAITING_USER, got {current.status}"
+
+    # Resume → loop continues to finish.
+    assert svc.request_resume(task.id) is True
+    await _wait_until(svc, task.id, timeout=5.0)
+    final = svc.storage.get_task(task.id)
+    assert final.status is TaskStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_awaiting_user_marks_cancelled(tmp_path: Path, env_ready) -> None:
+    cli = _ReactFakeCLI(["same"] * 12)
+    decisions = [Decision(action="click", args={"selector": "@e1"}) for _ in range(10)]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    svc.request_takeover(task.id)
+    for _ in range(100):
+        await asyncio.sleep(0.02)
+        current = svc.storage.get_task(task.id)
+        if current and current.status is TaskStatus.AWAITING_USER:
+            break
+
+    assert svc.request_cancel(task.id) is True
+    # Need to also unblock the resume wait — request_cancel does that via the cancel event.
+    await _wait_until(svc, task.id, timeout=5.0)
+    final = svc.storage.get_task(task.id)
+    assert final.status is TaskStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_request_takeover_returns_false_when_task_not_running(tmp_path: Path) -> None:
+    svc = BrowserTaskService(tmp_path)
+    assert svc.request_takeover("nonexistent") is False
+    assert svc.request_resume("nonexistent") is False
+
+
+@pytest.mark.asyncio
+async def test_takeover_streams_screenshots_at_high_frequency(tmp_path: Path, env_ready) -> None:
+    """While awaiting_user, screenshots should be emitted multiple times/sec."""
+    cli = _ReactFakeCLI(["snap1", "snap2"])
+    maker = _BlockingDecisionMaker([
+        Decision(action="click", args={"selector": "@e1"}),
+        Decision(action="finish", args={"summary": "ok"}),
+    ])
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+
+    await asyncio.wait_for(maker.entered.wait(), timeout=2.0)
+    svc.request_takeover(task.id)
+    maker.entered.clear()
+    maker.unblock.set()
+
+    # Wait for awaiting_user.
+    for _ in range(200):
+        await asyncio.sleep(0.02)
+        current = svc.storage.get_task(task.id)
+        if current and current.status is TaskStatus.AWAITING_USER:
+            break
+
+    artifacts_before = len(svc.storage.list_artifacts(task.id))
+    # Sit in awaiting_user for ~1.5 seconds → expect ~2 streamed frames.
+    await asyncio.sleep(1.5)
+    artifacts_after = len(svc.storage.list_artifacts(task.id))
+    streamed_frames = artifacts_after - artifacts_before
+    assert streamed_frames >= 2, (
+        f"expected at least 2 streamed frames in 1.5s, got {streamed_frames}"
+    )
+
+    # Resume and let the task complete cleanly.
+    svc.request_resume(task.id)
+    await asyncio.wait_for(maker.entered.wait(), timeout=2.0)
+    maker.unblock.set()
+    await _wait_until(svc, task.id, timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_takeover_streamer_stops_on_resume(tmp_path: Path, env_ready) -> None:
+    """No screenshots should be streamed after resume returns the task to RUNNING."""
+    cli = _ReactFakeCLI(["snap"] * 4)
+    maker = _BlockingDecisionMaker([
+        Decision(action="click", args={"selector": "@e1"}),
+        Decision(action="finish", args={"summary": "ok"}),
+    ])
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await asyncio.wait_for(maker.entered.wait(), timeout=2.0)
+    svc.request_takeover(task.id)
+    maker.entered.clear()
+    maker.unblock.set()
+
+    for _ in range(200):
+        await asyncio.sleep(0.02)
+        if svc.storage.get_task(task.id).status is TaskStatus.AWAITING_USER:
+            break
+
+    # Resume immediately and wait for next decide() to fire.
+    svc.request_resume(task.id)
+    await asyncio.wait_for(maker.entered.wait(), timeout=2.0)
+
+    # Snapshot artifact count, wait, snapshot again — should not grow because
+    # streamer has stopped (the regular ReAct loop is paused waiting on the
+    # blocked decide).
+    count_before = len(svc.storage.list_artifacts(task.id))
+    await asyncio.sleep(1.2)
+    count_after = len(svc.storage.list_artifacts(task.id))
+    assert count_after == count_before, (
+        f"streamer should be stopped — got {count_after - count_before} extra frames"
+    )
+
+    # Let the task wrap up.
+    maker.unblock.set()
+    await _wait_until(svc, task.id, timeout=5.0)
 
 
 # ── Event emitter integration (M2.5) ───────────────────────────────────────

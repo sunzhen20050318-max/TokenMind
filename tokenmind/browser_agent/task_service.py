@@ -17,6 +17,7 @@ so the UI has visual frames to play back.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import secrets
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ from tokenmind.browser_agent.models import (
     TaskStatus,
 )
 from tokenmind.browser_agent.storage import BrowserTaskStorage
+from tokenmind.browser_agent.stuck_detector import StuckDetector, StuckEvent, StuckReason
 
 logger = logging.getLogger("tokenmind.browser_agent.task_service")
 
@@ -65,6 +67,10 @@ _MAX_SNAPSHOT_CHARS = 6000
 # Cap the structured "observation" (e.g. extracted text) likewise.
 _MAX_OBSERVATION_CHARS = 4000
 
+# Frame interval while the task is awaiting user takeover. 1.5 fps keeps the
+# UI feeling responsive without thrashing Chrome on the user's machine.
+_TAKEOVER_FRAME_INTERVAL_S = 0.67
+
 
 class BrowserTaskService:
     """Coordinates task creation, execution, and artifact persistence."""
@@ -87,6 +93,7 @@ class BrowserTaskService:
         self.artifacts_root = self.workspace / "browser"
         self.artifacts_root.mkdir(parents=True, exist_ok=True)
         self._cancellation: dict[str, asyncio.Event] = {}
+        self._resume: dict[str, asyncio.Event] = {}
         self._running_tasks: set[asyncio.Task[None]] = set()
 
     @staticmethod
@@ -128,15 +135,51 @@ class BrowserTaskService:
         event.set()
         return True
 
+    def request_takeover(self, task_id: str, reason: str = "用户主动接管") -> bool:
+        """Force the task into ``awaiting_user`` even when not stuck.
+
+        Returns False when the task isn't running. The ReAct loop will pause
+        at its next checkpoint and wait for ``request_resume``.
+        """
+        if task_id not in self._cancellation:
+            return False
+        # Reuse the resume event slot — the loop polls it at every checkpoint.
+        self._resume.setdefault(task_id, asyncio.Event())
+        # We mark via a side-channel attribute that the user wants takeover.
+        # The loop checks this each iteration before calling decide().
+        flag_attr = f"_takeover_{task_id}"
+        setattr(self, flag_attr, reason)
+        return True
+
+    def _takeover_requested(self, task_id: str) -> Optional[str]:
+        return getattr(self, f"_takeover_{task_id}", None)
+
+    def _clear_takeover_flag(self, task_id: str) -> None:
+        attr = f"_takeover_{task_id}"
+        if hasattr(self, attr):
+            delattr(self, attr)
+
+    def request_resume(self, task_id: str) -> bool:
+        """Signal that the user has finished interacting; resume the AI loop."""
+        event = self._resume.get(task_id)
+        if event is None:
+            return False
+        event.set()
+        return True
+
     # ── execution loop ──────────────────────────────────────────────────
 
     async def _run(self, task: BrowserTask) -> None:
         cancel = asyncio.Event()
+        resume = asyncio.Event()
         self._cancellation[task.id] = cancel
+        self._resume[task.id] = resume
         try:
             await self._execute(task, cancel)
         finally:
             self._cancellation.pop(task.id, None)
+            self._resume.pop(task.id, None)
+            self._clear_takeover_flag(task.id)
 
     async def _resolve_decision_maker(self, task: BrowserTask) -> Optional[DecisionMaker]:
         if self.decision_factory is None:
@@ -230,7 +273,8 @@ class BrowserTaskService:
         history: list[dict[str, Any]] = []
         last_snapshot: Optional[str] = None
         result_summary: Optional[str] = None
-        same_observation_streak = 0
+        detector = StuckDetector()
+        resume_event = self._resume.get(task.id) or asyncio.Event()
 
         # Always have an initial observation so the LLM has something to look at.
         if cancel.is_set():
@@ -247,6 +291,26 @@ class BrowserTaskService:
             if cancel.is_set():
                 self._mark_cancelled(task)
                 return
+
+            # User-initiated takeover — pause before consulting the LLM.
+            takeover_reason = self._takeover_requested(task.id)
+            if takeover_reason:
+                self._clear_takeover_flag(task.id)
+                paused = await self._await_resume(
+                    task,
+                    step_counter,
+                    cancel,
+                    resume_event,
+                    StuckEvent(reason=StuckReason.NO_CHANGE, detail=takeover_reason),
+                )
+                if paused == "cancelled":
+                    return
+                # Refresh snapshot after the user finished interacting.
+                last_snapshot = await self._execute_snapshot(task, step_counter)
+                if last_snapshot is None:
+                    return
+                detector.reset()
+                continue
 
             # 1) Ask LLM for next action
             try:
@@ -292,6 +356,23 @@ class BrowserTaskService:
                 # _execute_decision already marked the task failed.
                 return
 
+            stuck = detector.observe_action(
+                action=decision.action,
+                args=decision.args,
+                success=action_outcome.success,
+            )
+            if stuck:
+                paused = await self._await_resume(
+                    task, step_counter, cancel, resume_event, stuck
+                )
+                if paused == "cancelled":
+                    return
+                last_snapshot = await self._execute_snapshot(task, step_counter)
+                if last_snapshot is None:
+                    return
+                detector.reset()
+                continue
+
             # 5) Take a screenshot frame (cheap visual milestone for UI)
             if cancel.is_set():
                 self._mark_cancelled(task)
@@ -315,15 +396,21 @@ class BrowserTaskService:
                 }
             )
 
-            # Detect "stuck" loops: 3 identical snapshots in a row → bail.
-            if new_snapshot == last_snapshot:
-                same_observation_streak += 1
-            else:
-                same_observation_streak = 0
+            # Hand control to the user when the page hasn't changed enough times.
+            stuck = detector.observe_snapshot(new_snapshot)
+            if stuck:
+                paused = await self._await_resume(
+                    task, step_counter, cancel, resume_event, stuck
+                )
+                if paused == "cancelled":
+                    return
+                last_snapshot = await self._execute_snapshot(task, step_counter)
+                if last_snapshot is None:
+                    return
+                detector.reset()
+                continue
+
             last_snapshot = new_snapshot
-            if same_observation_streak >= 3:
-                result_summary = "连续 3 步页面没有变化，自动终止以避免死循环。"
-                break
         else:
             result_summary = f"达到最大步数 {task.max_steps}，未收到 finish 信号，自动结束。"
 
@@ -338,6 +425,107 @@ class BrowserTaskService:
             task.id,
             {"type": "status", "status": "completed", "result_summary": result_summary},
         )
+
+    async def _await_resume(
+        self,
+        task: BrowserTask,
+        step_counter: "_StepCounter",
+        cancel: asyncio.Event,
+        resume_event: asyncio.Event,
+        stuck: StuckEvent,
+    ) -> str:
+        """Park the loop in ``awaiting_user`` until resume/cancel arrives.
+
+        While parked we run a low-fps screenshot streamer in the background
+        so the user sees their interventions reflected in the live panel.
+
+        Returns ``"resumed"`` or ``"cancelled"``.
+        """
+        logger.info("Task %s awaiting user takeover: %s", task.id, stuck.detail)
+        self.storage.update_task(task.id, status=TaskStatus.AWAITING_USER)
+        # Persist a step so the timeline shows why we paused.
+        self._record_step(
+            task,
+            step_counter.next(),
+            StepPhase.INTERVENTION,
+            action_name="await_user",
+            action_args={"reason": stuck.reason.value},
+            thinking=stuck.detail,
+            success=True,
+        )
+        await self._emit(
+            task.id,
+            {
+                "type": "status",
+                "status": "awaiting_user",
+                "reason": stuck.reason.value,
+                "detail": stuck.detail,
+            },
+        )
+        # Make sure the resume event is fresh — clear stale signal from prior pauses.
+        resume_event.clear()
+
+        # Kick off the live frame streamer.
+        streamer_stop = asyncio.Event()
+        streamer = asyncio.create_task(
+            self._takeover_streamer(task, step_counter, streamer_stop)
+        )
+
+        cancel_task = asyncio.create_task(cancel.wait())
+        resume_task = asyncio.create_task(resume_event.wait())
+        try:
+            done, pending = await asyncio.wait(
+                {cancel_task, resume_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for p in pending:
+                p.cancel()
+        finally:
+            for t in (cancel_task, resume_task):
+                if not t.done():
+                    t.cancel()
+            # Always stop the streamer cleanly.
+            streamer_stop.set()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await streamer
+
+        if cancel.is_set():
+            self._mark_cancelled(task)
+            return "cancelled"
+
+        # Resumed: bring the task back to RUNNING and let the loop re-snapshot.
+        self.storage.update_task(task.id, status=TaskStatus.RUNNING)
+        await self._emit(task.id, {"type": "status", "status": "running"})
+        self._record_step(
+            task,
+            step_counter.next(),
+            StepPhase.INTERVENTION,
+            action_name="resume",
+            success=True,
+        )
+        return "resumed"
+
+    async def _takeover_streamer(
+        self,
+        task: BrowserTask,
+        step_counter: "_StepCounter",
+        stop: asyncio.Event,
+    ) -> None:
+        """Capture screenshots at ~1.5 fps and persist+emit them as artifacts.
+
+        Runs only while the task is in ``awaiting_user``. Failures (Chrome
+        busy, etc.) are tolerated — we just skip the frame and keep going.
+        """
+        try:
+            while not stop.is_set():
+                await self._execute_screenshot(task, step_counter)
+                # Sleep with cancellation responsiveness — don't block the
+                # full interval if a resume signal arrives.
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=_TAKEOVER_FRAME_INTERVAL_S)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            logger.exception("takeover streamer crashed for task %s", task.id)
 
     # ── per-action helpers ──────────────────────────────────────────────
 

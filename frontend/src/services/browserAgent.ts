@@ -58,6 +58,44 @@ export const browserAgentApi = {
     return jsonOrThrow<{ task_id: string; cancelled: boolean }>(res, 'cancel browser task');
   },
 
+  async takeoverTask(taskId: string, reason = '用户主动接管'): Promise<{ accepted: boolean }> {
+    const res = await fetch(`${API_BASE}/browser-tasks/${encodeURIComponent(taskId)}/takeover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    return jsonOrThrow<{ accepted: boolean }>(res, 'takeover browser task');
+  },
+
+  async resumeTask(taskId: string): Promise<{ resumed: boolean }> {
+    const res = await fetch(`${API_BASE}/browser-tasks/${encodeURIComponent(taskId)}/resume`, {
+      method: 'POST',
+    });
+    return jsonOrThrow<{ resumed: boolean }>(res, 'resume browser task');
+  },
+
+  async intervene(
+    taskId: string,
+    action:
+      | 'click_xy'
+      | 'type'
+      | 'press'
+      | 'scroll'
+      | 'open'
+      | 'back'
+      | 'forward'
+      | 'reload'
+      | 'wait',
+    args: Record<string, unknown>,
+  ): Promise<{ ok: boolean }> {
+    const res = await fetch(`${API_BASE}/browser-tasks/${encodeURIComponent(taskId)}/intervene`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, args }),
+    });
+    return jsonOrThrow<{ ok: boolean }>(res, 'intervene browser task');
+  },
+
   artifactUrl(artifactId: string): string {
     return `${API_BASE}/browser-tasks/artifacts/${encodeURIComponent(artifactId)}/file`;
   },

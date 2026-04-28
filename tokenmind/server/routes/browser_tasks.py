@@ -18,16 +18,19 @@ import asyncio
 import logging
 import mimetypes
 from pathlib import Path
-from typing import Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
+from tokenmind.browser_agent.cli import AgentBrowserError
 from tokenmind.browser_agent.env_check import check_environment
 from tokenmind.browser_agent.models import (
     CreateTaskRequest,
     EnvCheckResponse,
     TaskDetailResponse,
+    TaskStatus,
 )
 from tokenmind.browser_agent.stream import default_hub
 from tokenmind.server.dependencies import get_browser_task_service
@@ -110,6 +113,153 @@ async def cancel_browser_task(task_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Task not found")
     cancelled = service.request_cancel(task_id)
     return {"task_id": task_id, "cancelled": cancelled}
+
+
+# ── M3.3: takeover / resume / intervene ────────────────────────────────────
+
+
+class TakeoverRequest(BaseModel):
+    reason: str = "用户主动接管"
+
+
+@router.post("/browser-tasks/{task_id}/takeover")
+async def takeover_browser_task(task_id: str, payload: TakeoverRequest) -> dict:
+    """User asks to pause the AI loop and intervene manually."""
+    service = _service_or_503()
+    task = service.storage.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status not in (TaskStatus.RUNNING, TaskStatus.AWAITING_USER):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in status '{task.status.value}', cannot take over",
+        )
+    accepted = service.request_takeover(task_id, payload.reason)
+    return {"task_id": task_id, "accepted": accepted}
+
+
+@router.post("/browser-tasks/{task_id}/resume")
+async def resume_browser_task(task_id: str) -> dict:
+    """Hand control back to the AI after a user takeover."""
+    service = _service_or_503()
+    task = service.storage.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status is not TaskStatus.AWAITING_USER:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in status '{task.status.value}', not awaiting user",
+        )
+    accepted = service.request_resume(task_id)
+    return {"task_id": task_id, "resumed": accepted}
+
+
+class InterveneRequest(BaseModel):
+    """User-initiated browser action while the task is in awaiting_user.
+
+    The frontend captures clicks / scrolls / key presses on the live screenshot
+    and posts them here. ``action`` selects which CLI primitive to invoke;
+    extra keys are forwarded as positional/keyword args.
+    """
+
+    action: Literal[
+        "click_xy",
+        "type",
+        "press",
+        "scroll",
+        "open",
+        "back",
+        "forward",
+        "reload",
+        "wait",
+    ]
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/browser-tasks/{task_id}/intervene")
+async def intervene_browser_task(task_id: str, payload: InterveneRequest) -> dict:
+    """Forward a single user action to the underlying agent-browser session.
+
+    Only valid while the task is ``awaiting_user`` — that's the contract:
+    AI is paused, the user owns the browser.
+    """
+    service = _service_or_503()
+    task = service.storage.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status is not TaskStatus.AWAITING_USER:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot intervene while task is '{task.status.value}'",
+        )
+
+    cli = service.cli
+    project_id = task.project_id
+    args = payload.args
+    try:
+        if payload.action == "click_xy":
+            await cli.click_xy(
+                project_id,
+                int(_require_arg(args, "x")),
+                int(_require_arg(args, "y")),
+                button=str(args.get("button", "left")),
+            )
+        elif payload.action == "type":
+            # Empty-text typing is allowed (clear focus + no input). Use
+            # keyboard_type because the user may not have a selector.
+            text = str(args.get("text", ""))
+            await cli.keyboard_type(project_id, text)
+        elif payload.action == "press":
+            await cli.press(project_id, str(_require_arg(args, "key")))
+        elif payload.action == "scroll":
+            direction = str(_require_arg(args, "direction"))
+            pixels_raw = args.get("pixels")
+            pixels = int(pixels_raw) if pixels_raw is not None else None
+            await cli.scroll(project_id, direction, pixels=pixels)
+        elif payload.action == "open":
+            await cli.open_url(project_id, str(_require_arg(args, "url")))
+        elif payload.action == "back":
+            await cli.back(project_id)
+        elif payload.action == "forward":
+            await cli.forward(project_id)
+        elif payload.action == "reload":
+            await cli.reload(project_id)
+        elif payload.action == "wait":
+            await cli.wait(project_id, str(_require_arg(args, "target")))
+    except AgentBrowserError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Mirror the action into the task timeline so the UI step list shows the
+    # user's input alongside the AI's prior steps.
+    from tokenmind.browser_agent.models import BrowserStep, StepPhase
+    from datetime import datetime as _dt
+
+    step_index = (task.step_count or 0) + 1
+    step = BrowserStep(
+        id=service._new_id("st"),
+        task_id=task_id,
+        step_index=step_index,
+        phase=StepPhase.INTERVENTION,
+        action_name=f"user:{payload.action}",
+        action_args=args,
+        success=True,
+        timestamp=_dt.now(),
+    )
+    service.storage.insert_step(step)
+    service.storage.update_task(task_id, step_count=step_index)
+    await default_hub.emit(
+        task_id, {"type": "step", "step": step.model_dump(mode="json")}
+    )
+
+    return {"task_id": task_id, "action": payload.action, "ok": True}
+
+
+def _require_arg(args: dict[str, Any], key: str) -> Any:
+    if key not in args or args[key] in (None, ""):
+        raise ValueError(f"intervene 缺少必填参数 '{key}'")
+    return args[key]
 
 
 @router.get("/browser-tasks/artifacts/{artifact_id}/file")

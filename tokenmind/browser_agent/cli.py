@@ -344,3 +344,118 @@ class AgentBrowserCLI:
             await self.run(project_id, "close", timeout=15.0)
         except AgentBrowserError as exc:
             logger.warning("close session %s failed: %s", project_id, exc)
+
+    # ── takeover (M3): low-level mouse / keyboard / viewport ────────────
+
+    async def mouse_move(
+        self,
+        project_id: str,
+        x: int,
+        y: int,
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Move the mouse to absolute viewport coordinates."""
+        return await self.run(project_id, "mouse", "move", str(int(x)), str(int(y)), timeout=timeout)
+
+    async def mouse_down(
+        self,
+        project_id: str,
+        button: str = "left",
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        if button not in {"left", "right", "middle"}:
+            raise ValueError(f"invalid mouse button: {button}")
+        return await self.run(project_id, "mouse", "down", button, timeout=timeout)
+
+    async def mouse_up(
+        self,
+        project_id: str,
+        button: str = "left",
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        if button not in {"left", "right", "middle"}:
+            raise ValueError(f"invalid mouse button: {button}")
+        return await self.run(project_id, "mouse", "up", button, timeout=timeout)
+
+    async def mouse_wheel(
+        self,
+        project_id: str,
+        dy: int,
+        dx: int = 0,
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        return await self.run(
+            project_id, "mouse", "wheel", str(int(dy)), str(int(dx)), timeout=timeout
+        )
+
+    async def click_xy(
+        self,
+        project_id: str,
+        x: int,
+        y: int,
+        *,
+        button: str = "left",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        """Click at viewport coordinates (used for visual takeover)."""
+        if button not in {"left", "right", "middle"}:
+            raise ValueError(f"invalid mouse button: {button}")
+        # Use batch so move+down+up land atomically against the same DOM state.
+        return await self.batch(
+            project_id,
+            [
+                ("mouse", "move", str(int(x)), str(int(y))),
+                ("mouse", "down", button),
+                ("mouse", "up", button),
+            ],
+            bail=True,
+            timeout=timeout,
+        )
+
+    async def keyboard_type(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        """Type ``text`` to whatever element currently has focus.
+
+        Unlike :meth:`type_text` which targets a selector, this emits real
+        key events on the focused element — required for contenteditable
+        editors (Lexical / ProseMirror / Monaco / CodeMirror).
+        """
+        return await self.run(project_id, "keyboard", "type", text, timeout=timeout)
+
+    async def keyboard_insert(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        """Paste-like text insertion without key events."""
+        return await self.run(project_id, "keyboard", "inserttext", text, timeout=timeout)
+
+    async def set_viewport(
+        self,
+        project_id: str,
+        width: int,
+        height: int,
+        scale: Optional[float] = None,
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Set the viewport size (and optional device scale factor)."""
+        if width <= 0 or height <= 0:
+            raise ValueError(f"invalid viewport size: {width}x{height}")
+        args: list[str] = ["viewport", str(int(width)), str(int(height))]
+        if scale is not None:
+            if scale <= 0:
+                raise ValueError(f"invalid device scale factor: {scale}")
+            args.append(str(scale))
+        return await self.run(project_id, "set", *args, timeout=timeout)

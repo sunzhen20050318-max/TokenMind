@@ -47,6 +47,13 @@ interface BrowserAgentState {
   focusStep: (stepIndex: number | null) => void;
   createTask: (payload: CreateBrowserTaskRequest) => Promise<string | null>;
   cancelTask: (taskId: string) => Promise<void>;
+  takeoverTask: (taskId: string, reason?: string) => Promise<void>;
+  resumeTask: (taskId: string) => Promise<void>;
+  intervene: (
+    taskId: string,
+    action: Parameters<typeof browserAgentApi.intervene>[1],
+    args: Record<string, unknown>,
+  ) => Promise<boolean>;
 }
 
 const FINAL_STATUSES = new Set<BrowserTaskStatus>(['completed', 'failed', 'cancelled']);
@@ -261,6 +268,39 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
       set({
         detailError: err instanceof Error ? err.message : '取消任务失败',
       });
+    }
+  },
+
+  async takeoverTask(taskId, reason) {
+    try {
+      await browserAgentApi.takeoverTask(taskId, reason);
+      // The transition to awaiting_user arrives via WS; no need to refresh here.
+    } catch (err) {
+      set({
+        detailError: err instanceof Error ? err.message : '接管失败',
+      });
+    }
+  },
+
+  async resumeTask(taskId) {
+    try {
+      await browserAgentApi.resumeTask(taskId);
+    } catch (err) {
+      set({
+        detailError: err instanceof Error ? err.message : '恢复 AI 失败',
+      });
+    }
+  },
+
+  async intervene(taskId, action, args) {
+    try {
+      await browserAgentApi.intervene(taskId, action, args);
+      return true;
+    } catch (err) {
+      set({
+        detailError: err instanceof Error ? err.message : '操作失败',
+      });
+      return false;
     }
   },
 }));
