@@ -1,0 +1,144 @@
+/* Sidebar dock for in-flight creative tasks (music / voice clone / TTS /
+   voice design). Sits above the settings button at the bottom of the sidebar
+   and is only rendered when at least one task is running. */
+
+.creative-tasks-dock {
+  margin: 8px 8px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.creative-tasks-dock:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.creative-tasks-dock__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: #f6f7fb;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.creative-tasks-dock__title {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.creative-tasks-dock__caret {
+  color: #8e90a0;
+  font-size: 11px;
+  transition: transform 0.18s ease;
+}
+
+.creative-tasks-dock__caret.is-open {
+  transform: rotate(-180deg);
+}
+
+.creative-tasks-dock__list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.creative-tasks-dock__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: #d3d4dc;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.creative-tasks-dock__item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f6f7fb;
+}
+
+.creative-tasks-dock__kind {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(79, 142, 255, 0.18);
+  color: #b6cdff;
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.creative-tasks-dock__label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed sidebar variant — circular pulsing badge with task count. */
+.creative-tasks-dock--collapsed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 4px auto;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 142, 255, 0.4);
+  background: rgba(79, 142, 255, 0.18);
+  color: #b6cdff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative;
+}
+
+.creative-tasks-dock__pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #4f8eff;
+  box-shadow: 0 0 0 3px rgba(79, 142, 255, 0.18);
+  animation: creativeTasksDockPulse 1.4s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+.creative-tasks-dock--collapsed .creative-tasks-dock__pulse {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+}
+
+.creative-tasks-dock__count {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes creativeTasksDockPulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.05); }
+}

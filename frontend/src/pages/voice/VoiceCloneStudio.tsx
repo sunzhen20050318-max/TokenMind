@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import {
+  selectTasksByKind,
+  useCreativeTasksStore,
+} from '../../stores/creativeTasksStore';
 import type { CreativeCapabilitySettings } from '../../types/config';
 import { isCreativeCapabilityConfigured } from '../../types/config';
 import {
@@ -57,8 +61,24 @@ export function VoiceClonePage({ capability }: VoiceClonePageProps) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [recording, setRecording] = useState<RecordingPhase>('idle');
   const [recordDuration, setRecordDuration] = useState<number>(0);
-  const [submit, setSubmit] = useState<SubmitPhase>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  // Voice clone tasks live in the shared store so navigating away from the
+  // studio does NOT lose the in-flight upload/clone state. The page tracks
+  // which task it spawned so the UI reflects the same SubmitPhase as before.
+  const voiceCloneTasks = useCreativeTasksStore(selectTasksByKind('voice-clone'));
+  const startVoiceClone = useCreativeTasksStore((s) => s.startVoiceClone);
+  const removeTask = useCreativeTasksStore((s) => s.removeTask);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const activeTask = activeTaskId
+    ? voiceCloneTasks.find((task) => task.id === activeTaskId) ?? null
+    : null;
+  const submit: SubmitPhase = (() => {
+    if (!activeTask) return 'idle';
+    if (activeTask.status === 'running') return activeTask.phase === 'cloning' ? 'cloning' : 'uploading';
+    if (activeTask.status === 'success') return 'success';
+    return 'error';
+  })();
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [history, setHistory] = useState<VoiceCloneRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(true);
@@ -321,30 +341,43 @@ export function VoiceClonePage({ capability }: VoiceClonePageProps) {
     [language, previewText],
   );
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     if (!ready || !audioFile) return;
     setError(null);
-    setSubmit('uploading');
-    try {
-      const uploaded = await api.uploadVoiceCloneAudio(audioFile);
-      setSubmit('cloning');
-      const cloned = await api.createVoiceClone({
-        file_id: uploaded.file_id,
+    const taskId = startVoiceClone({
+      file: audioFile,
+      label: `克隆音色：${audioFile.name}`,
+      request: {
         voice_id: null,
         preview_text: previewText.trim() || null,
         need_noise_reduction: false,
         need_volume_normalization: false,
         language_boost: language || null,
         source_filename: audioFile.name,
-      });
-      setSelectedVoiceId(cloned.voice_id);
-      setSubmit('success');
-      await refreshHistory();
-    } catch (err) {
-      setSubmit('error');
-      setError(err instanceof Error ? err.message : '声音克隆失败，请稍后重试。');
+      },
+    });
+    setActiveTaskId(taskId);
+  }, [audioFile, language, previewText, ready, startVoiceClone]);
+
+  // Watch the active voice-clone task — when it succeeds, hydrate UI selection
+  // and refresh history; on error surface the message.
+  useEffect(() => {
+    if (!activeTask) return;
+    if (activeTask.status === 'success' && activeTask.response) {
+      setSelectedVoiceId(activeTask.response.voice_id);
+      void refreshHistory();
+      const taskId = activeTask.id;
+      // Keep the success state visible briefly, then clean up.
+      const timer = window.setTimeout(() => {
+        removeTask(taskId);
+        setActiveTaskId((current) => (current === taskId ? null : current));
+      }, 1500);
+      return () => window.clearTimeout(timer);
     }
-  }, [audioFile, language, previewText, ready, refreshHistory]);
+    if (activeTask.status === 'error') {
+      setError(activeTask.error || '声音克隆失败，请稍后重试。');
+    }
+  }, [activeTask, refreshHistory, removeTask]);
 
   const handleKeepAlive = useCallback(
     async (voiceId: string) => {

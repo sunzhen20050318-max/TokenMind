@@ -4,6 +4,10 @@ import type { AssetItem } from '../types/assets';
 import type { CreativeCapabilitySettings } from '../types/config';
 import { api } from '../services/api';
 import {
+  selectTasksByKind,
+  useCreativeTasksStore,
+} from '../stores/creativeTasksStore';
+import {
   buildMusicGenerationRequest,
   canSubmitMusicGeneration,
   getMusicCapabilityNotice,
@@ -253,11 +257,19 @@ export const MusicPage: React.FC<{
   const [selectedTags, setSelectedTags] = useState<string[]>(['说唱', '励志', '男声']);
   const [referenceAudio, setReferenceAudio] = useState<File | null>(null);
   const [generationCount, setGenerationCount] = useState(1);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tracks, setTracks] = useState<GeneratedTrack[]>(() => restoreStoredMusicTracks());
+  // The persisted "ready" track list — only completed generations land here
+  // (errors stay in the store, pending lives in `pendingTracks` derived below).
+  const [readyTracks, setReadyTracks] = useState<GeneratedTrack[]>(() => restoreStoredMusicTracks());
   const [isLoadingLibraryTracks, setIsLoadingLibraryTracks] = useState(false);
   const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
+  // Live music tasks live in a shared store so leaving the music page does not
+  // drop in-flight generations. Pending placeholder rows are derived from the
+  // store and merged with the persisted ready list below.
+  const musicTasks = useCreativeTasksStore(selectTasksByKind('music'));
+  const startMusicGeneration = useCreativeTasksStore((s) => s.startMusicGeneration);
+  const removeTask = useCreativeTasksStore((s) => s.removeTask);
+  const isGenerating = musicTasks.some((task) => task.status === 'running');
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'works' | 'favorites'>('works');
   const [favoriteTrackIds, setFavoriteTrackIds] = useState<Set<string>>(() => restoreStoredMusicFavorites());
@@ -282,6 +294,33 @@ export const MusicPage: React.FC<{
   const providerLabel = capability?.provider?.trim() || '未配置提供商';
   const coverModelLabel = coverCapability?.model?.trim() || '未配置翻唱模型';
   const availableTags = useMemo(() => [...STYLE_TAGS, ...SCENE_TAGS], []);
+
+  // Pending placeholder rows derived from in-flight (or recently-errored) tasks.
+  const pendingTracks = useMemo<GeneratedTrack[]>(() => {
+    const rows: GeneratedTrack[] = [];
+    for (const task of musicTasks) {
+      if (task.status !== 'running' && task.status !== 'error') continue;
+      task.meta.trackIds.forEach((trackId, idx) => {
+        rows.push({
+          id: trackId,
+          title: task.meta.pendingTitles[idx] || `${task.meta.songName || '新作品'} ${idx + 1}`,
+          description: task.status === 'error' ? task.error || task.meta.description : task.meta.description,
+          status: task.status === 'error' ? 'error' : 'generating',
+          model: task.meta.modelLabel,
+          provider: task.meta.providerLabel,
+          createdAt: task.meta.generatedAt,
+          errorMessage: task.error,
+        });
+      });
+    }
+    return rows;
+  }, [musicTasks]);
+
+  const tracks = useMemo<GeneratedTrack[]>(
+    () => [...pendingTracks, ...readyTracks],
+    [pendingTracks, readyTracks],
+  );
+
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) || null;
   const selectedTrackUrl = selectedTrack?.status === 'ready' && selectedTrack.attachment?.id
     ? api.getAttachmentUrl(selectedTrack.attachment.id)
@@ -298,8 +337,47 @@ export const MusicPage: React.FC<{
   const seekProgress = seekMax > 0 ? Math.min(100, (currentTime / seekMax) * 100) : 0;
 
   useEffect(() => {
-    persistStoredMusicState(tracks, favoriteTrackIds);
-  }, [tracks, favoriteTrackIds]);
+    persistStoredMusicState(readyTracks, favoriteTrackIds);
+  }, [readyTracks, favoriteTrackIds]);
+
+  // Drain finished music tasks: success → push attachments into the persisted
+  // ready list and remove the task; errors stay in the store as an "error" row
+  // until the user dismisses (TODO: dismiss button hook-up).
+  useEffect(() => {
+    for (const task of musicTasks) {
+      if (task.status !== 'success' || !task.response) continue;
+      const attachments = task.response.attachments?.length
+        ? task.response.attachments
+        : [task.response.attachment];
+      const results = task.response.results?.length
+        ? task.response.results
+        : [task.response.result];
+      const newReady: GeneratedTrack[] = attachments.map((attachment, idx) => {
+        const result = results[idx] || task.response!.result;
+        return {
+          id: task.meta.trackIds[idx] || attachment.id || `${Date.now()}-${idx}`,
+          title:
+            task.meta.pendingTitles[idx] ||
+            buildTrackTitle(task.meta.songName, idx + 1),
+          description: task.meta.description,
+          status: 'ready',
+          attachment,
+          filename: result?.filename,
+          model: result?.model || task.meta.modelLabel,
+          provider: result?.provider || task.meta.providerLabel,
+          durationMs: result?.duration_ms ?? null,
+          traceId: result?.trace_id ?? null,
+          createdAt: task.meta.generatedAt,
+        };
+      });
+      const taskTrackIds = new Set(task.meta.trackIds);
+      setReadyTracks((current) => [
+        ...newReady,
+        ...current.filter((track) => !taskTrackIds.has(track.id)),
+      ]);
+      removeTask(task.id);
+    }
+  }, [musicTasks, removeTask]);
 
   useEffect(() => {
     let isMounted = true;
@@ -324,7 +402,7 @@ export const MusicPage: React.FC<{
           return;
         }
         const libraryTracks = libraryAssets.map(assetToMusicTrack);
-        setTracks((current) => mergeMusicTracks(current, libraryTracks));
+        setReadyTracks((current) => mergeMusicTracks(current, libraryTracks));
         setFavoriteTrackIds((current) => {
           const next = new Set(current);
           for (const asset of libraryAssets) {
@@ -446,7 +524,7 @@ export const MusicPage: React.FC<{
       if (track.attachment?.id && track.status === 'ready') {
         await api.deleteAsset(track.attachment.id);
       }
-      setTracks((current) => current.filter((item) => item.id !== track.id));
+      setReadyTracks((current) => current.filter((item) => item.id !== track.id));
       setFavoriteTrackIds((current) => {
         const next = new Set(current);
         next.delete(track.id);
@@ -477,102 +555,57 @@ export const MusicPage: React.FC<{
     }
     const generatedAt = new Date().toISOString();
     const baseDescription = selectedTags.length ? selectedTags.join('，') : prompt.slice(0, 36);
-    const baseTitleStart = tracks.length + 1;
-    const pendingTracks: GeneratedTrack[] = Array.from({ length: generationCount }, (_, index) => ({
-      id: `pending-${Date.now()}-${index}`,
-      title:
-        generationCount > 1
-          ? `${buildTrackTitle(songName, baseTitleStart + index)} ${index + 1}`
-          : buildTrackTitle(songName, baseTitleStart),
-      description: baseDescription,
-      status: 'generating',
-      model: referenceAudio ? coverModelLabel : modelLabel,
-      provider: referenceAudio ? coverCapability?.provider?.trim() || 'minimax' : providerLabel,
-      createdAt: generatedAt,
-    }));
-    const pendingIds = new Set(pendingTracks.map((track) => track.id));
+    const baseTitleStart = readyTracks.length + 1;
+    const trackIds = Array.from(
+      { length: generationCount },
+      (_, index) => `pending-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+    const pendingTitles = Array.from({ length: generationCount }, (_, index) =>
+      generationCount > 1
+        ? `${buildTrackTitle(songName, baseTitleStart + index)} ${index + 1}`
+        : buildTrackTitle(songName, baseTitleStart + index),
+    );
 
     setError(null);
     setActiveTab('works');
-    setTracks((current) => [...pendingTracks, ...current]);
     setSelectedTrackId(null);
     audioRef.current?.pause();
     setIsPlayerOpen(false);
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
-    setIsGenerating(true);
+
+    let referenceAudioBase64: string | null = null;
     try {
-      const referenceAudioBase64 = referenceAudio ? await readFileAsBase64(referenceAudio) : null;
-      const response = await api.generateMusic({
-        ...buildMusicGenerationRequest({
-          prompt,
-          lyrics,
-          selectedTags,
-          lyricsOptimizer,
-          instrumental,
-        }),
-        count: generationCount,
-        reference_audio_base64: referenceAudioBase64,
-        reference_audio_name: referenceAudio?.name ?? null,
-      });
-      const attachments = response.attachments?.length ? response.attachments : [response.attachment];
-      const results = response.results?.length ? response.results : [response.result];
-      const nextTracks = attachments.map((attachment, index) => {
-        const result = results[index] || response.result;
-        return {
-          id: attachment.id || `${Date.now()}-${index}`,
-          title: pendingTracks[index]?.title || buildTrackTitle(songName, tracks.length + index + 1),
-          description: baseDescription,
-          status: 'ready' as const,
-          attachment,
-          filename: result.filename,
-          model: result.model,
-          provider: result.provider,
-          durationMs: result.duration_ms,
-          traceId: result.trace_id,
-          createdAt: generatedAt,
-        };
-      });
-      setTracks((current) => {
-        let readyIndex = 0;
-        return current.map((track) => {
-          if (!pendingIds.has(track.id)) {
-            return track;
-          }
-          const readyTrack = nextTracks[readyIndex];
-          readyIndex += 1;
-          return (
-            readyTrack || {
-              ...track,
-              status: 'error',
-              description: '生成完成但没有返回音频文件，请稍后重试',
-              errorMessage: '生成完成但没有返回音频文件，请稍后重试',
-            }
-          );
-        });
-      });
-      setIsPlaying(false);
-      setCurrentTime(0);
-      setDuration(0);
-    } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : '音乐生成失败，请稍后重试';
-      setTracks((current) =>
-        current.map((track) =>
-          pendingIds.has(track.id)
-            ? {
-                ...track,
-                status: 'error',
-                description: message,
-                errorMessage: message,
-              }
-            : track
-        )
-      );
-      setError(message);
-    } finally {
-      setIsGenerating(false);
+      referenceAudioBase64 = referenceAudio ? await readFileAsBase64(referenceAudio) : null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '参考音频读取失败');
+      return;
     }
+    const requestPayload = {
+      ...buildMusicGenerationRequest({
+        prompt,
+        lyrics,
+        selectedTags,
+        lyricsOptimizer,
+        instrumental,
+      }),
+      count: generationCount,
+      reference_audio_base64: referenceAudioBase64,
+      reference_audio_name: referenceAudio?.name ?? null,
+    };
+
+    // Hand the actual API call to the shared store so it survives navigation.
+    startMusicGeneration(requestPayload, {
+      trackIds,
+      pendingTitles,
+      count: generationCount,
+      songName,
+      description: baseDescription,
+      modelLabel: referenceAudio ? coverModelLabel : modelLabel,
+      providerLabel: referenceAudio ? coverCapability?.provider?.trim() || 'minimax' : providerLabel,
+      generatedAt,
+    });
   };
 
   return (

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import {
+  selectTasksByKind,
+  useCreativeTasksStore,
+} from '../../stores/creativeTasksStore';
 import type { CreativeCapabilitySettings } from '../../types/config';
 import { isCreativeCapabilityConfigured } from '../../types/config';
 import type { VoiceCloneRecord } from '../../types';
@@ -63,8 +67,21 @@ function loadSplit(): number {
 
 export function VoiceDesignPage({ capability }: VoiceDesignPageProps) {
   const [form, setForm] = useState<VoiceDesignFormInput>(EMPTY_FORM);
-  const [submit, setSubmit] = useState<SubmitPhase>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  const voiceDesignTasks = useCreativeTasksStore(selectTasksByKind('voice-design'));
+  const startVoiceDesign = useCreativeTasksStore((s) => s.startVoiceDesign);
+  const removeTask = useCreativeTasksStore((s) => s.removeTask);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const activeTask = activeTaskId
+    ? voiceDesignTasks.find((task) => task.id === activeTaskId) ?? null
+    : null;
+  const submit: SubmitPhase = (() => {
+    if (!activeTask) return 'idle';
+    if (activeTask.status === 'running') return 'running';
+    if (activeTask.status === 'success') return 'success';
+    return 'error';
+  })();
   const [records, setRecords] = useState<VoiceCloneRecord[]>([]);
   const [recordsLoading, setRecordsLoading] = useState<boolean>(true);
   const [recordsError, setRecordsError] = useState<string | null>(null);
@@ -157,7 +174,7 @@ export function VoiceDesignPage({ capability }: VoiceDesignPageProps) {
   const validationErrors = useMemo(() => validateVoiceDesignForm(form), [form]);
   const canSubmit = ready && submit !== 'running' && validationErrors.length === 0;
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     if (!ready) return;
     const errors = validateVoiceDesignForm(form);
     if (errors.length > 0) {
@@ -165,21 +182,34 @@ export function VoiceDesignPage({ capability }: VoiceDesignPageProps) {
       return;
     }
     setError(null);
-    setSubmit('running');
-    try {
-      const response = await api.designVoice({
+    const taskId = startVoiceDesign(
+      {
         prompt: form.prompt.trim(),
         preview_text: form.previewText.trim(),
         display_name: form.displayName.trim() || null,
-      });
-      setSelectedVoiceId(response.voice_id);
-      setSubmit('success');
-      await refreshRecords();
-    } catch (err) {
-      setSubmit('error');
-      setError(err instanceof Error ? err.message : '音色生成失败，请稍后重试。');
+      },
+      form.displayName.trim() || form.prompt.trim().slice(0, 24) || '设计音色',
+    );
+    setActiveTaskId(taskId);
+  }, [form, ready, startVoiceDesign]);
+
+  // Drain finished voice-design tasks: success → select voice + refresh records.
+  useEffect(() => {
+    if (!activeTask) return;
+    if (activeTask.status === 'success' && activeTask.response) {
+      setSelectedVoiceId(activeTask.response.voice_id);
+      void refreshRecords();
+      const taskId = activeTask.id;
+      const timer = window.setTimeout(() => {
+        removeTask(taskId);
+        setActiveTaskId((curr) => (curr === taskId ? null : curr));
+      }, 1500);
+      return () => window.clearTimeout(timer);
     }
-  }, [form, ready, refreshRecords]);
+    if (activeTask.status === 'error') {
+      setError(activeTask.error || '音色生成失败，请稍后重试。');
+    }
+  }, [activeTask, refreshRecords, removeTask]);
 
   const handleDelete = useCallback(
     async (voiceId: string) => {

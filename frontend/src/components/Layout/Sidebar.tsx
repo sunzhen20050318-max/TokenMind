@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrandMark } from '../BrandMark';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
+import { CreativeTasksDock } from '../CreativeTasksDock/CreativeTasksDock';
 import { CreateProjectModal } from '../Projects/CreateProjectModal';
 import { MoveSessionToProjectModal } from '../Projects/MoveSessionToProjectModal';
 import { ProjectConfirmModal } from '../Projects/ProjectConfirmModal';
@@ -906,6 +907,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ) : (
         <div className="shell-sidebar__collapsed-spacer" />
       )}
+
+      <CreativeTasksDock collapsed={collapsed} onSelectMainView={onSelectMainView} />
 
       <div className="shell-sidebar__footer">
         <button

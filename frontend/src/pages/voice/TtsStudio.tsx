@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  selectTasksByKind,
+  useCreativeTasksStore,
+} from '../../stores/creativeTasksStore';
 import { api } from '../../services/api';
 import type { CreativeCapabilitySettings } from '../../types/config';
 import { isCreativeCapabilityConfigured } from '../../types/config';
@@ -95,8 +99,23 @@ export function TtsPage({ capability }: TtsPageProps) {
   const [volume, setVolume] = useState<number>(1.0);
   const [pitch, setPitch] = useState<number>(0);
   const [emotion, setEmotion] = useState<string>('');
-  const [submit, setSubmit] = useState<SubmitPhase>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  // TTS synthesis runs through the shared store so the in-flight 合成中 UI
+  // survives navigation away from this studio.
+  const ttsTasks = useCreativeTasksStore(selectTasksByKind('tts'));
+  const startTtsSynthesis = useCreativeTasksStore((s) => s.startTtsSynthesis);
+  const removeTask = useCreativeTasksStore((s) => s.removeTask);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const activeTask = activeTaskId
+    ? ttsTasks.find((task) => task.id === activeTaskId) ?? null
+    : null;
+  const submit: SubmitPhase = (() => {
+    if (!activeTask) return 'idle';
+    if (activeTask.status === 'running') return 'running';
+    if (activeTask.status === 'success') return 'success';
+    return 'error';
+  })();
   const [voices, setVoices] = useState<TtsVoiceListResponse>({ cloned: [], system: [] });
   const [voicesLoading, setVoicesLoading] = useState<boolean>(true);
   const [voicesError, setVoicesError] = useState<string | null>(null);
@@ -234,12 +253,11 @@ export function TtsPage({ capability }: TtsPageProps) {
   const canSubmit =
     ready && text.trim().length > 0 && voiceId.trim().length > 0 && submit !== 'running';
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     if (!canSubmit) return;
     setError(null);
-    setSubmit('running');
-    try {
-      const response = await api.synthesizeVoice({
+    const taskId = startTtsSynthesis(
+      {
         text: text.trim(),
         voice_id: voiceId.trim(),
         model,
@@ -247,30 +265,47 @@ export function TtsPage({ capability }: TtsPageProps) {
         volume,
         pitch,
         emotion: emotion || null,
-      });
+      },
+      selectedVoice?.label ?? voiceId.trim(),
+    );
+    setActiveTaskId(taskId);
+  }, [canSubmit, emotion, model, pitch, selectedVoice, speed, startTtsSynthesis, text, voiceId, volume]);
+
+  // Drain finished TTS tasks: success → push into history; error → surface message.
+  useEffect(() => {
+    if (!activeTask) return;
+    if (activeTask.status === 'success' && activeTask.response) {
+      const response = activeTask.response;
       const entry: TtsHistoryItem = {
         id: makeHistoryId(),
         attachment_id: response.attachment_id,
         voice_id: response.voice_id,
-        voice_label: selectedVoice?.label ?? response.voice_id,
+        voice_label: activeTask.voiceLabel,
         model: response.model,
-        text: text.trim().slice(0, 500),
+        text: activeTask.payload.text.slice(0, 500),
         usage_characters: response.usage_characters ?? null,
         created_at: new Date().toISOString(),
         filename: response.filename,
         mime_type: response.mime_type,
         trace_id: response.trace_id ?? null,
       };
-      const next = appendTtsHistory(history, entry);
-      setHistory(next);
-      saveTtsHistory(next);
+      setHistory((current) => {
+        const next = appendTtsHistory(current, entry);
+        saveTtsHistory(next);
+        return next;
+      });
       setSelectedId(entry.id);
-      setSubmit('success');
-    } catch (err) {
-      setSubmit('error');
-      setError(err instanceof Error ? err.message : '合成失败，请稍后重试。');
+      const taskId = activeTask.id;
+      const timer = window.setTimeout(() => {
+        removeTask(taskId);
+        setActiveTaskId((curr) => (curr === taskId ? null : curr));
+      }, 1500);
+      return () => window.clearTimeout(timer);
     }
-  }, [canSubmit, emotion, history, model, pitch, selectedVoice, speed, text, voiceId, volume]);
+    if (activeTask.status === 'error') {
+      setError(activeTask.error || '合成失败，请稍后重试。');
+    }
+  }, [activeTask, removeTask]);
 
   const handleDeleteHistoryItem = useCallback(
     async (item: TtsHistoryItem) => {
