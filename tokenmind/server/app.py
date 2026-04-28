@@ -17,6 +17,7 @@ from loguru import logger
 from tokenmind.agent.context import ContextBuilder
 from tokenmind.agent.memory import split_history_entries
 from tokenmind.audit import AuditLogger
+from tokenmind.browser_agent.task_service import BrowserTaskService
 from tokenmind.bus.events import InboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.config.loader import load_config
@@ -31,6 +32,7 @@ from tokenmind.projects import ProjectStore
 from tokenmind.server.attachments import AttachmentStore, categorize_attachment
 from tokenmind.server.channel.web import WebChannel
 from tokenmind.server.dependencies import (
+    set_browser_task_service,
     set_chat_service,
     set_connection_manager,
     set_cron_service,
@@ -43,6 +45,7 @@ from tokenmind.server.frontend import (
 )
 from tokenmind.server.routes import (
     assets_router,
+    browser_tasks_router,
     chat_router,
     config_router,
     creative_router,
@@ -1493,6 +1496,9 @@ def create_app(
     set_inbound_queue(bus.inbound)
     set_cron_service(getattr(agent_loop, "cron_service", None))
 
+    browser_task_service = BrowserTaskService(session_manager.workspace)
+    set_browser_task_service(browser_task_service)
+
     # Create FastAPI app
     app = FastAPI(
         title="TokenMind Web UI",
@@ -1513,6 +1519,7 @@ def create_app(
 
     # Include routers
     app.include_router(assets_router)
+    app.include_router(browser_tasks_router)
     app.include_router(chat_router)
     app.include_router(config_router)
     app.include_router(creative_router)

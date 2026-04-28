@@ -11,6 +11,7 @@ interface SessionRestoreStateOptions {
     | 'tts'
     | 'voice-design'
     | 'video'
+    | 'browser-agent'
     | 'project-home'
     | 'project-chat'
     | 'settings';

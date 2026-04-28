@@ -10,6 +10,7 @@ import { EntryGate } from './components/EntryGate/EntryGate';
 import { KnowledgePage } from './pages/Knowledge';
 import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
+import { BrowserAgentPage } from './pages/BrowserAgent';
 import { ProjectHome } from './pages/ProjectHome';
 import { SettingsPage } from './pages/Settings';
 import { VideoPage } from './pages/Video';
@@ -55,6 +56,7 @@ const App: React.FC = () => {
     | 'tts'
     | 'voice-design'
     | 'video'
+    | 'browser-agent'
     | 'project-home'
     | 'project-chat'
     | 'settings'
@@ -187,6 +189,8 @@ const App: React.FC = () => {
               <VoiceDesignPage capability={creativeCapabilities?.voice_design} />
             ) : mainView === 'video' ? (
               <VideoPage capability={creativeCapabilities?.video} />
+            ) : mainView === 'browser-agent' ? (
+              <BrowserAgentPage />
             ) : mainView === 'project-home' ? (
               <ProjectHome
                 onStartConversation={async (message) => {
