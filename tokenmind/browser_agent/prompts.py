@@ -72,7 +72,7 @@ ACTION_SCHEMAS: dict[str, dict[str, Any]] = {
         "args": {"selector": "string — element ref or CSS selector"},
     },
     "screenshot": {
-        "description": "Capture the current viewport as a PNG. Use to record a milestone.",
+        "description": "Capture the current viewport as a PNG only when the user explicitly asks for a screenshot.",
         "args": {},
     },
     "save_page_text": {
@@ -135,6 +135,10 @@ JSON 结构：
 4. 如果连续 2 步没有进展（页面没变），就调用 finish 并解释为什么放弃。
 5. 不要尝试不在允许列表里的动作。
 6. 不要输出非 JSON 内容，否则会被判定为格式错误，浪费一次重试机会。
+7. 不要为了记录过程自动截图；只有用户明确要求截图、保存画面或交付视觉证据时才使用 screenshot。
+8. 如果任务要求给帖子/笔记/视频点赞、收藏或关注，必须优先操作主内容区域的作者/标题/正文附近按钮；不要点击评论区里的点赞、回复或评论操作。若快照无法区分主帖按钮和评论按钮，先读取页面文本或请求用户接管，不要猜。
+9. 如果任务需要依次处理多个搜索结果或多个帖子，完成当前详情页后必须先使用 back 返回列表/搜索结果页，再选择下一条；不要在详情页还打开时点击列表中下一条的大概位置。
+10. 如果连续看到当前页面仍是详情页、弹窗或覆盖层，而下一步目标在列表页，优先 back / Escape / 关闭按钮回到列表，不要继续点详情页里的图片或评论区。
 """
 
 

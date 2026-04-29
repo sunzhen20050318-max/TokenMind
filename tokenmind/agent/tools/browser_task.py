@@ -40,16 +40,15 @@ _project_ctx: ContextVar[str] = ContextVar("browser_task_project", default="")
 _message_id_ctx: ContextVar[Optional[str]] = ContextVar(
     "browser_task_message_id", default=None
 )
+_keep_open_ctx: ContextVar[bool] = ContextVar("browser_task_keep_open", default=False)
 
 
 # How long browser-task attachments are kept by the AttachmentStore. Same
 # default as DeliverAttachmentTool so users see one consistent retention.
 _ATTACHMENT_RETENTION = timedelta(days=30)
 
-# Only certain artifact kinds get auto-attached. Screenshots are huge and we
-# already show the latest in the Web Agent panel — surfacing every frame as a
-# chat attachment would be noisy. The opt-in set: latest screenshot + all
-# text-style outputs.
+# Only certain artifact kinds get auto-attached. Screenshots are opt-in: the
+# browser task only creates them when the user asks for one.
 _ATTACH_ALL_KINDS = {
     ArtifactKind.PAGE_TEXT,
     ArtifactKind.EXTRACT_JSON,
@@ -87,11 +86,11 @@ class RunBrowserTaskTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Drive a real Chrome browser to complete a multi-step web task — "
-            "navigate, search, click links, fill forms, extract data, and "
-            "screenshot pages. The browser is isolated per project. Returns the "
-            "final summary plus IDs of any artifacts (screenshots, page text, "
-            "extracted JSON) that were captured. Use this whenever the user "
+            "Drive a visible local Chrome browser to complete a multi-step web task: "
+            "navigate, search, click links, fill forms, extract data, and create "
+            "screenshots only when requested. Browser state is isolated per project "
+            "or chat. Returns the final summary plus IDs of any artifacts (page text, "
+            "screenshots, extracted JSON) that were captured. Use this whenever the user "
             "asks you to look something up online, fill out a form, or save "
             "content from a page."
         )
@@ -139,20 +138,25 @@ class RunBrowserTaskTool(Tool):
             "required": ["instruction"],
         }
 
-    def set_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
+    def set_context(
+        self,
+        channel: str,
+        chat_id: str,
+        message_id: str | None = None,
+        project_id: str | None = None,
+    ) -> None:
         """AgentLoop calls this before each tool turn.
 
         We piggyback on the per-turn ContextVar pattern from
         DeliverAttachmentTool — channel + chat_id together identify the chat
         session that triggered the tool call.
         """
-        # We treat ``chat_id`` as both the session id and the project id when
-        # the caller didn't explicitly distinguish them. Browser sessions are
-        # isolated by project_id at the agent-browser CLI level so this also
-        # gives each chat its own browser tab.
+        # Project chats reuse a project-level browser profile. Normal chats
+        # fall back to their chat id and can be closed after the task ends.
         _session_ctx.set(chat_id or "")
-        _project_ctx.set(chat_id or "default")
+        _project_ctx.set(project_id or chat_id or "default")
         _message_id_ctx.set(message_id)
+        _keep_open_ctx.set(bool(project_id))
 
     async def execute(
         self,
@@ -179,6 +183,7 @@ class RunBrowserTaskTool(Tool):
                     session_id=chat_id,
                     max_steps=steps,
                     timeout_seconds=timeout,
+                    keep_browser_open=_keep_open_ctx.get(),
                 )
             )
         except Exception as exc:  # noqa: BLE001
@@ -231,9 +236,9 @@ class RunBrowserTaskTool(Tool):
         message_id = _message_id_ctx.get()
         delivered: list[dict[str, Any]] = []
 
-        # For screenshots we only attach the latest frame to avoid spamming
-        # the chat with every intermediate snapshot. Everything else (text,
-        # JSON, PDF, downloads) goes through.
+        # For screenshots we only attach the latest requested capture to avoid
+        # spamming the chat. Everything else (text, JSON, PDF, downloads) goes
+        # through.
         screenshots = [a for a in artifacts if a.kind is ArtifactKind.SCREENSHOT]
         last_screenshot = screenshots[-1] if screenshots else None
 

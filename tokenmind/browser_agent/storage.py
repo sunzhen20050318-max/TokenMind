@@ -228,6 +228,48 @@ class BrowserTaskStorage:
             )
             conn.commit()
 
+    def prepare_task_continue(
+        self,
+        task_id: str,
+        *,
+        instruction: str,
+        start_url: Optional[str],
+        max_steps: Optional[int],
+        timeout_seconds: Optional[int],
+        metadata: dict[str, Any],
+    ) -> None:
+        """Reset terminal fields and prepare an existing task for another turn."""
+        sets = [
+            "instruction = ?",
+            "start_url = ?",
+            "status = ?",
+            "result_summary = NULL",
+            "error_detail = NULL",
+            "started_at = NULL",
+            "finished_at = NULL",
+            "metadata = ?",
+        ]
+        params: list[Any] = [
+            instruction,
+            start_url,
+            TaskStatus.PENDING.value,
+            _json_dump(metadata),
+        ]
+        if max_steps is not None:
+            sets.append("max_steps = ?")
+            params.append(max_steps)
+        if timeout_seconds is not None:
+            sets.append("timeout_seconds = ?")
+            params.append(timeout_seconds)
+
+        params.append(task_id)
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE browser_tasks SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+            conn.commit()
+
     def get_task(self, task_id: str) -> Optional[BrowserTask]:
         with self._connect() as conn:
             row = conn.execute(

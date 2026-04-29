@@ -1,12 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { browserAgentApi } from '../services/browserAgent';
-import {
-  selectLatestScreenshot,
-  selectScreenshotForStep,
-  useBrowserAgentStore,
-} from '../stores/browserAgentStore';
+import { useBrowserAgentStore } from '../stores/browserAgentStore';
 import { useChatStore } from '../stores/chatStore';
 import type {
+  BrowserAgentEnvCheck,
   BrowserArtifact,
   BrowserStep,
   BrowserTaskListItem,
@@ -17,11 +14,20 @@ import './browserAgent.css';
 const STATUS_LABELS: Record<BrowserTaskStatus, string> = {
   pending: '排队中',
   running: '执行中',
-  awaiting_user: '等待你接管',
+  awaiting_user: '等待接管',
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
 };
+
+const PHASE_LABELS: Record<BrowserStep['phase'], string> = {
+  thinking: 'Thinking',
+  action: 'Action',
+  observation: 'Observation',
+  intervention: 'Intervention',
+};
+
+const BUSY_STATUSES = new Set<BrowserTaskStatus>(['pending', 'running', 'awaiting_user']);
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return '—';
@@ -40,33 +46,93 @@ function statusClass(status: BrowserTaskStatus): string {
   return `browser-agent__status browser-agent__status--${status}`;
 }
 
-interface BrowserAgentSetupProps {
-  envCheck: ReturnType<typeof useBrowserAgentStore.getState>['envCheck'];
+function formatFileName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+function formatActionName(action: string | null | undefined): string {
+  if (!action) return '等待下一步';
+  const labels: Record<string, string> = {
+    llm_decide: '判断下一步',
+    open: '打开网页',
+    snapshot: '读取页面',
+    click: '点击元素',
+    click_xy_fallback: '坐标兜底点击',
+    fill: '填写内容',
+    type: '输入文字',
+    press: '按键',
+    scroll: '滚动页面',
+    wait: '等待页面',
+    back: '返回上一页',
+    forward: '前进',
+    reload: '刷新页面',
+    get_text: '读取文本',
+    screenshot: '保存截图',
+    save_page_text: '保存页面文本',
+    extract: '提取数据',
+    finish: '完成任务',
+    await_user: '等待人工接管',
+    resume: '继续执行',
+    user_instruction: '追加指令',
+  };
+  return labels[action] || action;
+}
+
+function compactArgs(args: Record<string, unknown> | null | undefined): string | null {
+  if (!args || Object.keys(args).length === 0) return null;
+  return JSON.stringify(args, null, 2);
+}
+
+function initialInstructionFromMetadata(metadata: Record<string, unknown>, fallback: string): string {
+  const turns = metadata.turns;
+  if (!Array.isArray(turns) || turns.length === 0) {
+    return fallback;
+  }
+  const first = turns[0];
+  if (typeof first === 'object' && first !== null && 'content' in first) {
+    const content = (first as { content?: unknown }).content;
+    if (typeof content === 'string' && content.trim()) {
+      return content;
+    }
+  }
+  return fallback;
+}
+
+function BrowserAgentSetup({
+  envCheck,
+  loading,
+  error,
+  onRetry,
+}: {
+  envCheck: BrowserAgentEnvCheck | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-}
-
-function BrowserAgentSetup({ envCheck, loading, error, onRetry }: BrowserAgentSetupProps) {
+}) {
   const issues = envCheck?.issues ?? [];
   return (
-    <div className="browser-agent__setup">
-      <h2>启用 Web Agent 前需要完成以下准备</h2>
-      <ol className="browser-agent__setup-steps">
-        <li>
-          <strong>安装 agent-browser CLI</strong>
-          <pre>npm install -g agent-browser</pre>
-        </li>
-        <li>
-          <strong>下载 Chrome for Testing</strong>
-          <pre>agent-browser install</pre>
-        </li>
-        <li>
-          <strong>验证安装</strong>
-          <pre>agent-browser doctor</pre>
-        </li>
-      </ol>
-      {error ? <div className="browser-agent__setup-error">{error}</div> : null}
+    <section className="browser-agent__setup">
+      <span className="browser-agent__eyebrow">Setup</span>
+      <h2>启用本地浏览器控制</h2>
+      <p>
+        TokenMind 会调用本机 agent-browser 控制一个独立 Chrome 窗口。环境检测只检查 CLI
+        和浏览器文件，不会自动弹出浏览器。
+      </p>
+      <div className="browser-agent__setup-steps">
+        <div>
+          <strong>安装 CLI</strong>
+          <code>npm install -g agent-browser</code>
+        </div>
+        <div>
+          <strong>下载浏览器内核</strong>
+          <code>agent-browser install</code>
+        </div>
+        <div>
+          <strong>手动诊断</strong>
+          <code>agent-browser doctor</code>
+        </div>
+      </div>
+      {error ? <div className="browser-agent__error">{error}</div> : null}
       {issues.length > 0 ? (
         <ul className="browser-agent__setup-issues">
           {issues.map((issue) => (
@@ -74,154 +140,191 @@ function BrowserAgentSetup({ envCheck, loading, error, onRetry }: BrowserAgentSe
           ))}
         </ul>
       ) : null}
-      <button type="button" className="browser-agent__primary" onClick={onRetry} disabled={loading}>
-        {loading ? '检测中…' : '重新检测'}
+      <button type="button" className="browser-agent__button browser-agent__button--primary" onClick={onRetry} disabled={loading}>
+        {loading ? '检测中...' : '重新检测'}
       </button>
-    </div>
+    </section>
   );
 }
 
-interface TaskListProps {
+function EnvHealth({ envCheck }: { envCheck: BrowserAgentEnvCheck | null }) {
+  return (
+    <section className="browser-agent__panel browser-agent__env">
+      <div className="browser-agent__panel-head">
+        <div>
+          <span className="browser-agent__eyebrow">Environment</span>
+          <h3>运行环境</h3>
+        </div>
+        <span className={envCheck?.is_ready ? 'browser-agent__pill is-good' : 'browser-agent__pill is-bad'}>
+          {envCheck?.is_ready ? '已就绪' : '未就绪'}
+        </span>
+      </div>
+      <div className="browser-agent__health-grid">
+        <div>
+          <span>CLI</span>
+          <strong>{envCheck?.cli_installed ? '已安装' : '缺失'}</strong>
+        </div>
+        <div>
+          <span>Chrome</span>
+          <strong>{envCheck?.chrome_installed ? '已下载' : '缺失'}</strong>
+        </div>
+        <div>
+          <span>版本</span>
+          <strong>{envCheck?.version || '—'}</strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TaskList({
+  items,
+  selectedId,
+  loading,
+  error,
+  onSelect,
+  onRefresh,
+}: {
   items: BrowserTaskListItem[];
   selectedId: string | null;
   loading: boolean;
   error: string | null;
   onSelect: (id: string) => void;
   onRefresh: () => void;
-}
-
-function TaskList({ items, selectedId, loading, error, onSelect, onRefresh }: TaskListProps) {
+}) {
   return (
-    <div className="browser-agent__list">
-      <div className="browser-agent__list-head">
-        <span>任务历史</span>
-        <button type="button" onClick={onRefresh} disabled={loading}>
-          {loading ? '刷新中…' : '刷新'}
+    <section className="browser-agent__panel browser-agent__task-list">
+      <div className="browser-agent__panel-head">
+        <div>
+          <span className="browser-agent__eyebrow">History</span>
+          <h3>任务记录</h3>
+        </div>
+        <button type="button" className="browser-agent__button browser-agent__button--ghost" onClick={onRefresh} disabled={loading}>
+          {loading ? '刷新中' : '刷新'}
         </button>
       </div>
       {error ? <div className="browser-agent__error">{error}</div> : null}
       {items.length === 0 ? (
-        <div className="browser-agent__empty">还没有任务，提交一条任务试试。</div>
+        <div className="browser-agent__empty">还没有任务。输入一个网页目标，让 AI 开始操作。</div>
       ) : (
-        <ul className="browser-agent__list-items">
+        <ul className="browser-agent__task-items">
           {items.map((item) => {
             const active = item.id === selectedId;
             return (
               <li key={item.id}>
                 <button
                   type="button"
-                  className={`browser-agent__list-item ${active ? 'is-active' : ''}`}
+                  className={`browser-agent__task-item ${active ? 'is-active' : ''}`}
                   onClick={() => onSelect(item.id)}
                 >
-                  <div className="browser-agent__list-item-row">
-                    <span className={statusClass(item.status)}>{STATUS_LABELS[item.status]}</span>
-                    <span className="browser-agent__list-item-time">{formatDateTime(item.created_at)}</span>
-                  </div>
-                  <div className="browser-agent__list-item-instr">{item.instruction}</div>
-                  <div className="browser-agent__list-item-meta">
-                    {item.step_count} 步 · {item.artifact_count} 个产物
-                    {item.session_id ? <span> · 来自会话</span> : null}
-                  </div>
+                  <span className={statusClass(item.status)}>{STATUS_LABELS[item.status]}</span>
+                  <strong>{item.instruction}</strong>
+                  <small>
+                    {formatDateTime(item.created_at)} · {item.step_count} 步 · {item.artifact_count} 个产物
+                  </small>
                 </button>
               </li>
             );
           })}
         </ul>
       )}
+    </section>
+  );
+}
+
+function ArtifactPanel({ artifacts }: { artifacts: BrowserArtifact[] }) {
+  return (
+    <section className="browser-agent__panel browser-agent__artifacts">
+      <div className="browser-agent__panel-head">
+        <div>
+          <span className="browser-agent__eyebrow">Artifacts</span>
+          <h3>浏览器产物</h3>
+        </div>
+      </div>
+      {artifacts.length === 0 ? (
+        <div className="browser-agent__empty">截图、下载文件、页面文本会出现在这里。</div>
+      ) : (
+        <ul>
+          {artifacts.map((art) => (
+            <li key={art.id}>
+              <a href={browserAgentApi.artifactUrl(art.id)} target="_blank" rel="noreferrer">
+                <span>{art.kind}</span>
+                <strong>{(art.metadata?.label as string) || formatFileName(art.file_path)}</strong>
+                <small>{Math.max(1, Math.round(art.size_bytes / 1024))} KB</small>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function StepMessage({ step }: { step: BrowserStep }) {
+  const isThinking = step.phase === 'thinking';
+  const isObservation = step.phase === 'observation';
+  const isUserTurn = step.action_name === 'user_instruction';
+  const decisionAction = step.action_args?.action;
+  const decisionArgs = step.action_args?.args;
+  const title = isUserTurn
+    ? '继续任务'
+    : isThinking
+      ? formatActionName(typeof decisionAction === 'string' ? decisionAction : step.action_name)
+      : formatActionName(step.action_name);
+  const argsText = compactArgs(
+    isThinking && typeof decisionArgs === 'object' && decisionArgs !== null
+      ? (decisionArgs as Record<string, unknown>)
+      : step.action_args,
+  );
+
+  return (
+    <article
+      className={`browser-agent__message ${
+        isUserTurn ? 'browser-agent__message--user' : `browser-agent__message--assistant browser-agent__message--${step.phase}`
+      } ${step.success ? '' : 'is-error'}`}
+    >
+      <div className="browser-agent__message-meta">
+        <span>{isUserTurn ? 'User' : PHASE_LABELS[step.phase]}</span>
+        <span>#{step.step_index}</span>
+        <time>{formatDateTime(step.timestamp)}</time>
+      </div>
+      <h4>{title}</h4>
+      {step.thinking ? <p>{step.thinking}</p> : null}
+      {step.error ? <div className="browser-agent__message-error">{step.error}</div> : null}
+      {isObservation && step.observation ? (
+        <details>
+          <summary>查看页面快照</summary>
+          <pre>{step.observation}</pre>
+        </details>
+      ) : null}
+      {!isObservation && step.observation ? <p>{step.observation}</p> : null}
+      {!isUserTurn && argsText ? (
+        <details>
+          <summary>参数</summary>
+          <pre>{argsText}</pre>
+        </details>
+      ) : null}
+    </article>
+  );
+}
+
+function EmptyConversation() {
+  return (
+    <div className="browser-agent__empty-chat">
+      <span>Web Agent</span>
+      <h2>把网页任务交给 TokenMind</h2>
+      <p>输入自然语言任务，AI 会打开本地浏览器、读取页面、点击、填写、下载并保存产物。</p>
     </div>
   );
 }
 
-interface StepRowProps {
-  step: BrowserStep;
-  isFocused: boolean;
-  onFocus: (stepIndex: number) => void;
-}
-
-function StepRow({ step, isFocused, onFocus }: StepRowProps) {
-  return (
-    <li
-      className={`browser-agent__step browser-agent__step--${step.phase} ${
-        isFocused ? 'is-focused' : ''
-      }`}
-    >
-      <button
-        type="button"
-        className="browser-agent__step-button"
-        onClick={() => onFocus(step.step_index)}
-      >
-        <div className="browser-agent__step-head">
-          <span className="browser-agent__step-index">#{step.step_index}</span>
-          <span className="browser-agent__step-phase">{step.phase}</span>
-          {step.action_name ? (
-            <span className="browser-agent__step-action">{step.action_name}</span>
-          ) : null}
-          {!step.success ? <span className="browser-agent__step-fail">失败</span> : null}
-          <span className="browser-agent__step-time">{formatDateTime(step.timestamp)}</span>
-        </div>
-        {step.thinking ? (
-          <div className="browser-agent__step-thinking">💭 {step.thinking}</div>
-        ) : null}
-        {step.action_args ? (
-          <pre className="browser-agent__step-args">{JSON.stringify(step.action_args, null, 2)}</pre>
-        ) : null}
-        {step.observation ? (
-          <pre className="browser-agent__step-observation">{step.observation}</pre>
-        ) : null}
-        {step.error ? <div className="browser-agent__step-error">{step.error}</div> : null}
-      </button>
-    </li>
-  );
-}
-
-interface InteractiveScreenshotProps {
-  artifact: BrowserArtifact;
-  enabled: boolean;
-  onClick: (x: number, y: number) => void;
-}
-
-/**
- * Renders a screenshot. When ``enabled`` (i.e. task is awaiting_user), clicks
- * are translated from the rendered <img> coordinate space back to the actual
- * pixel coordinates the browser used when taking the shot, then forwarded
- * via ``onClick``.
- *
- * We rely on naturalWidth/Height vs the bounding rect to compute the scale,
- * which works regardless of how the image is sized by CSS.
- */
-function InteractiveScreenshot({ artifact, enabled, onClick }: InteractiveScreenshotProps) {
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  const handleClick = (event: React.MouseEvent<HTMLImageElement>) => {
-    if (!enabled) return;
-    const img = imgRef.current;
-    if (!img || !img.naturalWidth || !img.naturalHeight) return;
-    const rect = img.getBoundingClientRect();
-    const scaleX = img.naturalWidth / rect.width;
-    const scaleY = img.naturalHeight / rect.height;
-    const x = Math.round((event.clientX - rect.left) * scaleX);
-    const y = Math.round((event.clientY - rect.top) * scaleY);
-    onClick(x, y);
-  };
-  return (
-    <img
-      ref={imgRef}
-      src={browserAgentApi.artifactUrl(artifact.id)}
-      alt="任务截图"
-      className={`browser-agent__live-img ${enabled ? 'is-interactive' : ''}`}
-      onClick={handleClick}
-    />
-  );
-}
-
-function TaskDetail() {
+function TaskConversation() {
   const {
     detail,
     detailLoading,
     detailError,
     cancelTask,
     refreshDetail,
-    focusedStepIndex,
-    focusStep,
     takeoverTask,
     resumeTask,
     intervene,
@@ -231,24 +334,17 @@ function TaskDetail() {
 
   if (!detail) {
     return (
-      <div className="browser-agent__detail browser-agent__detail--empty">
-        {detailLoading ? '加载任务详情…' : '从左侧选择一个任务以查看详情。'}
+      <section className="browser-agent__conversation">
+        <EmptyConversation />
+        {detailLoading ? <div className="browser-agent__loading">正在加载任务...</div> : null}
         {detailError ? <div className="browser-agent__error">{detailError}</div> : null}
-      </div>
+      </section>
     );
   }
 
-  const { task, steps, artifacts } = detail;
+  const { task, steps } = detail;
   const isRunning = task.status === 'running' || task.status === 'pending';
   const isAwaitingUser = task.status === 'awaiting_user';
-
-  // The focused step (if user clicked one) drives which screenshot is shown.
-  // Otherwise we always show the latest one — i.e. live preview.
-  const focusedShot = selectScreenshotForStep(detail, focusedStepIndex);
-  const latestShot = selectLatestScreenshot(detail);
-  const displayedShot = focusedShot ?? latestShot;
-
-  const nonScreenshotArtifacts = artifacts.filter((a) => a.kind !== 'screenshot');
 
   const dispatch = async (
     action: Parameters<typeof intervene>[1],
@@ -262,217 +358,93 @@ function TaskDetail() {
     }
   };
 
-  const handleScreenshotClick = (x: number, y: number) => {
-    if (!isAwaitingUser) return;
-    void dispatch('click_xy', { x, y });
-  };
-
   const handleSendText = async () => {
-    const text = interveneText;
+    const text = interveneText.trim();
     if (!text) return;
     setInterveneText('');
     await dispatch('type', { text });
   };
 
-  const handlePressKey = (key: string) => {
-    void dispatch('press', { key });
-  };
-
   return (
-    <div className="browser-agent__detail">
-      <div className="browser-agent__detail-head">
-        <div className="browser-agent__detail-instr">{task.instruction}</div>
-        <div className="browser-agent__detail-actions">
+    <section className="browser-agent__conversation">
+      <div className="browser-agent__chat-toolbar">
+        <div>
           <span className={statusClass(task.status)}>{STATUS_LABELS[task.status]}</span>
-          <button type="button" onClick={() => void refreshDetail()} disabled={detailLoading}>
-            {detailLoading ? '刷新中…' : '刷新'}
+          <strong>{task.start_url || '沿用当前浏览器页面'}</strong>
+        </div>
+        <div className="browser-agent__toolbar-actions">
+          <button type="button" className="browser-agent__button browser-agent__button--ghost" onClick={() => void refreshDetail()} disabled={detailLoading}>
+            刷新
           </button>
           {isRunning ? (
-            <button
-              type="button"
-              onClick={() => void takeoverTask(task.id)}
-            >
-              立即接管
-            </button>
-          ) : null}
-          {isAwaitingUser ? (
-            <button
-              type="button"
-              className="browser-agent__primary"
-              onClick={() => void resumeTask(task.id)}
-            >
-              继续 AI
+            <button type="button" className="browser-agent__button browser-agent__button--ghost" onClick={() => void takeoverTask(task.id)}>
+              手动接管
             </button>
           ) : null}
           {(isRunning || isAwaitingUser) ? (
-            <button
-              type="button"
-              className="browser-agent__danger"
-              onClick={() => void cancelTask(task.id)}
-            >
-              取消任务
+            <button type="button" className="browser-agent__button browser-agent__button--danger" onClick={() => void cancelTask(task.id)}>
+              取消
             </button>
           ) : null}
         </div>
       </div>
 
-      <dl className="browser-agent__detail-meta">
-        <div>
-          <dt>起始页</dt>
-          <dd>{task.start_url || '—'}</dd>
+      <article className="browser-agent__message browser-agent__message--user">
+        <div className="browser-agent__message-meta">
+          <span>User</span>
+          <time>{formatDateTime(task.created_at)}</time>
         </div>
-        <div>
-          <dt>创建时间</dt>
-          <dd>{formatDateTime(task.created_at)}</dd>
-        </div>
-        <div>
-          <dt>结束时间</dt>
-          <dd>{formatDateTime(task.finished_at)}</dd>
-        </div>
-        <div>
-          <dt>步数</dt>
-          <dd>{task.step_count}</dd>
-        </div>
-      </dl>
+        <h4>初始任务</h4>
+        <p>{initialInstructionFromMetadata(task.metadata, task.instruction)}</p>
+      </article>
+
+      {steps.map((step) => (
+        <StepMessage key={step.id} step={step} />
+      ))}
+
+      {isAwaitingUser ? (
+        <section className="browser-agent__handoff">
+          <span className="browser-agent__eyebrow">Human in the loop</span>
+          <h3>AI 已暂停，等待你完成网页操作</h3>
+          <p>请切到弹出的浏览器窗口完成登录、验证码或其他人工步骤，然后回到这里继续执行。</p>
+          <div className="browser-agent__handoff-actions">
+            <button type="button" className="browser-agent__button browser-agent__button--primary" onClick={() => void resumeTask(task.id)}>
+              我已完成，继续执行
+            </button>
+            <input
+              type="text"
+              placeholder="可选：发送文字到当前焦点"
+              value={interveneText}
+              onChange={(event) => setInterveneText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void handleSendText();
+                }
+              }}
+              disabled={intervening}
+            />
+            <button type="button" className="browser-agent__button browser-agent__button--ghost" onClick={() => void handleSendText()} disabled={intervening || !interveneText.trim()}>
+              发送
+            </button>
+          </div>
+          <div className="browser-agent__quick-keys">
+            {['Enter', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp'].map((key) => (
+              <button key={key} type="button" onClick={() => void dispatch('press', { key })} disabled={intervening}>
+                {key}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {task.result_summary ? (
-        <div className="browser-agent__detail-summary">{task.result_summary}</div>
+        <div className="browser-agent__result">{task.result_summary}</div>
       ) : null}
       {task.error_detail ? (
-        <div className="browser-agent__detail-summary browser-agent__detail-summary--error">
-          {task.error_detail}
-        </div>
+        <div className="browser-agent__error">{task.error_detail}</div>
       ) : null}
-
-      <div className="browser-agent__panes">
-        <div className="browser-agent__live">
-          <div className="browser-agent__live-head">
-            <span>
-              {focusedShot
-                ? `步骤 #${focusedShot.step_index} 截图`
-                : isAwaitingUser
-                  ? '🎮 接管中（点击截图操作）'
-                  : isRunning
-                    ? '实时画面'
-                    : '最终画面'}
-            </span>
-            {focusedStepIndex !== null ? (
-              <button type="button" onClick={() => focusStep(null)}>
-                回到最新
-              </button>
-            ) : null}
-          </div>
-          {displayedShot ? (
-            <InteractiveScreenshot
-              artifact={displayedShot}
-              enabled={isAwaitingUser && focusedStepIndex === null}
-              onClick={handleScreenshotClick}
-            />
-          ) : (
-            <div className="browser-agent__live-placeholder">
-              {isRunning ? '等待第一帧画面…' : '本任务没有截图。'}
-            </div>
-          )}
-
-          {isAwaitingUser ? (
-            <div className="browser-agent__intervene">
-              <div className="browser-agent__intervene-row">
-                <input
-                  type="text"
-                  placeholder="输入文字（发送到当前焦点）"
-                  value={interveneText}
-                  onChange={(event) => setInterveneText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void handleSendText();
-                    }
-                  }}
-                  disabled={intervening}
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleSendText()}
-                  disabled={intervening || !interveneText}
-                >
-                  发送
-                </button>
-              </div>
-              <div className="browser-agent__intervene-keys">
-                {['Enter', 'Tab', 'Escape', 'Backspace', 'ArrowDown', 'ArrowUp'].map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => handlePressKey(key)}
-                    disabled={intervening}
-                  >
-                    {key}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => void dispatch('scroll', { direction: 'down' })}
-                  disabled={intervening}
-                >
-                  向下滚
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void dispatch('scroll', { direction: 'up' })}
-                  disabled={intervening}
-                >
-                  向上滚
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void dispatch('back', {})}
-                  disabled={intervening}
-                >
-                  后退
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void dispatch('reload', {})}
-                  disabled={intervening}
-                >
-                  刷新
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {nonScreenshotArtifacts.length > 0 ? (
-            <div className="browser-agent__artifacts">
-              <div className="browser-agent__artifacts-head">已落地的数据产物</div>
-              <ul>
-                {nonScreenshotArtifacts.map((art) => (
-                  <li key={art.id}>
-                    <a
-                      href={browserAgentApi.artifactUrl(art.id)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {art.kind} · {(art.metadata?.label as string) || art.file_path.split('/').pop()}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-
-        <ol className="browser-agent__steps">
-          {steps.map((step) => (
-            <StepRow
-              key={step.id}
-              step={step}
-              isFocused={focusedStepIndex === step.step_index}
-              onFocus={focusStep}
-            />
-          ))}
-        </ol>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -488,16 +460,18 @@ export const BrowserAgentPage: React.FC = () => {
     refreshTasks,
     selectTask,
     selectedTaskId,
+    detail,
     submitInFlight,
     submitError,
     createTask,
+    continueTask,
   } = useBrowserAgentStore();
 
   const activeProjectId = useChatStore((s) => s.activeProjectId);
   const fallbackProjectId = useMemo(() => activeProjectId ?? 'default', [activeProjectId]);
 
   const [instruction, setInstruction] = useState('');
-  const [startUrl, setStartUrl] = useState('https://example.com');
+  const [startUrl, setStartUrl] = useState('');
 
   useEffect(() => {
     void refreshEnvCheck();
@@ -505,14 +479,41 @@ export const BrowserAgentPage: React.FC = () => {
   }, [refreshEnvCheck, refreshTasks]);
 
   const ready = !!envCheck?.is_ready;
+  const task = detail?.task ?? null;
+  const artifacts = detail?.artifacts ?? [];
+  const hasSelectedTask = Boolean(selectedTaskId && task);
+  const selectedTaskBusy = Boolean(task && BUSY_STATUSES.has(task.status));
+  const composerMode = hasSelectedTask ? 'continue' : 'create';
+  const submitLabel = composerMode === 'continue' ? '继续当前任务' : '开始新任务';
+
+  const handleStartNew = () => {
+    selectTask(null);
+    setInstruction('');
+    setStartUrl('');
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!instruction.trim()) return;
+    const text = instruction.trim();
+    if (!text || selectedTaskBusy) return;
+
+    if (task) {
+      const taskId = await continueTask(task.id, {
+        instruction: text,
+        start_url: startUrl.trim() || undefined,
+      });
+      if (taskId) {
+        setInstruction('');
+        setStartUrl('');
+      }
+      return;
+    }
+
     const taskId = await createTask({
       project_id: fallbackProjectId,
-      instruction: instruction.trim(),
+      instruction: text,
       start_url: startUrl.trim() || undefined,
+      keep_browser_open: true,
     });
     if (taskId) {
       setInstruction('');
@@ -520,74 +521,94 @@ export const BrowserAgentPage: React.FC = () => {
   };
 
   return (
-    <div className="browser-agent">
-      <div className="browser-agent__head">
-        <div>
-          <h1>Web Agent</h1>
-          <p className="browser-agent__subtitle">
-            让 AI 在隔离的浏览器里替你完成网页任务（M2 起由 LLM 决策每一步）。
-          </p>
-        </div>
-        {envCheck ? (
-          <div className="browser-agent__env-pill">
-            CLI {envCheck.cli_installed ? '✓' : '✗'} · Chrome {envCheck.chrome_installed ? '✓' : '✗'}
-            {envCheck.version ? ` · v${envCheck.version}` : ''}
+    <main className="browser-agent">
+      <section className="browser-agent__left">
+        <header className="browser-agent__topbar">
+          <div>
+            <span className="browser-agent__eyebrow">Browser Agent</span>
+            <h1>浏览器智能体</h1>
           </div>
-        ) : null}
-      </div>
+          <div className="browser-agent__top-actions">
+            {task ? (
+              <button type="button" className="browser-agent__button browser-agent__button--ghost" onClick={handleStartNew}>
+                新任务
+              </button>
+            ) : null}
+            <span className={ready ? 'browser-agent__pill is-good' : 'browser-agent__pill is-bad'}>
+              {ready ? '环境已就绪' : '需要配置'}
+            </span>
+          </div>
+        </header>
 
-      {!ready ? (
-        <BrowserAgentSetup
-          envCheck={envCheck}
-          loading={envCheckLoading}
-          error={envCheckError}
-          onRetry={() => void refreshEnvCheck()}
-        />
-      ) : (
-        <div className="browser-agent__body">
-          <form className="browser-agent__form" onSubmit={handleSubmit}>
-            <label>
-              <span>任务指令</span>
-              <textarea
-                value={instruction}
-                onChange={(event) => setInstruction(event.target.value)}
-                rows={3}
-                placeholder="例如：在 GitHub 搜索 browser-use 提取 README 重点"
-              />
-            </label>
-            <label>
-              <span>起始页（可选）</span>
+        {!ready ? (
+          <BrowserAgentSetup
+            envCheck={envCheck}
+            loading={envCheckLoading}
+            error={envCheckError}
+            onRetry={() => void refreshEnvCheck()}
+          />
+        ) : (
+          <>
+            <TaskConversation />
+            <form className="browser-agent__composer" onSubmit={handleSubmit}>
+              <div className="browser-agent__composer-mode">
+                <span>{composerMode === 'continue' ? '继续对话' : '任务输入'}</span>
+                <strong>
+                  {selectedTaskBusy
+                    ? '当前任务正在执行，请等待完成或人工接管'
+                    : composerMode === 'continue'
+                      ? '将新指令追加到当前浏览器任务'
+                      : '创建一个新的浏览器任务'}
+                </strong>
+              </div>
               <input
                 type="url"
                 value={startUrl}
                 onChange={(event) => setStartUrl(event.target.value)}
-                placeholder="https://example.com"
+                placeholder={composerMode === 'continue' ? '可选：输入新网址，否则沿用当前页面' : '起始网址，可选，例如 https://example.com'}
+                disabled={selectedTaskBusy}
               />
-            </label>
-            {submitError ? <div className="browser-agent__error">{submitError}</div> : null}
-            <button
-              type="submit"
-              className="browser-agent__primary"
-              disabled={submitInFlight || !instruction.trim()}
-            >
-              {submitInFlight ? '提交中…' : '提交任务'}
-            </button>
-          </form>
+              <textarea
+                value={instruction}
+                onChange={(event) => setInstruction(event.target.value)}
+                rows={3}
+                placeholder={
+                  composerMode === 'continue'
+                    ? '继续给 AI 指令，例如：返回搜索结果页，再打开第二个帖子点赞'
+                    : '描述网页任务，例如：打开 GitHub 搜索 browser-use，提取 README 重点并保存页面文本'
+                }
+                disabled={selectedTaskBusy}
+              />
+              {submitError ? <div className="browser-agent__error">{submitError}</div> : null}
+              <div className="browser-agent__composer-foot">
+                <span>任务会在本地可见浏览器窗口中执行，登录/验证码可随时人工接管。</span>
+                <button type="submit" className="browser-agent__button browser-agent__button--primary" disabled={submitInFlight || !instruction.trim() || selectedTaskBusy}>
+                  {submitInFlight ? '提交中...' : submitLabel}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+      </section>
 
-          <div className="browser-agent__columns">
-            <TaskList
-              items={tasks}
-              selectedId={selectedTaskId}
-              loading={tasksLoading}
-              error={tasksError}
-              onSelect={selectTask}
-              onRefresh={() => void refreshTasks()}
-            />
-            <TaskDetail />
-          </div>
-        </div>
-      )}
-    </div>
+      <aside className="browser-agent__right">
+        <section className="browser-agent__panel browser-agent__intro">
+          <span className="browser-agent__eyebrow">Local session</span>
+          <h3>AI 操作真实浏览器</h3>
+          <p>适合查网页、填表单、提取信息、保存页面文本和下载文件。每个任务会保留可回放的执行链和产物。</p>
+        </section>
+        <EnvHealth envCheck={envCheck} />
+        <TaskList
+          items={tasks}
+          selectedId={selectedTaskId}
+          loading={tasksLoading}
+          error={tasksError}
+          onSelect={selectTask}
+          onRefresh={() => void refreshTasks()}
+        />
+        <ArtifactPanel artifacts={artifacts} />
+      </aside>
+    </main>
   );
 };
 

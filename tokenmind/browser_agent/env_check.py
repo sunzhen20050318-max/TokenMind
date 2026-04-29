@@ -7,13 +7,19 @@ guide instead of a cryptic subprocess error.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+import os
+import re
 import shutil
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
+from tokenmind.browser_agent.cli import resolve_agent_browser_binary
+
 logger = logging.getLogger("tokenmind.browser_agent.env_check")
+
+_VERSION_RE = re.compile(r"(\d+(?:\.\d+)+)")
 
 
 @dataclass
@@ -29,8 +35,14 @@ class EnvCheckResult:
 
 
 async def check_environment() -> EnvCheckResult:
-    """Check if agent-browser is properly installed and Chrome is downloaded."""
-    if not shutil.which("agent-browser"):
+    """Check if agent-browser is installed without launching a browser window.
+
+    ``agent-browser doctor`` performs a launch test, which is useful manually
+    but surprising in the Web UI because it opens Chrome during a passive
+    readiness check. Here we only inspect the CLI and the local browser cache.
+    """
+    binary = resolve_agent_browser_binary()
+    if binary == "agent-browser" and not shutil.which("agent-browser"):
         return EnvCheckResult(
             cli_installed=False,
             chrome_installed=False,
@@ -39,60 +51,12 @@ async def check_environment() -> EnvCheckResult:
             ],
         )
 
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "agent-browser",
-            "doctor",
-            "--json",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=20.0)
-        payload = json.loads(stdout.decode("utf-8"))
-    except asyncio.TimeoutError:
-        return EnvCheckResult(
-            cli_installed=True,
-            chrome_installed=False,
-            issues=["`agent-browser doctor --json` 超时未返回。"],
-        )
-    except (OSError, json.JSONDecodeError) as exc:
-        return EnvCheckResult(
-            cli_installed=True,
-            chrome_installed=False,
-            issues=[f"agent-browser doctor 调用失败：{exc}"],
-        )
-
-    checks = payload.get("checks") if isinstance(payload, dict) else None
-    if not isinstance(checks, list):
-        return EnvCheckResult(
-            cli_installed=True,
-            chrome_installed=False,
-            issues=["agent-browser doctor 输出格式异常。"],
-        )
-
-    chrome_installed = False
-    version: Optional[str] = None
+    version, version_issue = await _read_cli_version(binary)
+    chrome_installed = _has_chrome_for_testing()
     issues: list[str] = []
-
-    for check in checks:
-        if not isinstance(check, dict):
-            continue
-        check_id = check.get("id")
-        status = check.get("status")
-        message = check.get("message") or ""
-
-        if check_id == "env.version" and isinstance(message, str):
-            # Message looks like "CLI version 0.26.0 (macos x86_64)".
-            for token in message.split():
-                if token.replace(".", "").isdigit():
-                    version = token
-                    break
-        if check_id == "chrome.installed" and status == "pass":
-            chrome_installed = True
-        if status == "fail":
-            issues.append(message)
-
-    if not chrome_installed and not issues:
+    if version_issue:
+        issues.append(version_issue)
+    if not chrome_installed:
         issues.append("Chrome for Testing 未安装。请运行 `agent-browser install`。")
 
     return EnvCheckResult(
@@ -101,3 +65,42 @@ async def check_environment() -> EnvCheckResult:
         version=version,
         issues=issues,
     )
+
+
+async def _read_cli_version(binary: str) -> tuple[Optional[str], Optional[str]]:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            binary,
+            "--version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=8.0)
+    except asyncio.TimeoutError:
+        return None, "`agent-browser --version` 超时未返回。"
+    except OSError as exc:
+        return None, f"agent-browser 版本检测失败：{exc}"
+
+    if proc.returncode != 0:
+        message = stderr.decode("utf-8", errors="replace").strip()
+        return None, f"agent-browser 版本检测失败：{message or proc.returncode}"
+
+    output = stdout.decode("utf-8", errors="replace").strip()
+    match = _VERSION_RE.search(output)
+    return (match.group(1) if match else None), None
+
+
+def _has_chrome_for_testing() -> bool:
+    configured = os.environ.get("AGENT_BROWSER_EXECUTABLE_PATH")
+    if configured and Path(configured).exists():
+        return True
+
+    browser_root = Path.home() / ".agent-browser" / "browsers"
+    if not browser_root.exists():
+        return False
+
+    executable_names = ("chrome.exe", "chrome", "Chromium", "Google Chrome for Testing")
+    for name in executable_names:
+        if any(browser_root.glob(f"**/{name}")):
+            return True
+    return False

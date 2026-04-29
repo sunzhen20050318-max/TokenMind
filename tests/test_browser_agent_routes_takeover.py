@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import httpx
 import pytest
@@ -243,6 +241,43 @@ async def test_list_filters_by_session_id(app_and_svc) -> None:
     scoped_items = scoped.json()["items"]
     assert {item["id"] for item in scoped_items} == {a.id}
     assert scoped_items[0]["session_id"] == "web:abc"
+
+
+@pytest.mark.asyncio
+async def test_continue_completed_task_reuses_same_task(app_and_svc) -> None:
+    app, svc, _ = app_and_svc
+    task = _make_task_in_status(svc, TaskStatus.COMPLETED)
+    scheduled: list[str] = []
+    svc.schedule = lambda next_task: scheduled.append(next_task.id)  # type: ignore[method-assign]
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            f"/api/browser-tasks/{task.id}/continue",
+            json={"instruction": "继续当前页面，保存页面文本"},
+        )
+
+    assert r.status_code == 200, r.text
+    payload = r.json()["task"]
+    assert payload["id"] == task.id
+    assert payload["status"] == "pending"
+    assert payload["instruction"] == "继续当前页面，保存页面文本"
+    assert scheduled == [task.id]
+
+
+@pytest.mark.asyncio
+async def test_continue_rejects_non_terminal_task(app_and_svc) -> None:
+    app, svc, _ = app_and_svc
+    task = _make_task_in_status(svc, TaskStatus.RUNNING)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            f"/api/browser-tasks/{task.id}/continue",
+            json={"instruction": "继续"},
+        )
+
+    assert r.status_code == 409
 
 
 @pytest.mark.asyncio

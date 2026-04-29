@@ -23,13 +23,47 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
+import os
+import re
 import shlex
 import shutil
+from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
 logger = logging.getLogger("tokenmind.browser_agent.cli")
+
+
+def resolve_agent_browser_binary(binary: str = "agent-browser") -> str:
+    """Resolve the npm-installed agent-browser shim to something Python can spawn.
+
+    Windows npm installs both extensionless shims and ``.cmd`` launchers. The
+    terminal can run either, but ``asyncio.create_subprocess_exec`` is much more
+    reliable when given the explicit ``.cmd`` path.
+    """
+    candidates = [binary]
+    if os.name == "nt" and binary == "agent-browser":
+        candidates = [
+            "agent-browser.cmd",
+            "agent-browser.exe",
+            "agent-browser.bat",
+            "agent-browser",
+        ]
+
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return binary
+
+
+def _close_stream_transport(stream: asyncio.StreamReader | None) -> None:
+    transport = getattr(stream, "_transport", None)
+    if transport is not None:
+        with contextlib.suppress(Exception):
+            transport.close()
 
 
 class AgentBrowserError(RuntimeError):
@@ -39,16 +73,48 @@ class AgentBrowserError(RuntimeError):
 class AgentBrowserCLI:
     """Wraps the ``agent-browser`` CLI with isolated sessions per project."""
 
-    def __init__(self, binary: str = "agent-browser") -> None:
-        self.binary = binary
+    def __init__(
+        self,
+        binary: str = "agent-browser",
+        *,
+        headed: bool = True,
+        profile_root: Optional[Path] = None,
+        download_root: Optional[Path] = None,
+    ) -> None:
+        self.binary = resolve_agent_browser_binary(binary)
+        self.headed = headed
+        self.profile_root = Path(profile_root) if profile_root is not None else None
+        self.download_root = Path(download_root) if download_root is not None else None
 
     @staticmethod
     def is_installed() -> bool:
-        return shutil.which("agent-browser") is not None
+        return resolve_agent_browser_binary() != "agent-browser"
+
+    @staticmethod
+    def _safe_session_name(project_id: str) -> str:
+        """Make a session/profile name that is stable and filesystem-safe."""
+        raw = project_id or "default"
+        normalized = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("._-")
+        normalized = normalized[:48] or "default"
+        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+        return f"{normalized}_{digest}"
 
     def session_args(self, project_id: str) -> list[str]:
         """Common prefix args used by every command for a given session."""
-        return [self.binary, "--session", project_id, "--json"]
+        session_name = self._safe_session_name(project_id)
+        args = [self.binary, "--session", session_name, "--json"]
+        if self.headed:
+            args.append("--headed")
+        if self.profile_root is not None:
+            profile_path = self.profile_root / session_name
+            profile_path.mkdir(parents=True, exist_ok=True)
+            args.extend(["--profile", str(profile_path)])
+            args.extend(["--session-name", session_name])
+        if self.download_root is not None:
+            download_path = self.download_root / session_name
+            download_path.mkdir(parents=True, exist_ok=True)
+            args.extend(["--download-path", str(download_path)])
+        return args
 
     # ── core executor ───────────────────────────────────────────────────
 
@@ -79,19 +145,42 @@ class AgentBrowserCLI:
                 f"agent-browser CLI not found: {exc}. Run `npm install -g agent-browser`."
             ) from exc
 
+        stdout_stream = getattr(proc, "stdout", None)
+        stderr_stream = getattr(proc, "stderr", None)
+
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
+            stdout_bytes = await asyncio.wait_for(
+                stdout_stream.readline() if stdout_stream is not None else proc.communicate(),
                 timeout=timeout,
             )
         except asyncio.TimeoutError as exc:
             with contextlib.suppress(OSError):
                 proc.kill()
+            _close_stream_transport(stdout_stream)
+            _close_stream_transport(stderr_stream)
             raise AgentBrowserError(
                 f"agent-browser command `{command}` timed out after {timeout:.0f}s"
             ) from exc
 
-        if proc.returncode != 0:
+        stderr_bytes = b""
+        if isinstance(stdout_bytes, tuple):
+            stdout_bytes, stderr_bytes = stdout_bytes
+        elif not stdout_bytes and stderr_stream is not None:
+            with contextlib.suppress(asyncio.TimeoutError):
+                stderr_bytes = await asyncio.wait_for(stderr_stream.read(), timeout=2.0)
+
+        # Headed Chrome can inherit the npm shim's stdio handles on Windows,
+        # which prevents communicate()/read() from ever seeing EOF even after
+        # agent-browser has already printed its JSON result. Closing our pipe
+        # transports after the first JSON line lets proc.wait() settle cleanly.
+        _close_stream_transport(stdout_stream)
+        _close_stream_transport(stderr_stream)
+
+        if hasattr(proc, "wait"):
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(proc.wait(), timeout=2.0)
+
+        if proc.returncode not in (0, None):
             stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
             raise AgentBrowserError(
                 f"agent-browser exited with code {proc.returncode}: {stderr or '(no stderr)'}"
@@ -287,6 +376,27 @@ class AgentBrowserCLI:
         if selector is not None:
             args.append(selector)
         return await self.run(project_id, "get", *args, timeout=timeout)
+
+    async def get_attr(
+        self,
+        project_id: str,
+        selector: str,
+        name: str,
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Get a single attribute from an element."""
+        return await self.run(project_id, "get", "attr", selector, name, timeout=timeout)
+
+    async def get_box(
+        self,
+        project_id: str,
+        selector: str,
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Get the element bounding box in viewport coordinates."""
+        return await self.run(project_id, "get", "box", selector, timeout=timeout)
 
     async def is_state(
         self,

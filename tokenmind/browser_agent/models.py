@@ -93,9 +93,21 @@ class CreateTaskRequest(BaseModel):
     session_id: Optional[str] = None
     max_steps: int = 50
     timeout_seconds: int = 1800
+    # Keep the underlying browser session/window alive after the task ends.
+    # Project-space tasks use this so login state and open tabs can be reused.
+    keep_browser_open: bool = True
     # Optional override for the LLM model used to drive the ReAct loop.
     # When None, falls back to ``config.agents.defaults.model``.
     model_override: Optional[str] = None
+
+
+class ContinueTaskRequest(BaseModel):
+    """Payload for POST /api/browser-tasks/{id}/continue."""
+
+    instruction: str
+    start_url: Optional[str] = None
+    max_steps: Optional[int] = None
+    timeout_seconds: Optional[int] = None
 
 
 class TaskListItem(BaseModel):

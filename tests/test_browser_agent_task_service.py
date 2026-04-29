@@ -1,9 +1,7 @@
 """End-to-end TaskService tests with a fake CLI + env-check.
 
-These tests exercise the scripted M1 loop without spawning a real browser:
-the CLI is replaced with a stub that returns canned JSON envelopes and
-the screenshot path is written with placeholder PNG bytes so artifact
-persistence is validated.
+These tests exercise the browser task loop without spawning a real browser:
+the CLI is replaced with a stub that returns canned JSON envelopes.
 """
 
 from __future__ import annotations
@@ -11,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from unittest.mock import patch
@@ -18,9 +17,10 @@ from unittest.mock import patch
 import pytest
 
 from tokenmind.browser_agent.cli import AgentBrowserError
+from tokenmind.browser_agent.decision import Decision, DecisionParseError
 from tokenmind.browser_agent.env_check import EnvCheckResult
 from tokenmind.browser_agent.models import (
-    ArtifactKind,
+    ContinueTaskRequest,
     CreateTaskRequest,
     StepPhase,
     TaskStatus,
@@ -105,19 +105,16 @@ async def test_scripted_loop_reaches_completed(tmp_path: Path, env_ready) -> Non
     final = svc.storage.get_task(task.id)
     assert final is not None
     assert final.status is TaskStatus.COMPLETED
-    assert final.step_count == 3
+    assert final.step_count == 2
     assert "https://example.com" in (final.result_summary or "")
 
     steps = svc.storage.list_steps(task.id)
-    assert [s.action_name for s in steps] == ["open", "snapshot", "screenshot"]
+    assert [s.action_name for s in steps] == ["open", "snapshot"]
     assert any(s.phase is StepPhase.OBSERVATION for s in steps)
 
     artifacts = svc.storage.list_artifacts(task.id)
-    assert len(artifacts) == 1
-    assert artifacts[0].kind is ArtifactKind.SCREENSHOT
-    assert Path(artifacts[0].file_path).exists()
-    assert artifacts[0].size_bytes == len(_PNG_BYTES)
-    assert cli.calls[-1] == "close"
+    assert artifacts == []
+    assert "close" not in cli.calls
 
 
 @pytest.mark.asyncio
@@ -139,7 +136,7 @@ async def test_open_failure_marks_task_failed(tmp_path: Path, env_ready) -> None
     assert final is not None
     assert final.status is TaskStatus.FAILED
     assert final.error_detail and "simulated open failure" in final.error_detail
-    assert cli.calls[-1] == "close"
+    assert "close" in cli.calls
 
 
 @pytest.mark.asyncio
@@ -210,8 +207,6 @@ async def test_request_cancel_marks_task_cancelled(tmp_path: Path, env_ready) ->
 
 # ── ReAct loop tests (M2.3) ────────────────────────────────────────────────
 
-from tokenmind.browser_agent.decision import Decision, DecisionMaker, DecisionParseError
-
 
 class _ReactFakeCLI(_FakeCLI):
     """Extended fake CLI that records every dispatched method + lets snapshot
@@ -241,6 +236,24 @@ class _ReactFakeCLI(_FakeCLI):
     async def click(self, project_id: str, selector: str, timeout: float = 30.0) -> dict:
         self.calls.append(f"click({selector})")
         return {"success": True, "data": {}, "error": None}
+
+    async def click_xy(self, project_id: str, x: int, y: int, timeout: float = 30.0) -> dict:
+        self.calls.append(f"click_xy({x},{y})")
+        return {"success": True, "data": {}, "error": None}
+
+    async def get_attr(
+        self,
+        project_id: str,
+        selector: str,
+        name: str,
+        timeout: float = 15.0,
+    ) -> dict:
+        self.calls.append(f"get_attr({selector},{name})")
+        return {"success": True, "data": {"value": "/explore/demo"}, "error": None}
+
+    async def get_box(self, project_id: str, selector: str, timeout: float = 15.0) -> dict:
+        self.calls.append(f"get_box({selector})")
+        return {"success": True, "data": {"x": 10, "y": 20, "width": 100, "height": 40}, "error": None}
 
     async def scroll(self, project_id: str, direction: str, pixels=None, timeout: float = 15.0) -> dict:
         self.calls.append(f"scroll({direction},{pixels})")
@@ -352,6 +365,39 @@ async def test_react_loop_pauses_on_stuck_observation(tmp_path: Path, env_ready)
     # Cancel to clean up the running task fixture.
     svc.request_cancel(task.id)
     await _wait_until(svc, task.id, timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_react_loop_uses_coordinate_click_when_ref_click_does_not_change_page(
+    tmp_path: Path,
+    env_ready,
+) -> None:
+    cli = _ReactFakeCLI([
+        "search results with link @e34",
+        "search results with link @e34",
+        "post detail page",
+    ])
+    decisions = [
+        Decision(action="click", args={"selector": "@e34"}),
+        Decision(action="finish", args={"summary": "opened"}),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="open post", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+    assert "click(@e34)" in cli.calls
+    assert "get_box(@e34)" in cli.calls
+    assert "click_xy(60,40)" in cli.calls
+    steps = svc.storage.list_steps(task.id)
+    assert any(step.action_name == "click_xy_fallback" for step in steps)
 
 
 @pytest.mark.asyncio
@@ -646,8 +692,8 @@ async def test_request_takeover_returns_false_when_task_not_running(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_takeover_streams_screenshots_at_high_frequency(tmp_path: Path, env_ready) -> None:
-    """While awaiting_user, screenshots should be emitted multiple times/sec."""
+async def test_takeover_does_not_stream_screenshot_frames(tmp_path: Path, env_ready) -> None:
+    """Awaiting-user mode relies on the visible browser, not screenshot streaming."""
     cli = _ReactFakeCLI(["snap1", "snap2"])
     maker = _BlockingDecisionMaker([
         Decision(action="click", args={"selector": "@e1"}),
@@ -672,13 +718,10 @@ async def test_takeover_streams_screenshots_at_high_frequency(tmp_path: Path, en
             break
 
     artifacts_before = len(svc.storage.list_artifacts(task.id))
-    # Sit in awaiting_user for ~1.5 seconds → expect ~2 streamed frames.
+    # Sit in awaiting_user for ~1.5 seconds; no fake video frames should appear.
     await asyncio.sleep(1.5)
     artifacts_after = len(svc.storage.list_artifacts(task.id))
-    streamed_frames = artifacts_after - artifacts_before
-    assert streamed_frames >= 2, (
-        f"expected at least 2 streamed frames in 1.5s, got {streamed_frames}"
-    )
+    assert artifacts_after == artifacts_before
 
     # Resume and let the task complete cleanly.
     svc.request_resume(task.id)
@@ -688,8 +731,8 @@ async def test_takeover_streams_screenshots_at_high_frequency(tmp_path: Path, en
 
 
 @pytest.mark.asyncio
-async def test_takeover_streamer_stops_on_resume(tmp_path: Path, env_ready) -> None:
-    """No screenshots should be streamed after resume returns the task to RUNNING."""
+async def test_no_screenshot_frames_after_resume(tmp_path: Path, env_ready) -> None:
+    """Resuming keeps the task free of implicit screenshot artifacts."""
     cli = _ReactFakeCLI(["snap"] * 4)
     maker = _BlockingDecisionMaker([
         Decision(action="click", args={"selector": "@e1"}),
@@ -714,14 +757,13 @@ async def test_takeover_streamer_stops_on_resume(tmp_path: Path, env_ready) -> N
     svc.request_resume(task.id)
     await asyncio.wait_for(maker.entered.wait(), timeout=2.0)
 
-    # Snapshot artifact count, wait, snapshot again — should not grow because
-    # streamer has stopped (the regular ReAct loop is paused waiting on the
-    # blocked decide).
+    # Snapshot artifact count, wait, snapshot again; it should not grow because
+    # the loop no longer records implicit visual frames.
     count_before = len(svc.storage.list_artifacts(task.id))
     await asyncio.sleep(1.2)
     count_after = len(svc.storage.list_artifacts(task.id))
     assert count_after == count_before, (
-        f"streamer should be stopped — got {count_after - count_before} extra frames"
+        f"got {count_after - count_before} implicit screenshot artifacts"
     )
 
     # Let the task wrap up.
@@ -734,10 +776,14 @@ async def test_takeover_streamer_stops_on_resume(tmp_path: Path, env_ready) -> N
 
 @pytest.mark.asyncio
 async def test_task_emits_status_step_and_artifact_events(tmp_path: Path, env_ready) -> None:
-    cli = _ReactFakeCLI(["snap1", "snap2", "snap3"])
-    # First decision triggers an action → automatic screenshot artifact emit.
+    cli = _ArtifactCLI(
+        snapshots=["snap1", "snap2", "snap3"],
+        eval_responses={"document.body": "captured text"},
+    )
+    # Explicit save_page_text emits an artifact; normal actions no longer
+    # create implicit screenshot frames.
     decisions = [
-        Decision(action="click", args={"selector": "@e1"}),
+        Decision(action="save_page_text", args={"label": "page"}),
         Decision(action="finish", args={"summary": "ok"}),
     ]
     maker = _ScriptedDecisionMaker(decisions)
@@ -813,3 +859,48 @@ async def test_model_override_persisted_in_metadata(tmp_path: Path, env_ready) -
     fetched = svc.storage.get_task(task.id)
     assert fetched is not None
     assert fetched.metadata.get("model_override") == "anthropic/claude-haiku-4-5"
+
+
+def test_continue_task_reuses_task_and_records_user_turn(tmp_path: Path) -> None:
+    svc = BrowserTaskService(tmp_path, cli=_FakeCLI())
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="打开小红书", start_url="https://x")
+    )
+    svc.storage.update_task(
+        task.id,
+        status=TaskStatus.COMPLETED,
+        result_summary="完成",
+        step_count=2,
+        finished_at=datetime.now(),
+    )
+
+    continued = svc.continue_task(
+        task.id,
+        ContinueTaskRequest(instruction="继续点赞第二个帖子"),
+    )
+
+    assert continued.id == task.id
+    assert continued.status is TaskStatus.PENDING
+    assert continued.instruction == "继续点赞第二个帖子"
+    assert continued.start_url is None
+    assert continued.result_summary is None
+    assert continued.error_detail is None
+    assert continued.step_count == 3
+    assert continued.metadata["turns"][0]["content"] == "打开小红书"
+    assert continued.metadata["turns"][-1]["content"] == "继续点赞第二个帖子"
+
+    steps = svc.storage.list_steps(task.id)
+    assert steps[-1].phase is StepPhase.INTERVENTION
+    assert steps[-1].action_name == "user_instruction"
+    assert steps[-1].thinking == "继续点赞第二个帖子"
+
+
+def test_continue_task_rejects_running_task(tmp_path: Path) -> None:
+    svc = BrowserTaskService(tmp_path, cli=_FakeCLI())
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.storage.update_task(task.id, status=TaskStatus.RUNNING)
+
+    with pytest.raises(ValueError):
+        svc.continue_task(task.id, ContinueTaskRequest(instruction="继续"))

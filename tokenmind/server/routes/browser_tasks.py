@@ -4,6 +4,7 @@ REST:
 - ``POST   /api/browser-tasks``        — create + schedule a scripted task
 - ``GET    /api/browser-tasks``        — list tasks (optionally by project)
 - ``GET    /api/browser-tasks/{id}``   — task detail (task + steps + artifacts)
+- ``POST   /api/browser-tasks/{id}/continue`` — append another instruction
 - ``POST   /api/browser-tasks/{id}/cancel`` — request cancellation
 - ``GET    /api/browser-tasks/artifacts/{id}/file`` — download artifact bytes
 - ``GET    /api/browser-agent/env-check`` — driver/CLI/Chrome readiness
@@ -27,6 +28,7 @@ from pydantic import BaseModel, Field
 from tokenmind.browser_agent.cli import AgentBrowserError
 from tokenmind.browser_agent.env_check import check_environment
 from tokenmind.browser_agent.models import (
+    ContinueTaskRequest,
     CreateTaskRequest,
     EnvCheckResponse,
     TaskDetailResponse,
@@ -112,6 +114,19 @@ async def get_browser_task(task_id: str) -> TaskDetailResponse:
     )
 
 
+@router.post("/browser-tasks/{task_id}/continue")
+async def continue_browser_task(task_id: str, payload: ContinueTaskRequest) -> dict:
+    service = _service_or_503()
+    try:
+        task = service.continue_task(task_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    service.schedule(task)
+    return {"task": task.model_dump()}
+
+
 @router.post("/browser-tasks/{task_id}/cancel")
 async def cancel_browser_task(task_id: str) -> dict:
     service = _service_or_503()
@@ -164,8 +179,9 @@ async def resume_browser_task(task_id: str) -> dict:
 class InterveneRequest(BaseModel):
     """User-initiated browser action while the task is in awaiting_user.
 
-    The frontend captures clicks / scrolls / key presses on the live screenshot
-    and posts them here. ``action`` selects which CLI primitive to invoke;
+    The frontend can post fallback keyboard/navigation actions while the user
+    directly controls the visible local browser window. ``action`` selects which
+    CLI primitive to invoke;
     extra keys are forwarded as positional/keyword args.
     """
 
@@ -240,8 +256,9 @@ async def intervene_browser_task(task_id: str, payload: InterveneRequest) -> dic
 
     # Mirror the action into the task timeline so the UI step list shows the
     # user's input alongside the AI's prior steps.
-    from tokenmind.browser_agent.models import BrowserStep, StepPhase
     from datetime import datetime as _dt
+
+    from tokenmind.browser_agent.models import BrowserStep, StepPhase
 
     step_index = (task.step_count or 0) + 1
     step = BrowserStep(

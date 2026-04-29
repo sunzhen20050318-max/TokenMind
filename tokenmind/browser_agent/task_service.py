@@ -10,14 +10,13 @@ The execution loop is the ReAct pattern:
 6. repeat until LLM emits ``finish`` / max_steps reached / cancellation
 
 Each LLM action is recorded as a step (phase=ACTION) and each snapshot as a
-step (phase=OBSERVATION). Screenshots are taken automatically at every action
-so the UI has visual frames to play back.
+step (phase=OBSERVATION). The browser runs headed so users can take over the
+real local window; screenshots are only created when explicitly requested.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import secrets
 from dataclasses import dataclass
@@ -37,6 +36,7 @@ from tokenmind.browser_agent.models import (
     BrowserArtifact,
     BrowserStep,
     BrowserTask,
+    ContinueTaskRequest,
     CreateTaskRequest,
     StepPhase,
     TaskStatus,
@@ -67,11 +67,6 @@ _MAX_SNAPSHOT_CHARS = 6000
 # Cap the structured "observation" (e.g. extracted text) likewise.
 _MAX_OBSERVATION_CHARS = 4000
 
-# Frame interval while the task is awaiting user takeover. 1.5 fps keeps the
-# UI feeling responsive without thrashing Chrome on the user's machine.
-_TAKEOVER_FRAME_INTERVAL_S = 0.67
-
-
 class BrowserTaskService:
     """Coordinates task creation, execution, and artifact persistence."""
 
@@ -86,12 +81,15 @@ class BrowserTaskService:
     ) -> None:
         self.workspace = Path(workspace)
         self.workspace.mkdir(parents=True, exist_ok=True)
-        self.cli = cli or AgentBrowserCLI()
         self.storage = storage or BrowserTaskStorage(self.workspace)
         self.decision_factory = decision_factory
         self.event_emitter = event_emitter
         self.artifacts_root = self.workspace / "browser"
         self.artifacts_root.mkdir(parents=True, exist_ok=True)
+        self.cli = cli or AgentBrowserCLI(
+            profile_root=self.artifacts_root / "profiles",
+            download_root=self.artifacts_root / "downloads",
+        )
         self._cancellation: dict[str, asyncio.Event] = {}
         self._resume: dict[str, asyncio.Event] = {}
         self._running_tasks: set[asyncio.Task[None]] = set()
@@ -114,12 +112,83 @@ class BrowserTaskService:
             created_at=datetime.now(),
             max_steps=payload.max_steps,
             timeout_seconds=payload.timeout_seconds,
-            metadata=(
-                {"model_override": payload.model_override} if payload.model_override else {}
-            ),
+            metadata={
+                **({"model_override": payload.model_override} if payload.model_override else {}),
+                "keep_browser_open": payload.keep_browser_open,
+            },
         )
         self.storage.insert_task(task)
         return task
+
+    def continue_task(self, task_id: str, payload: ContinueTaskRequest) -> BrowserTask:
+        """Append a new user instruction to an existing browser task.
+
+        Completed browser tasks keep their browser profile/session alive by
+        default. Continuing reuses that same task id and project session, adds a
+        visible "user instruction" step to the timeline, and schedules another
+        ReAct pass against the current browser page unless a new start URL is
+        supplied.
+        """
+        task = self.storage.get_task(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        if task.status in (
+            TaskStatus.PENDING,
+            TaskStatus.RUNNING,
+            TaskStatus.AWAITING_USER,
+        ):
+            raise ValueError(f"Task is in status '{task.status.value}', cannot continue")
+
+        now = datetime.now()
+        metadata = dict(task.metadata or {})
+        turns = list(metadata.get("turns") or [])
+        if not turns:
+            turns.append(
+                {
+                    "role": "user",
+                    "content": task.instruction,
+                    "at": task.created_at.isoformat(),
+                }
+            )
+        turns.append(
+            {
+                "role": "user",
+                "content": payload.instruction,
+                "at": now.isoformat(),
+            }
+        )
+        metadata["turns"] = turns[-30:]
+        metadata["last_continued_at"] = now.isoformat()
+
+        self.storage.prepare_task_continue(
+            task_id,
+            instruction=payload.instruction,
+            start_url=payload.start_url,
+            max_steps=payload.max_steps,
+            timeout_seconds=payload.timeout_seconds,
+            metadata=metadata,
+        )
+
+        refreshed = self.storage.get_task(task_id)
+        if refreshed is None:
+            raise KeyError(task_id)
+
+        step_index = (task.step_count or 0) + 1
+        self._record_step(
+            refreshed,
+            step_index,
+            StepPhase.INTERVENTION,
+            action_name="user_instruction",
+            thinking=payload.instruction,
+            action_args={"start_url": payload.start_url} if payload.start_url else None,
+            success=True,
+        )
+
+        final_task = self.storage.get_task(task_id)
+        if final_task is None:
+            raise KeyError(task_id)
+        self._schedule_emit(task_id, {"type": "status", "status": "pending"})
+        return final_task
 
     def schedule(self, task: BrowserTask) -> None:
         """Kick off background execution. Safe to call from a sync context."""
@@ -211,7 +280,7 @@ class BrowserTaskService:
             self._mark_failed(task, f"无法初始化 LLM 决策器：{exc}")
             return
 
-        step_counter = _StepCounter()
+        step_counter = _StepCounter(task.step_count or 0)
 
         try:
             # Step: open the start URL if present.
@@ -228,7 +297,8 @@ class BrowserTaskService:
             else:
                 await self._run_react_loop(task, cancel, step_counter, decision_maker)
         finally:
-            await self.cli.close_session(task.project_id)
+            if not task.metadata.get("keep_browser_open", True):
+                await self.cli.close_session(task.project_id)
 
     # ── scripted M1 fallback (kept for tests / no-LLM setups) ───────────
 
@@ -245,19 +315,12 @@ class BrowserTaskService:
         if snapshot_text is None:
             return
 
-        if cancel.is_set():
-            self._mark_cancelled(task)
-            return
-        ok = await self._execute_screenshot(task, step_counter)
-        if not ok:
-            return
-
         self.storage.update_task(
             task.id,
             status=TaskStatus.COMPLETED,
             finished_at=datetime.now(),
             step_count=step_counter.value,
-            result_summary=f"已打开 {task.start_url or '起始页'} 并完成截图。",
+            result_summary=f"已打开 {task.start_url or '起始页'} 并完成页面快照。",
         )
         self._schedule_emit(task.id, {"type": "status", "status": "completed"})
 
@@ -373,19 +436,34 @@ class BrowserTaskService:
                 detector.reset()
                 continue
 
-            # 5) Take a screenshot frame (cheap visual milestone for UI)
-            if cancel.is_set():
-                self._mark_cancelled(task)
-                return
-            await self._execute_screenshot(task, step_counter)
-
-            # 6) Re-snapshot and feed into history
+            # 5) Re-snapshot and feed into history. We intentionally do not
+            # auto-capture screenshots here; the real headed browser window is
+            # the visual surface, and screenshots are only created on request.
             if cancel.is_set():
                 self._mark_cancelled(task)
                 return
             new_snapshot = await self._execute_snapshot(task, step_counter)
             if new_snapshot is None:
                 return
+
+            if (
+                decision.action == "click"
+                and action_outcome.success
+                and new_snapshot == last_snapshot
+            ):
+                retried = await self._execute_click_center_fallback(
+                    task,
+                    step_counter,
+                    selector=str(decision.args.get("selector") or ""),
+                )
+                if retried:
+                    action_outcome = _ActionOutcome(
+                        success=True,
+                        observation="普通点击后页面未变化，已使用元素中心坐标进行兜底点击。",
+                    )
+                    new_snapshot = await self._execute_snapshot(task, step_counter)
+                    if new_snapshot is None:
+                        return
 
             history.append(
                 {
@@ -436,8 +514,8 @@ class BrowserTaskService:
     ) -> str:
         """Park the loop in ``awaiting_user`` until resume/cancel arrives.
 
-        While parked we run a low-fps screenshot streamer in the background
-        so the user sees their interventions reflected in the live panel.
+        While parked the user controls the visible local browser window
+        directly, then calls resume when they are done.
 
         Returns ``"resumed"`` or ``"cancelled"``.
         """
@@ -465,12 +543,6 @@ class BrowserTaskService:
         # Make sure the resume event is fresh — clear stale signal from prior pauses.
         resume_event.clear()
 
-        # Kick off the live frame streamer.
-        streamer_stop = asyncio.Event()
-        streamer = asyncio.create_task(
-            self._takeover_streamer(task, step_counter, streamer_stop)
-        )
-
         cancel_task = asyncio.create_task(cancel.wait())
         resume_task = asyncio.create_task(resume_event.wait())
         try:
@@ -483,11 +555,6 @@ class BrowserTaskService:
             for t in (cancel_task, resume_task):
                 if not t.done():
                     t.cancel()
-            # Always stop the streamer cleanly.
-            streamer_stop.set()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await streamer
-
         if cancel.is_set():
             self._mark_cancelled(task)
             return "cancelled"
@@ -503,29 +570,6 @@ class BrowserTaskService:
             success=True,
         )
         return "resumed"
-
-    async def _takeover_streamer(
-        self,
-        task: BrowserTask,
-        step_counter: "_StepCounter",
-        stop: asyncio.Event,
-    ) -> None:
-        """Capture screenshots at ~1.5 fps and persist+emit them as artifacts.
-
-        Runs only while the task is in ``awaiting_user``. Failures (Chrome
-        busy, etc.) are tolerated — we just skip the frame and keep going.
-        """
-        try:
-            while not stop.is_set():
-                await self._execute_screenshot(task, step_counter)
-                # Sleep with cancellation responsiveness — don't block the
-                # full interval if a resume signal arrives.
-                with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(stop.wait(), timeout=_TAKEOVER_FRAME_INTERVAL_S)
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.exception("takeover streamer crashed for task %s", task.id)
 
     # ── per-action helpers ──────────────────────────────────────────────
 
@@ -557,6 +601,7 @@ class BrowserTaskService:
                 success=False,
                 error=str(exc),
             )
+            await self.cli.close_session(task.project_id)
             self._mark_failed(task, f"打开起始页失败：{exc}")
             return False
 
@@ -598,25 +643,15 @@ class BrowserTaskService:
         step_counter: "_StepCounter",
     ) -> bool:
         idx = step_counter.next()
-        screenshot_path = self._artifact_path(task, idx, "screenshots", ".png")
-        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            shot = await self.cli.screenshot(task.project_id, str(screenshot_path))
-            artifact = self._record_artifact(
-                task,
-                idx,
-                ArtifactKind.SCREENSHOT,
-                file_path=screenshot_path,
-                mime_type="image/png",
-                metadata={"agent_browser": shot.get("data", {})},
-            )
+            artifact_id = await self._capture_screenshot_artifact(task, idx)
             self._record_step(
                 task,
                 idx,
                 StepPhase.ACTION,
                 action_name="screenshot",
                 success=True,
-                screenshot_artifact_id=artifact.id,
+                screenshot_artifact_id=artifact_id,
             )
             return True
         except AgentBrowserError as exc:
@@ -631,6 +666,94 @@ class BrowserTaskService:
             # Screenshot failures are non-fatal in the ReAct loop — log a step
             # and continue. The next snapshot will still drive the next decision.
             logger.warning("screenshot for task %s failed: %s", task.id, exc)
+            return False
+
+    async def _capture_screenshot_artifact(
+        self,
+        task: BrowserTask,
+        step_index: int,
+    ) -> str:
+        screenshot_path = self._artifact_path(task, step_index, "screenshots", ".png")
+        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        shot = await self.cli.screenshot(task.project_id, str(screenshot_path))
+        artifact = self._record_artifact(
+            task,
+            step_index,
+            ArtifactKind.SCREENSHOT,
+            file_path=screenshot_path,
+            mime_type="image/png",
+            metadata={"agent_browser": shot.get("data", {})},
+        )
+        return artifact.id
+
+    async def _execute_click_center_fallback(
+        self,
+        task: BrowserTask,
+        step_counter: "_StepCounter",
+        *,
+        selector: str,
+    ) -> bool:
+        """Retry a no-op link click by sending real mouse events at its center.
+
+        Some SPA pages expose a text/link node in the accessibility tree while
+        the real click handler lives on the visual card around it. The normal
+        ref click can report success without advancing the page; a coordinate
+        click mirrors what the user would do in the visible browser window.
+        """
+        if not selector:
+            return False
+
+        idx: Optional[int] = None
+        try:
+            # Only retry elements that look link-like. This avoids double
+            # activating generic buttons that intentionally update in-place.
+            href_response = await self.cli.get_attr(task.project_id, selector, "href")
+            href_data = href_response.get("data") if isinstance(href_response, dict) else None
+            href_value = (
+                href_data.get("value")
+                if isinstance(href_data, dict)
+                else href_data
+            )
+            if not href_value:
+                return False
+
+            box_response = await self.cli.get_box(task.project_id, selector)
+            box = box_response.get("data") if isinstance(box_response, dict) else None
+            if not isinstance(box, dict):
+                return False
+            x = float(box.get("x", 0)) + float(box.get("width", 0)) / 2
+            y = float(box.get("y", 0)) + float(box.get("height", 0)) / 2
+            if x <= 0 or y <= 0:
+                return False
+
+            await self.cli.click_xy(task.project_id, int(x), int(y))
+            idx = step_counter.next()
+            self._record_step(
+                task,
+                idx,
+                StepPhase.ACTION,
+                action_name="click_xy_fallback",
+                action_args={
+                    "selector": selector,
+                    "x": int(x),
+                    "y": int(y),
+                    "href": str(href_value),
+                },
+                observation="普通 ref 点击未推动页面，已改用真实鼠标坐标点击。",
+                success=True,
+            )
+            return True
+        except (AgentBrowserError, ValueError, TypeError) as exc:
+            idx = idx or step_counter.next()
+            self._record_step(
+                task,
+                idx,
+                StepPhase.ACTION,
+                action_name="click_xy_fallback",
+                action_args={"selector": selector},
+                success=False,
+                error=str(exc),
+            )
             return False
 
     async def _execute_decision(
@@ -737,9 +860,8 @@ class BrowserTaskService:
                 return str(data.get("text") or data), None
             return str(data), None
         if action == "screenshot":
-            # Step counter handled by caller via _execute_screenshot in the loop.
-            await cli.screenshot(project_id)
-            return "已截图", None
+            artifact_id = await self._capture_screenshot_artifact(task, step_index)
+            return "已截图并保存为产物。", artifact_id
         if action == "save_page_text":
             text, artifact_id = await self._save_page_text_artifact(
                 task, step_index, label=args.get("label")
@@ -973,8 +1095,8 @@ def _require(args: dict[str, Any], key: str) -> Any:
 class _StepCounter:
     """Monotonic step index counter (1-based)."""
 
-    def __init__(self) -> None:
-        self.value = 0
+    def __init__(self, value: int = 0) -> None:
+        self.value = value
 
     def next(self) -> int:
         self.value += 1

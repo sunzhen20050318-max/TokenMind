@@ -7,15 +7,23 @@ real ``agent-browser`` binary being installed.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tokenmind.browser_agent.cli import AgentBrowserCLI, AgentBrowserError
+import tokenmind.browser_agent.cli as cli_module
+from tokenmind.browser_agent.cli import (
+    AgentBrowserCLI,
+    AgentBrowserError,
+    resolve_agent_browser_binary,
+)
 
 
 class _FakeProc:
     def __init__(self, stdout: bytes, stderr: bytes = b"", returncode: int = 0) -> None:
+        self.stdout = _FakeStream(stdout)
+        self.stderr = _FakeStream(stderr)
         self._stdout = stdout
         self._stderr = stderr
         self.returncode = returncode
@@ -23,12 +31,36 @@ class _FakeProc:
     async def communicate(self) -> tuple[bytes, bytes]:
         return self._stdout, self._stderr
 
+    async def wait(self) -> int:
+        return self.returncode
+
     def kill(self) -> None:
         return None
 
 
+class _FakeTransport:
+    def close(self) -> None:
+        return None
+
+
+class _FakeStream:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+        self._read = False
+        self._transport = _FakeTransport()
+
+    async def readline(self) -> bytes:
+        if self._read:
+            return b""
+        self._read = True
+        return self._data
+
+    async def read(self) -> bytes:
+        return await self.readline()
+
+
 def _patch_subprocess(stdout: dict | list, *, returncode: int = 0, stderr: str = ""):
-    payload = json.dumps(stdout).encode("utf-8")
+    payload = b"" if returncode else json.dumps(stdout).encode("utf-8")
     fake_proc = _FakeProc(payload, stderr.encode("utf-8"), returncode)
     return patch(
         "tokenmind.browser_agent.cli.asyncio.create_subprocess_exec",
@@ -100,8 +132,33 @@ async def _capture_cmd(coro_factory, cli: AgentBrowserCLI) -> list[str]:
 async def test_helper_methods_pass_session_and_args() -> None:
     cli = AgentBrowserCLI()
     cmd = await _capture_cmd(lambda c: c.open_url("proj_a", "https://example.com"), cli)
-    assert cmd[:5] == ["agent-browser", "--session", "proj_a", "--json", "open"]
+    assert Path(cmd[0]).name in {"agent-browser", "agent-browser.cmd", "agent-browser.exe", "agent-browser.bat"}
+    assert cmd[1] == "--session"
+    assert cmd[2].startswith("proj_a_")
+    assert cmd[3:6] == ["--json", "--headed", "open"]
     assert cmd[-1] == "https://example.com"
+
+
+def test_resolve_agent_browser_prefers_windows_cmd_shim(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_which(candidate: str) -> str | None:
+        if candidate == "agent-browser.cmd":
+            return r"C:\Users\me\AppData\Roaming\npm\agent-browser.cmd"
+        if candidate == "agent-browser":
+            return r"C:\Users\me\AppData\Roaming\npm\agent-browser"
+        return None
+
+    monkeypatch.setattr(cli_module.os, "name", "nt")
+    monkeypatch.setattr(cli_module.shutil, "which", fake_which)
+
+    assert resolve_agent_browser_binary() == r"C:\Users\me\AppData\Roaming\npm\agent-browser.cmd"
+
+
+def test_resolve_agent_browser_falls_back_to_requested_binary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module.shutil, "which", lambda _candidate: None)
+
+    assert resolve_agent_browser_binary("custom-agent-browser") == "custom-agent-browser"
 
 
 @pytest.mark.asyncio
@@ -158,6 +215,12 @@ async def test_get_and_is_state_helpers() -> None:
     cli = AgentBrowserCLI()
     text_cmd = await _capture_cmd(lambda c: c.get("p", "text", "@e1"), cli)
     assert text_cmd[-3:] == ["get", "text", "@e1"]
+
+    attr_cmd = await _capture_cmd(lambda c: c.get_attr("p", "@e1", "href"), cli)
+    assert attr_cmd[-4:] == ["get", "attr", "@e1", "href"]
+
+    box_cmd = await _capture_cmd(lambda c: c.get_box("p", "@e1"), cli)
+    assert box_cmd[-3:] == ["get", "box", "@e1"]
 
     visible_cmd = await _capture_cmd(lambda c: c.is_state("p", "visible", "@e1"), cli)
     assert visible_cmd[-3:] == ["is", "visible", "@e1"]

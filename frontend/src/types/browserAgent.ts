@@ -93,6 +93,14 @@ export interface CreateBrowserTaskRequest {
   session_id?: string;
   max_steps?: number;
   timeout_seconds?: number;
+  keep_browser_open?: boolean;
+}
+
+export interface ContinueBrowserTaskRequest {
+  instruction: string;
+  start_url?: string;
+  max_steps?: number;
+  timeout_seconds?: number;
 }
 
 export interface BrowserAgentEnvCheck {

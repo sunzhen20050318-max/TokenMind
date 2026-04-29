@@ -8,6 +8,7 @@ import type {
   BrowserTaskDetailResponse,
   BrowserTaskListItem,
   BrowserTaskStatus,
+  ContinueBrowserTaskRequest,
   CreateBrowserTaskRequest,
 } from '../types/browserAgent';
 
@@ -46,6 +47,7 @@ interface BrowserAgentState {
   refreshDetail: () => Promise<void>;
   focusStep: (stepIndex: number | null) => void;
   createTask: (payload: CreateBrowserTaskRequest) => Promise<string | null>;
+  continueTask: (taskId: string, payload: ContinueBrowserTaskRequest) => Promise<string | null>;
   cancelTask: (taskId: string) => Promise<void>;
   takeoverTask: (taskId: string, reason?: string) => Promise<void>;
   resumeTask: (taskId: string) => Promise<void>;
@@ -254,6 +256,25 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
       set({
         submitInFlight: false,
         submitError: err instanceof Error ? err.message : '创建任务失败',
+      });
+      return null;
+    }
+  },
+
+  async continueTask(taskId, payload) {
+    set({ submitInFlight: true, submitError: null });
+    try {
+      const result = await browserAgentApi.continueTask(taskId, payload);
+      set({ submitInFlight: false });
+      await get().refreshTasks(
+        result.task.project_id ? { projectId: result.task.project_id } : undefined,
+      );
+      get().selectTask(result.task.id);
+      return result.task.id;
+    } catch (err) {
+      set({
+        submitInFlight: false,
+        submitError: err instanceof Error ? err.message : '继续任务失败',
       });
       return null;
     }

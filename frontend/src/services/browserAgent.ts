@@ -3,6 +3,7 @@ import type {
   BrowserTask,
   BrowserTaskDetailResponse,
   BrowserTaskListResponse,
+  ContinueBrowserTaskRequest,
   CreateBrowserTaskRequest,
 } from '../types/browserAgent';
 
@@ -49,6 +50,18 @@ export const browserAgentApi = {
       body: JSON.stringify(payload),
     });
     return jsonOrThrow<{ task: BrowserTask }>(res, 'create browser task');
+  },
+
+  async continueTask(
+    taskId: string,
+    payload: ContinueBrowserTaskRequest,
+  ): Promise<{ task: BrowserTask }> {
+    const res = await fetch(`${API_BASE}/browser-tasks/${encodeURIComponent(taskId)}/continue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return jsonOrThrow<{ task: BrowserTask }>(res, 'continue browser task');
   },
 
   async getTask(taskId: string): Promise<BrowserTaskDetailResponse> {
