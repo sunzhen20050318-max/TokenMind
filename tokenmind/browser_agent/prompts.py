@@ -89,7 +89,8 @@ ACTION_SCHEMAS: dict[str, dict[str, Any]] = {
         "args": {
             "fields": (
                 "object — { 字段名: selector } 形式的映射，例如 "
-                "{\"title\":\".post-title\",\"author\":\".byline\"}"
+                "{\"title\":\".post-title\",\"author\":\".byline\"}；也可以直接使用当前 snapshot "
+                "里的节点引用，例如 {\"标题1\":\"ref=e43\"} 或 {\"标题1\":\"@e43\"}"
             ),
             "label": "string (optional) — 给这个 JSON 产物起个名字",
         },

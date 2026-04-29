@@ -136,6 +136,21 @@ async def test_resume_only_works_in_awaiting_user(app_and_svc) -> None:
 
 
 @pytest.mark.asyncio
+async def test_resume_accepts_user_note(app_and_svc) -> None:
+    app, svc, _ = app_and_svc
+    awaiting = _make_task_in_status(svc, TaskStatus.AWAITING_USER)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            f"/api/browser-tasks/{awaiting.id}/resume",
+            json={"note": "我已经完成登录"},
+        )
+    assert r.status_code == 200
+    assert r.json()["resumed"] is True
+    assert svc._resume_notes[awaiting.id] == "我已经完成登录"
+
+
+@pytest.mark.asyncio
 async def test_intervene_click_xy_forwards_to_cli(app_and_svc) -> None:
     app, svc, cli = app_and_svc
     task = _make_task_in_status(svc, TaskStatus.AWAITING_USER)

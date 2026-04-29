@@ -205,13 +205,32 @@ async def test_execute_reports_failure_with_error_detail(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_execute_reports_awaiting_user(tmp_path: Path) -> None:
+async def test_execute_waits_through_awaiting_user(tmp_path: Path) -> None:
     svc = _FakeService(tmp_path)
     svc.set_outcome(TaskStatus.AWAITING_USER, summary="需要用户接管")
     tool = RunBrowserTaskTool(svc)  # type: ignore[arg-type]
     tool.set_context("web", "web:abc")
-    result = await tool.execute(instruction="x")
-    assert "暂停" in result and "接管" in result
+    pending = asyncio.create_task(tool.execute(instruction="x"))
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        current = svc.get_task("bt_test_1")
+        if current and current.status is TaskStatus.AWAITING_USER:
+            break
+    assert not pending.done()
+
+    current = svc.get_task("bt_test_1")
+    assert current is not None
+    svc._tasks["bt_test_1"] = current.model_copy(
+        update={
+            "status": TaskStatus.COMPLETED,
+            "result_summary": "用户接管后完成",
+            "finished_at": datetime.now(),
+        }
+    )
+
+    result = await asyncio.wait_for(pending, timeout=2.0)
+    assert "完成" in result and "用户接管后完成" in result
 
 
 # ── Timeout handling ────────────────────────────────────────────────────────

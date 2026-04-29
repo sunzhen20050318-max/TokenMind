@@ -56,6 +56,11 @@ const STARTER_CARDS: StarterCard[] = [
     prompt: '请检查当前可用的 MCP 服务和工具，并告诉我它们可以帮我完成什么任务。',
   },
   {
+    id: 'browser',
+    title: '浏览器操作',
+    prompt: '请使用浏览器帮我完成这个网页任务：',
+  },
+  {
     id: 'task',
     title: '定时任务',
     prompt: '请帮我设计一个适合当前项目的自动化或定时任务方案。',

@@ -1530,6 +1530,7 @@ def create_app(
                 RunBrowserTaskTool(
                     service=browser_task_service,
                     attachment_store=chat_service.attachments,
+                    send_callback=agent_loop.bus.publish_outbound,
                 )
             )
     except Exception:  # noqa: BLE001

@@ -97,6 +97,18 @@ class WebChannel(BaseChannel):
 
         # Handle progress messages - tool events
         if msg.metadata.get("_progress"):
+            if msg.metadata.get("_browser_task"):
+                await self._ws_manager.send_to_session(
+                    session_key=msg.chat_id,
+                    message={
+                        "type": "browser_task",
+                        "event": msg.metadata.get("_browser_task_event") or "started",
+                        "task_id": msg.metadata.get("_browser_task_id") or msg.content,
+                        "content": msg.content,
+                        "channel": msg.channel,
+                    },
+                )
+                return
             if msg.metadata.get("_tool_start"):
                 # Individual tool start event
                 logger.info("Sending TOOL_START: {} ({})", msg.content[:80], msg.metadata.get("_tool_id"))

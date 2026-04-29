@@ -85,9 +85,16 @@ export const browserAgentApi = {
     return jsonOrThrow<{ accepted: boolean }>(res, 'takeover browser task');
   },
 
-  async resumeTask(taskId: string): Promise<{ resumed: boolean }> {
+  async resumeTask(taskId: string, note?: string): Promise<{ resumed: boolean }> {
+    const hasNote = Boolean(note?.trim());
     const res = await fetch(`${API_BASE}/browser-tasks/${encodeURIComponent(taskId)}/resume`, {
       method: 'POST',
+      ...(hasNote
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: note?.trim() }),
+          }
+        : {}),
     });
     return jsonOrThrow<{ resumed: boolean }>(res, 'resume browser task');
   },

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
@@ -67,6 +68,97 @@ _MAX_SNAPSHOT_CHARS = 6000
 # Cap the structured "observation" (e.g. extracted text) likewise.
 _MAX_OBSERVATION_CHARS = 4000
 
+
+_REF_SELECTOR_RE = re.compile(r"^(?:@?e|ref\s*=\s*e?)(\d+)$", re.IGNORECASE)
+
+_CAPTCHA_GUARD_PATTERNS = (
+    "验证码",
+    "安全验证",
+    "人机验证",
+    "滑块",
+    "拖动",
+    "拖拽",
+    "captcha",
+    "recaptcha",
+    "verify you are human",
+    "security verification",
+    "robot check",
+)
+
+_LOGIN_GUARD_PATTERNS = (
+    "登录",
+    "登陆",
+    "sign in",
+    "log in",
+    "login",
+    "账号",
+    "未登录",
+)
+
+_LOGIN_SIGNAL_PATTERNS = (
+    "手机号",
+    "手机号码",
+    "验证码",
+    "密码",
+    "扫码",
+    "二维码",
+    "注册",
+    "第三方登录",
+    "password",
+    "phone",
+    "verification code",
+    "qr code",
+    "register",
+)
+
+
+def _normalize_agent_selector(selector: str) -> str:
+    """Convert snapshot refs like ``ref=e43`` / ``e43`` into agent-browser refs."""
+    text = str(selector).strip()
+    match = _REF_SELECTOR_RE.match(text)
+    if match:
+        return f"@e{match.group(1)}"
+    return text
+
+
+def _is_agent_ref_selector(selector: str) -> bool:
+    return _REF_SELECTOR_RE.match(str(selector).strip()) is not None
+
+
+def _detect_browser_guard(snapshot: str) -> Optional[StuckEvent]:
+    """Detect states where the user must intervene before the LLM continues.
+
+    Some sites keep the underlying page in the accessibility tree even while a
+    login/captcha overlay is blocking interactions. This guard intentionally
+    runs outside the LLM so those overlays pause the task reliably.
+    """
+    text = (snapshot or "").lower()
+    if not text.strip():
+        return None
+
+    if any(pattern in text for pattern in _CAPTCHA_GUARD_PATTERNS):
+        return StuckEvent(
+            reason=StuckReason.BROWSER_GUARD,
+            detail=(
+                "Browser Guard 检测到验证码、滑块或安全验证。请你在右侧浏览器窗口中"
+                "手动完成验证，然后点击“我已完成”。"
+            ),
+        )
+
+    has_login_word = any(pattern in text for pattern in _LOGIN_GUARD_PATTERNS)
+    has_login_signal = any(pattern in text for pattern in _LOGIN_SIGNAL_PATTERNS)
+    if has_login_word and has_login_signal:
+        return StuckEvent(
+            reason=StuckReason.BROWSER_GUARD,
+            detail=(
+                "Browser Guard 检测到登录/注册弹窗或账号验证。请你在右侧浏览器窗口中"
+                "完成登录或关闭弹窗，然后点击“我已完成”。"
+            ),
+        )
+
+    return None
+
+
 class BrowserTaskService:
     """Coordinates task creation, execution, and artifact persistence."""
 
@@ -92,6 +184,7 @@ class BrowserTaskService:
         )
         self._cancellation: dict[str, asyncio.Event] = {}
         self._resume: dict[str, asyncio.Event] = {}
+        self._resume_notes: dict[str, str] = {}
         self._running_tasks: set[asyncio.Task[None]] = set()
 
     @staticmethod
@@ -228,11 +321,13 @@ class BrowserTaskService:
         if hasattr(self, attr):
             delattr(self, attr)
 
-    def request_resume(self, task_id: str) -> bool:
+    def request_resume(self, task_id: str, note: Optional[str] = None) -> bool:
         """Signal that the user has finished interacting; resume the AI loop."""
         event = self._resume.get(task_id)
         if event is None:
             return False
+        if note:
+            self._resume_notes[task_id] = str(note).strip()[:2000]
         event.set()
         return True
 
@@ -248,6 +343,7 @@ class BrowserTaskService:
         finally:
             self._cancellation.pop(task.id, None)
             self._resume.pop(task.id, None)
+            self._resume_notes.pop(task.id, None)
             self._clear_takeover_flag(task.id)
 
     async def _resolve_decision_maker(self, task: BrowserTask) -> Optional[DecisionMaker]:
@@ -365,10 +461,29 @@ class BrowserTaskService:
                     cancel,
                     resume_event,
                     StuckEvent(reason=StuckReason.NO_CHANGE, detail=takeover_reason),
+                    history=history,
                 )
                 if paused == "cancelled":
                     return
                 # Refresh snapshot after the user finished interacting.
+                last_snapshot = await self._execute_snapshot(task, step_counter)
+                if last_snapshot is None:
+                    return
+                detector.reset()
+                continue
+
+            guard = _detect_browser_guard(last_snapshot or "")
+            if guard:
+                paused = await self._await_resume(
+                    task,
+                    step_counter,
+                    cancel,
+                    resume_event,
+                    guard,
+                    history=history,
+                )
+                if paused == "cancelled":
+                    return
                 last_snapshot = await self._execute_snapshot(task, step_counter)
                 if last_snapshot is None:
                     return
@@ -426,7 +541,7 @@ class BrowserTaskService:
             )
             if stuck:
                 paused = await self._await_resume(
-                    task, step_counter, cancel, resume_event, stuck
+                    task, step_counter, cancel, resume_event, stuck, history=history
                 )
                 if paused == "cancelled":
                     return
@@ -478,7 +593,7 @@ class BrowserTaskService:
             stuck = detector.observe_snapshot(new_snapshot)
             if stuck:
                 paused = await self._await_resume(
-                    task, step_counter, cancel, resume_event, stuck
+                    task, step_counter, cancel, resume_event, stuck, history=history
                 )
                 if paused == "cancelled":
                     return
@@ -511,6 +626,8 @@ class BrowserTaskService:
         cancel: asyncio.Event,
         resume_event: asyncio.Event,
         stuck: StuckEvent,
+        *,
+        history: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         """Park the loop in ``awaiting_user`` until resume/cancel arrives.
 
@@ -560,6 +677,12 @@ class BrowserTaskService:
             return "cancelled"
 
         # Resumed: bring the task back to RUNNING and let the loop re-snapshot.
+        resume_note = self._resume_notes.pop(task.id, "").strip()
+        resume_observation = (
+            f"用户完成接管：{resume_note}"
+            if resume_note
+            else "用户完成接管，恢复 AI。"
+        )
         self.storage.update_task(task.id, status=TaskStatus.RUNNING)
         await self._emit(task.id, {"type": "status", "status": "running"})
         self._record_step(
@@ -567,8 +690,19 @@ class BrowserTaskService:
             step_counter.next(),
             StepPhase.INTERVENTION,
             action_name="resume",
+            action_args={"note": resume_note} if resume_note else None,
+            observation=resume_observation,
             success=True,
         )
+        if history is not None:
+            history.append(
+                {
+                    "action": "user_resume",
+                    "args": {"note": resume_note} if resume_note else {},
+                    "observation": resume_observation,
+                    "success": True,
+                }
+            )
         return "resumed"
 
     # ── per-action helpers ──────────────────────────────────────────────
@@ -702,6 +836,7 @@ class BrowserTaskService:
         """
         if not selector:
             return False
+        selector = _normalize_agent_selector(selector)
 
         idx: Optional[int] = None
         try:
@@ -825,13 +960,21 @@ class BrowserTaskService:
             await cli.open_url(project_id, _require(args, "url"))
             return None, None
         if action == "click":
-            await cli.click(project_id, _require(args, "selector"))
+            await cli.click(project_id, _normalize_agent_selector(_require(args, "selector")))
             return None, None
         if action == "type":
-            await cli.type_text(project_id, _require(args, "selector"), _require(args, "text"))
+            await cli.type_text(
+                project_id,
+                _normalize_agent_selector(_require(args, "selector")),
+                _require(args, "text"),
+            )
             return None, None
         if action == "fill":
-            await cli.fill(project_id, _require(args, "selector"), _require(args, "text"))
+            await cli.fill(
+                project_id,
+                _normalize_agent_selector(_require(args, "selector")),
+                _require(args, "text"),
+            )
             return None, None
         if action == "press":
             await cli.press(project_id, _require(args, "key"))
@@ -842,7 +985,7 @@ class BrowserTaskService:
             await cli.scroll(project_id, _require(args, "direction"), pixels=pixels)
             return None, None
         if action == "wait":
-            await cli.wait(project_id, str(_require(args, "target")))
+            await cli.wait(project_id, _normalize_agent_selector(str(_require(args, "target"))))
             return None, None
         if action == "back":
             await cli.back(project_id)
@@ -854,7 +997,11 @@ class BrowserTaskService:
             await cli.reload(project_id)
             return None, None
         if action == "get_text":
-            response = await cli.get(project_id, "text", _require(args, "selector"))
+            response = await cli.get(
+                project_id,
+                "text",
+                _normalize_agent_selector(_require(args, "selector")),
+            )
             data = response.get("data") if isinstance(response, dict) else None
             if isinstance(data, dict):
                 return str(data.get("text") or data), None
@@ -921,34 +1068,61 @@ class BrowserTaskService:
         fields: dict[str, Any],
         label: Optional[str],
     ) -> tuple[dict[str, Any], str]:
-        """Run document.querySelector for each selector and persist as JSON."""
-        # Build a single eval expression that returns a JSON-encoded mapping.
-        # Each selector is JSON-stringified so user input can't break out of
-        # the JS string.
+        """Extract selector/ref values and persist them as JSON."""
         import json as _json
 
-        pairs = []
+        extracted: dict[str, Any] = {}
+        css_pairs = []
         for key, selector in fields.items():
             if not isinstance(selector, str):
                 raise ValueError(f"字段 '{key}' 的 selector 必须是字符串")
-            pairs.append(
+            if _is_agent_ref_selector(selector):
+                normalized = _normalize_agent_selector(selector)
+                try:
+                    response = await self.cli.get(task.project_id, "text", normalized)
+                    data = response.get("data") if isinstance(response, dict) else None
+                    if isinstance(data, dict):
+                        extracted[str(key)] = str(data.get("text") or "").strip()
+                    else:
+                        extracted[str(key)] = str(data or "").strip()
+                except AgentBrowserError as exc:
+                    logger.warning(
+                        "extract ref %s for field %s failed: %s",
+                        normalized,
+                        key,
+                        exc,
+                    )
+                    extracted[str(key)] = None
+                continue
+            css_pairs.append(
                 f"[{_json.dumps(str(key))}, document.querySelector({_json.dumps(selector)})]"
             )
-        expression = (
-            "JSON.stringify(Object.fromEntries("
-            f"[{','.join(pairs)}]"
-            ".map(([k,el])=>[k, el ? (el.innerText||el.value||el.textContent||'').trim() : null])"
-            "))"
-        )
-        response = await self.cli.eval_js(task.project_id, expression)
-        data_field = response.get("data") if isinstance(response, dict) else None
-        raw_value = (
-            data_field.get("result") if isinstance(data_field, dict) else data_field
-        )
-        try:
-            extracted = _json.loads(raw_value) if isinstance(raw_value, str) else dict(raw_value or {})
-        except (TypeError, ValueError):
-            extracted = {key: None for key in fields}
+
+        if css_pairs:
+            expression = (
+                "JSON.stringify(Object.fromEntries("
+                f"[{','.join(css_pairs)}]"
+                ".map(([k,el])=>[k, el ? (el.innerText||el.value||el.textContent||'').trim() : null])"
+                "))"
+            )
+            response = await self.cli.eval_js(task.project_id, expression)
+            data_field = response.get("data") if isinstance(response, dict) else None
+            raw_value = (
+                data_field.get("result") if isinstance(data_field, dict) else data_field
+            )
+            try:
+                css_extracted = (
+                    _json.loads(raw_value)
+                    if isinstance(raw_value, str)
+                    else dict(raw_value or {})
+                )
+            except (TypeError, ValueError):
+                css_extracted = {
+                    key: None
+                    for key, selector in fields.items()
+                    if isinstance(selector, str) and not _is_agent_ref_selector(selector)
+                }
+            extracted.update(css_extracted)
 
         path = self._artifact_path(task, step_index, "extracts", ".json")
         path.parent.mkdir(parents=True, exist_ok=True)

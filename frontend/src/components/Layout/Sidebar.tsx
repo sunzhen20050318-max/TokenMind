@@ -20,7 +20,6 @@ export type SidebarMainView =
   | 'tts'
   | 'voice-design'
   | 'video'
-  | 'browser-agent'
   | 'project-home'
   | 'project-chat'
   | 'settings';
@@ -61,7 +60,6 @@ function SidebarIcon({
     | 'music'
     | 'voice'
     | 'video'
-    | 'browser'
     | 'project';
 }) {
   if (id === 'settings') {
@@ -153,17 +151,6 @@ function SidebarIcon({
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <rect x="3" y="5" width="14" height="14" rx="3" />
         <path d="m17 10 4-2v8l-4-2" />
-      </svg>
-    );
-  }
-
-  if (id === 'browser') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <rect x="3" y="4" width="18" height="16" rx="2" />
-        <path d="M3 9h18" />
-        <circle cx="6" cy="6.5" r="0.6" fill="currentColor" />
-        <circle cx="8.5" cy="6.5" r="0.6" fill="currentColor" />
       </svg>
     );
   }
@@ -661,17 +648,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>视频</span>
             </button>
 
-            <button
-              className={`shell-sidebar__nav-item ${mainView === 'browser-agent' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => onSelectMainView('browser-agent')}
-            >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="browser" />
-              </span>
-              <span>Web Agent</span>
-            </button>
-
             <div className={`shell-sidebar__project-shell ${projectsExpanded ? 'is-open' : ''} ${isProjectViewActive ? 'is-active' : ''}`}>
               <button
                 className={`shell-sidebar__group-toggle ${projectsExpanded ? 'is-open' : ''} ${
@@ -867,20 +843,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="shell-sidebar__icon">
                 <SidebarIcon id="video" />
-              </span>
-            </button>
-
-            <button
-              className={`shell-sidebar__collapsed-button ${mainView === 'browser-agent' ? 'is-active' : ''}`}
-              type="button"
-              title="Web Agent"
-              onClick={() => {
-                onSelectMainView('browser-agent');
-                setSessionMenuOpen(false);
-              }}
-            >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="browser" />
               </span>
             </button>
 

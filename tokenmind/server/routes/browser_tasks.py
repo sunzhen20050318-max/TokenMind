@@ -21,7 +21,7 @@ import mimetypes
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -144,6 +144,10 @@ class TakeoverRequest(BaseModel):
     reason: str = "用户主动接管"
 
 
+class ResumeRequest(BaseModel):
+    note: Optional[str] = None
+
+
 @router.post("/browser-tasks/{task_id}/takeover")
 async def takeover_browser_task(task_id: str, payload: TakeoverRequest) -> dict:
     """User asks to pause the AI loop and intervene manually."""
@@ -161,7 +165,10 @@ async def takeover_browser_task(task_id: str, payload: TakeoverRequest) -> dict:
 
 
 @router.post("/browser-tasks/{task_id}/resume")
-async def resume_browser_task(task_id: str) -> dict:
+async def resume_browser_task(
+    task_id: str,
+    payload: Optional[ResumeRequest] = Body(default=None),
+) -> dict:
     """Hand control back to the AI after a user takeover."""
     service = _service_or_503()
     task = service.storage.get_task(task_id)
@@ -172,7 +179,7 @@ async def resume_browser_task(task_id: str) -> dict:
             status_code=409,
             detail=f"Task is in status '{task.status.value}', not awaiting user",
         )
-    accepted = service.request_resume(task_id)
+    accepted = service.request_resume(task_id, note=payload.note if payload else None)
     return {"task_id": task_id, "resumed": accepted}
 
 

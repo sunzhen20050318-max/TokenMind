@@ -20,6 +20,7 @@ class StuckReason(str, Enum):
     NO_CHANGE = "no_change"  # snapshot identical N times in a row
     REPEATED_FAILURE = "repeated_failure"  # action failed K times in a row
     DECISION_INSTABILITY = "decision_instability"  # LLM kept proposing the same failing action
+    BROWSER_GUARD = "browser_guard"  # login/captcha/security state needs user help
 
 
 @dataclass

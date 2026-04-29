@@ -15,7 +15,7 @@ import asyncio
 import logging
 from contextvars import ContextVar
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from tokenmind.agent.tools.base import Tool
 from tokenmind.browser_agent.models import (
@@ -24,6 +24,7 @@ from tokenmind.browser_agent.models import (
     CreateTaskRequest,
     TaskStatus,
 )
+from tokenmind.bus.events import OutboundMessage
 
 if TYPE_CHECKING:  # avoid hard import cycle at runtime
     from tokenmind.browser_agent.task_service import BrowserTaskService
@@ -35,6 +36,7 @@ logger = logging.getLogger("tokenmind.agent.tools.browser_task")
 # Per-turn context. The chat session id and project id flow in from the
 # AgentLoop call site so each tool invocation can attribute its task to the
 # right conversation.
+_channel_ctx: ContextVar[str] = ContextVar("browser_task_channel", default="")
 _session_ctx: ContextVar[str] = ContextVar("browser_task_session", default="")
 _project_ctx: ContextVar[str] = ContextVar("browser_task_project", default="")
 _message_id_ctx: ContextVar[Optional[str]] = ContextVar(
@@ -75,9 +77,11 @@ class RunBrowserTaskTool(Tool):
         self,
         service: "BrowserTaskService",
         attachment_store: Optional["AttachmentStore"] = None,
+        send_callback: Callable[[OutboundMessage], Awaitable[None]] | None = None,
     ) -> None:
         self._service = service
         self._attachments = attachment_store
+        self._send_callback = send_callback
 
     @property
     def name(self) -> str:
@@ -153,6 +157,7 @@ class RunBrowserTaskTool(Tool):
         """
         # Project chats reuse a project-level browser profile. Normal chats
         # fall back to their chat id and can be closed after the task ends.
+        _channel_ctx.set(channel or "")
         _session_ctx.set(chat_id or "")
         _project_ctx.set(project_id or chat_id or "default")
         _message_id_ctx.set(message_id)
@@ -191,35 +196,79 @@ class RunBrowserTaskTool(Tool):
             return f"Error: 创建浏览器任务失败：{exc}"
 
         self._service.schedule(task)
+        await self._emit_task_event(task.id, "started")
 
         try:
-            final = await asyncio.wait_for(self._wait_for_terminal(task.id), timeout=timeout)
+            final = await self._wait_for_terminal(task.id, timeout)
         except asyncio.TimeoutError:
             self._service.request_cancel(task.id)
             return (
                 f"⚠️ 浏览器任务 {task.id} 超过 {timeout}s 仍未完成，已请求取消。"
-                "可以让用户在 Web Agent 页面查看完整执行情况。"
+                "可以让用户在右侧浏览器执行窗口查看完整执行情况。"
             )
 
         # Promote select artifacts to chat attachments so the user sees them
-        # in the conversation, not only on the Web Agent page.
+        # in the conversation, not only in the browser task detail stream.
         attachment_refs = self._deliver_artifacts(
             chat_id, self._service.storage.list_artifacts(task.id)
         )
         return self._format_result(final, attachment_refs)
 
-    async def _wait_for_terminal(self, task_id: str) -> Any:
-        """Poll storage until the task reaches a terminal status."""
+    async def _wait_for_terminal(self, task_id: str, timeout: int) -> Any:
+        """Poll storage until the task reaches a terminal status.
+
+        Time spent in ``awaiting_user`` does not count against the browser
+        task timeout: the user may need to complete login, captcha, or another
+        manual handoff before the AI can continue.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        awaiting_since: float | None = None
         while True:
             current = self._service.storage.get_task(task_id)
             if current and current.status in (
                 TaskStatus.COMPLETED,
                 TaskStatus.FAILED,
                 TaskStatus.CANCELLED,
-                TaskStatus.AWAITING_USER,
             ):
                 return current
+            now = loop.time()
+            if current and current.status is TaskStatus.AWAITING_USER:
+                awaiting_since = awaiting_since or now
+            else:
+                if awaiting_since is not None:
+                    deadline += now - awaiting_since
+                    awaiting_since = None
+                if now >= deadline:
+                    raise asyncio.TimeoutError
             await asyncio.sleep(_POLL_INTERVAL_S)
+
+    async def _emit_task_event(self, task_id: str, event: str) -> None:
+        """Notify the Web UI that a chat-triggered browser task exists."""
+        if self._send_callback is None:
+            return
+
+        channel = _channel_ctx.get()
+        chat_id = _session_ctx.get()
+        if channel != "web" or not chat_id:
+            return
+
+        try:
+            await self._send_callback(
+                OutboundMessage(
+                    channel=channel,
+                    chat_id=chat_id,
+                    content=task_id,
+                    metadata={
+                        "_progress": True,
+                        "_browser_task": True,
+                        "_browser_task_id": task_id,
+                        "_browser_task_event": event,
+                    },
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to emit browser task event for %s", task_id)
 
     def _deliver_artifacts(
         self, chat_id: str, artifacts: list[BrowserArtifact]
@@ -282,7 +331,7 @@ class RunBrowserTaskTool(Tool):
         elif task.status is TaskStatus.AWAITING_USER:
             header = (
                 f"⏸ 浏览器任务 {task.id} 已暂停等待用户接管。"
-                "请在 Web Agent 页面手动操作并恢复 AI。"
+                "请在右侧浏览器执行窗口手动操作并恢复 AI。"
             )
         else:
             header = f"浏览器任务 {task.id} 当前状态：{task.status.value}"
@@ -318,6 +367,6 @@ class RunBrowserTaskTool(Tool):
             )
             lines.append(f"已自动添加为聊天附件：{attached}。")
         lines.append(
-            f"任务步数 {task.step_count}，详情见 Web Agent 页面（任务 ID {task.id}）。"
+            f"任务步数 {task.step_count}，详情见右侧浏览器执行窗口（任务 ID {task.id}）。"
         )
         return "\n".join(lines)

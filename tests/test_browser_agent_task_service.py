@@ -447,9 +447,15 @@ async def test_decision_factory_can_be_async(tmp_path: Path, env_ready) -> None:
 class _ArtifactCLI(_ReactFakeCLI):
     """Fake CLI that returns canned eval/get responses for artifact tests."""
 
-    def __init__(self, snapshots: list[str], eval_responses: dict[str, str]) -> None:
+    def __init__(
+        self,
+        snapshots: list[str],
+        eval_responses: dict[str, str],
+        get_responses: Optional[dict[str, str]] = None,
+    ) -> None:
         super().__init__(snapshots)
         self._eval_responses = eval_responses
+        self._get_responses = get_responses or {}
 
     async def eval_js(self, project_id: str, expression: str, *, timeout: float = 30.0) -> dict:
         self.calls.append(f"eval({expression[:40]}...)")
@@ -459,6 +465,14 @@ class _ArtifactCLI(_ReactFakeCLI):
             if key in expression:
                 return {"success": True, "data": {"result": value}, "error": None}
         return {"success": True, "data": {"result": ""}, "error": None}
+
+    async def get(self, project_id: str, what: str, selector: str, timeout: float = 15.0) -> dict:
+        self.calls.append(f"get({what},{selector})")
+        return {
+            "success": True,
+            "data": {"text": self._get_responses.get(selector, "")},
+            "error": None,
+        }
 
 
 @pytest.mark.asyncio
@@ -529,6 +543,40 @@ async def test_extract_persists_json_artifact(tmp_path: Path, env_ready) -> None
     assert art.metadata.get("fields") == ["title", "author"]
     saved = json.loads(Path(art.file_path).read_text(encoding="utf-8"))
     assert saved == {"title": "TokenMind", "author": "作者X"}
+
+
+@pytest.mark.asyncio
+async def test_extract_accepts_agent_browser_refs(tmp_path: Path, env_ready) -> None:
+    cli = _ArtifactCLI(
+        snapshots=["snap1", "snap2"],
+        eval_responses={},
+        get_responses={"@e43": "第一篇标题", "@e44": "作者A"},
+    )
+    decisions = [
+        Decision(
+            action="extract",
+            args={
+                "fields": {"标题1": "ref=e43", "作者1": "e44"},
+                "label": "小红书搜索结果",
+            },
+        ),
+        Decision(action="finish", args={"summary": "ok"}),
+    ]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+    await _wait_until(svc, task.id, timeout=10.0)
+
+    assert "get(text,@e43)" in cli.calls
+    assert "get(text,@e44)" in cli.calls
+    artifacts = svc.storage.list_artifacts(task.id)
+    art = [a for a in artifacts if a.kind.value == "extract_json"][0]
+    saved = json.loads(Path(art.file_path).read_text(encoding="utf-8"))
+    assert saved == {"标题1": "第一篇标题", "作者1": "作者A"}
 
 
 @pytest.mark.asyncio
@@ -618,6 +666,50 @@ async def test_user_initiated_takeover_pauses_until_resume(tmp_path: Path, env_r
     await _wait_until(svc, task.id, timeout=5.0)
     final = svc.storage.get_task(task.id)
     assert final.status is TaskStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_browser_guard_pauses_before_llm_and_resume_note_reaches_history(
+    tmp_path: Path,
+    env_ready,
+) -> None:
+    cli = _ReactFakeCLI([
+        "登录 手机号 验证码 安全验证",
+        "搜索结果列表 @e1",
+        "搜索结果列表 @e1",
+    ])
+    decisions = [Decision(action="finish", args={"summary": "done"})]
+    maker = _ScriptedDecisionMaker(decisions)
+    svc = BrowserTaskService(tmp_path, cli=cli, decision_factory=lambda task: maker)
+
+    task = svc.create_task(
+        CreateTaskRequest(project_id="p", instruction="x", start_url="https://x")
+    )
+    svc.schedule(task)
+
+    for _ in range(200):
+        await asyncio.sleep(0.02)
+        current = svc.storage.get_task(task.id)
+        if current and current.status is TaskStatus.AWAITING_USER:
+            break
+
+    current = svc.storage.get_task(task.id)
+    assert current is not None
+    assert current.status is TaskStatus.AWAITING_USER
+    assert maker.calls == []
+
+    assert svc.request_resume(task.id, note="我已完成登录并停在搜索结果页") is True
+    await _wait_until(svc, task.id, timeout=5.0)
+    final = svc.storage.get_task(task.id)
+    assert final is not None
+    assert final.status is TaskStatus.COMPLETED
+    assert maker.calls[0]["history_len"] == 1
+
+    steps = svc.storage.list_steps(task.id)
+    await_steps = [s for s in steps if s.action_name == "await_user"]
+    resume_steps = [s for s in steps if s.action_name == "resume"]
+    assert await_steps[0].action_args == {"reason": "browser_guard"}
+    assert "完成登录" in (resume_steps[0].observation or "")
 
 
 @pytest.mark.asyncio

@@ -31,6 +31,7 @@ interface BrowserAgentState {
   tasksError: string | null;
 
   selectedTaskId: string | null;
+  previewOpen: boolean;
   detail: BrowserTaskDetailResponse | null;
   detailLoading: boolean;
   detailError: string | null;
@@ -44,13 +45,15 @@ interface BrowserAgentState {
   refreshEnvCheck: () => Promise<void>;
   refreshTasks: (params?: { projectId?: string; sessionId?: string }) => Promise<void>;
   selectTask: (taskId: string | null) => void;
+  openPreviewTask: (taskId: string) => void;
+  closePreview: () => void;
   refreshDetail: () => Promise<void>;
   focusStep: (stepIndex: number | null) => void;
   createTask: (payload: CreateBrowserTaskRequest) => Promise<string | null>;
   continueTask: (taskId: string, payload: ContinueBrowserTaskRequest) => Promise<string | null>;
   cancelTask: (taskId: string) => Promise<void>;
   takeoverTask: (taskId: string, reason?: string) => Promise<void>;
-  resumeTask: (taskId: string) => Promise<void>;
+  resumeTask: (taskId: string, note?: string) => Promise<void>;
   intervene: (
     taskId: string,
     action: Parameters<typeof browserAgentApi.intervene>[1],
@@ -83,6 +86,7 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
   tasksError: null,
 
   selectedTaskId: null,
+  previewOpen: false,
   detail: null,
   detailLoading: false,
   detailError: null,
@@ -127,6 +131,7 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
     if (!taskId) {
       set({
         selectedTaskId: null,
+        previewOpen: false,
         detail: null,
         detailError: null,
         detailLoading: false,
@@ -220,6 +225,23 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
     set({ detailSocket: socket });
   },
 
+  openPreviewTask(taskId) {
+    set({ previewOpen: true });
+    if (get().selectedTaskId === taskId) {
+      void get().refreshDetail();
+      return;
+    }
+    get().selectTask(taskId);
+  },
+
+  closePreview() {
+    const { detail } = get();
+    set({ previewOpen: false });
+    if (detail && FINAL_STATUSES.has(detail.task.status)) {
+      get().selectTask(null);
+    }
+  },
+
   async refreshDetail() {
     const { selectedTaskId } = get();
     if (!selectedTaskId) return;
@@ -303,9 +325,9 @@ export const useBrowserAgentStore = create<BrowserAgentState>((set, get) => ({
     }
   },
 
-  async resumeTask(taskId) {
+  async resumeTask(taskId, note) {
     try {
-      await browserAgentApi.resumeTask(taskId);
+      await browserAgentApi.resumeTask(taskId, note);
     } catch (err) {
       set({
         detailError: err instanceof Error ? err.message : '恢复 AI 失败',
