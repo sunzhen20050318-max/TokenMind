@@ -142,6 +142,7 @@ interface ChatState {
   deleteSession: (sessionId: string) => Promise<void>;
   deleteSessionMessage: (sessionId: string, timestamp: string) => Promise<void>;
   renameSession: (sessionId: string, title: string | null) => Promise<void>;
+  applySessionTitle: (sessionId: string, title: string) => void;
   startStreamingAssistant: () => void;
   appendStreamingAssistant: (chunk: string) => void;
   finishStreamingAssistant: (content?: string, citations?: MessageCitation[], attachments?: Message['attachments']) => void;
@@ -659,6 +660,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to rename session' });
     }
+  },
+
+  applySessionTitle: (sessionId, title) => {
+    // Pure local update from a server-pushed auto-summarized title — no
+    // PUT roundtrip, the backend already persisted.
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.session_id === sessionId
+          ? { ...session, title: trimmed }
+          : session,
+      ),
+      projectSessions: state.projectSessions.map((session) =>
+        session.session_id === sessionId
+          ? { ...session, title: trimmed }
+          : session,
+      ),
+    }));
   },
 
   startStreamingAssistant: () => {

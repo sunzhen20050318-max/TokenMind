@@ -485,7 +485,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ) : (
               <div className="shell-sidebar__session-body">
                 <div className="shell-sidebar__session-title">
-                  <span className="shell-sidebar__session-title-text">{title}</span>
+                  {/* `key={title}` forces React to remount the span when the
+                      auto-generated title swaps in, retriggering the CSS
+                      fade animation. */}
+                  <span key={title} className="shell-sidebar__session-title-text">
+                    {title}
+                  </span>
                   {busy ? (
                     <span
                       className="shell-sidebar__session-busy"

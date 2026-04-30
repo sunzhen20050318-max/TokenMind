@@ -806,6 +806,19 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Smoothly cross-fade when the auto-generated title arrives 1–3s
+     after the user sent the first message. React swaps the text on
+     the same node so we use animation rather than transition. */
+  animation: shell-sidebar-title-fade 320ms ease;
+}
+
+@keyframes shell-sidebar-title-fade {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .shell-sidebar__session-busy {

@@ -139,6 +139,10 @@ export function useSessionOrchestrator(): void {
             is_guidance: true,
           });
           break;
+        case 'session_title_updated':
+          // Auto-generated title arrived from the background summarizer.
+          store.applySessionTitle(msg.session_id, msg.title);
+          break;
         case 'approval_required':
           if (trusted.has(sessionId) || store.getSessionSlice(sessionId).sessionExecTrusted) {
             wsPool.respondToToolApproval(sessionId, msg.approval_id, true);

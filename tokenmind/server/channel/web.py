@@ -95,6 +95,18 @@ class WebChannel(BaseChannel):
             )
             return
 
+        if msg.metadata.get("_session_title_updated"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "session_title_updated",
+                    "session_id": msg.metadata.get("_session_id") or msg.chat_id,
+                    "title": msg.metadata.get("_session_title") or msg.content,
+                    "channel": msg.channel,
+                },
+            )
+            return
+
         if msg.metadata.get("_guidance_received"):
             # Real-time user guidance — echo back so the chat UI can
             # render an inline "💡 引导" bubble without waiting for the
