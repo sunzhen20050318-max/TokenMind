@@ -17,7 +17,6 @@ from loguru import logger
 from tokenmind.agent.context import ContextBuilder
 from tokenmind.agent.memory import split_history_entries
 from tokenmind.audit import AuditLogger
-from tokenmind.browser_agent.task_service import BrowserTaskService
 from tokenmind.bus.events import InboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.config.loader import load_config
@@ -32,7 +31,6 @@ from tokenmind.projects import ProjectStore
 from tokenmind.server.attachments import AttachmentStore, categorize_attachment
 from tokenmind.server.channel.web import WebChannel
 from tokenmind.server.dependencies import (
-    set_browser_task_service,
     set_chat_service,
     set_connection_manager,
     set_cron_service,
@@ -45,7 +43,6 @@ from tokenmind.server.frontend import (
 )
 from tokenmind.server.routes import (
     assets_router,
-    browser_tasks_router,
     chat_router,
     config_router,
     creative_router,
@@ -1473,7 +1470,18 @@ async def lifespan(app: FastAPI):
                 )
         except Exception:
             logger.exception("Failed to clean uploads during startup")
-    yield
+    try:
+        yield
+    finally:
+        # Force-close any lingering WebSocket connections so uvicorn doesn't
+        # block on "Waiting for background tasks to complete" when the user
+        # left a browser tab open.
+        manager = getattr(app.state, "connection_manager", None)
+        if manager is not None:
+            try:
+                await manager.close_all()
+            except Exception:
+                logger.exception("Failed to close WebSocket connections during shutdown")
 
 
 def create_app(
@@ -1496,46 +1504,6 @@ def create_app(
     set_inbound_queue(bus.inbound)
     set_cron_service(getattr(agent_loop, "cron_service", None))
 
-    from tokenmind.browser_agent.decision import DecisionMaker
-    from tokenmind.browser_agent.stream import default_hub as _browser_stream_hub
-
-    def _make_browser_decision_maker(task):
-        # Lazy provider creation per task so model overrides are honored.
-        cfg = load_config()
-        try:
-            from tokenmind.cli.commands import _make_provider as _provider_factory
-            provider = _provider_factory(cfg)
-        except Exception:  # noqa: BLE001
-            logger.exception("failed to build LLM provider for browser task {}", task.id)
-            raise
-        model = task.metadata.get("model_override") or cfg.agents.defaults.model
-        return DecisionMaker(provider, model=model)
-
-    browser_task_service = BrowserTaskService(
-        session_manager.workspace,
-        decision_factory=_make_browser_decision_maker,
-        event_emitter=_browser_stream_hub.emit,
-    )
-    set_browser_task_service(browser_task_service)
-
-    # Expose the browser service to the chat agent via a tool so the user can
-    # trigger web tasks straight from a normal chat message. The chat
-    # service's attachment store is reused so artifacts auto-surface as
-    # downloadable attachments alongside the agent's reply.
-    try:
-        from tokenmind.agent.tools.browser_task import RunBrowserTaskTool
-
-        if hasattr(agent_loop, "tools") and agent_loop.tools is not None:
-            agent_loop.tools.register(
-                RunBrowserTaskTool(
-                    service=browser_task_service,
-                    attachment_store=chat_service.attachments,
-                    send_callback=agent_loop.bus.publish_outbound,
-                )
-            )
-    except Exception:  # noqa: BLE001
-        logger.exception("failed to register run_browser_task tool on agent loop")
-
     # Create FastAPI app
     app = FastAPI(
         title="TokenMind Web UI",
@@ -1544,6 +1512,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.chat_service = chat_service
+    app.state.connection_manager = connection_manager
 
     # Add CORS middleware
     app.add_middleware(
@@ -1556,7 +1525,6 @@ def create_app(
 
     # Include routers
     app.include_router(assets_router)
-    app.include_router(browser_tasks_router)
     app.include_router(chat_router)
     app.include_router(config_router)
     app.include_router(creative_router)

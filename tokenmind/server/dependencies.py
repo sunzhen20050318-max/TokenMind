@@ -65,17 +65,3 @@ def set_channel_manager(manager: Any) -> None:
 def get_channel_manager() -> Any:
     """Get the global external channel manager instance."""
     return _channel_manager
-
-
-_browser_task_service: Any = None
-
-
-def set_browser_task_service(service: Any) -> None:
-    """Set the global browser task service instance."""
-    global _browser_task_service
-    _browser_task_service = service
-
-
-def get_browser_task_service() -> Any:
-    """Get the global browser task service instance."""
-    return _browser_task_service

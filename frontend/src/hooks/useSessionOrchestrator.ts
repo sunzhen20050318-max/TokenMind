@@ -4,7 +4,6 @@ import {
   playReplyNotification,
 } from '../services/notificationSound';
 import { wsPool } from '../services/websocket';
-import { useBrowserAgentStore } from '../stores/browserAgentStore';
 import { useChatStore } from '../stores/chatStore';
 import type { WSMessageType } from '../types';
 
@@ -122,9 +121,6 @@ export function useSessionOrchestrator(): void {
             detail: msg.detail,
           });
           store.setSessionActiveTool(sessionId, null);
-          break;
-        case 'browser_task':
-          useBrowserAgentStore.getState().openPreviewTask(msg.task_id);
           break;
         case 'progress':
           store.addSessionTimelineEvent(sessionId, {

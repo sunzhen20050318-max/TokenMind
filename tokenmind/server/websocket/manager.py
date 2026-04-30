@@ -96,3 +96,22 @@ class ConnectionManager:
     def is_session_connected(self, session_key: str) -> bool:
         """Check if a session has an active WebSocket connection."""
         return session_key in self._connections
+
+    async def close_all(self) -> None:
+        """Force-close every active WebSocket and clear the registry.
+
+        Used during server shutdown so uvicorn doesn't sit in
+        "Waiting for background tasks" while idle browser tabs hold the
+        connections open.
+        """
+        async with self._lock:
+            for session_key, websocket in list(self._connections.items()):
+                try:
+                    await websocket.close(code=1001, reason="server shutting down")
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "WebSocket close raised during shutdown for {}",
+                        session_key,
+                        exc_info=True,
+                    )
+            self._connections.clear()

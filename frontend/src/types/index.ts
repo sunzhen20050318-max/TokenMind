@@ -265,7 +265,6 @@ export type WSMessageType =
   | { type: 'tool_start'; content: string; tool_id: string; tool_name: string; channel: string }
   | { type: 'tool_end'; content: string; tool_id: string; tool_name: string; duration: number; channel: string }
   | { type: 'tool_error'; content: string; tool_id: string; tool_name: string; detail?: string; channel: string }
-  | { type: 'browser_task'; event: 'started' | string; task_id: string; content?: string; channel: string }
   | { type: 'progress'; content: string }
   | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
   | { type: 'error'; content: string }

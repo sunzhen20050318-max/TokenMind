@@ -343,6 +343,33 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
                     {children}
                   </pre>
                 ),
+                img: ({ src, alt, ...rest }) => {
+                  // Older sessions persisted assistant replies that embed
+                  // generated-image filenames as relative-URL markdown
+                  // (e.g. ![](generated-image-abc.jpeg)). The browser
+                  // would GET them as a relative URL and 404 on every
+                  // page load. Resolve those against this message's own
+                  // attachments where possible; drop the tag entirely if
+                  // no matching attachment exists, so we don't spam 404s.
+                  const raw = typeof src === 'string' ? src : '';
+                  const isAbsolute = /^(?:https?:|data:|blob:|\/)/i.test(raw);
+                  if (!isAbsolute && raw) {
+                    const match = message.attachments?.find(
+                      (att) => att.name === raw || att.path?.endsWith(raw),
+                    );
+                    if (match?.id) {
+                      return (
+                        <img
+                          src={api.getAttachmentUrl(match.id)}
+                          alt={alt}
+                          {...rest}
+                        />
+                      );
+                    }
+                    return null;
+                  }
+                  return <img src={raw} alt={alt} {...rest} />;
+                },
               }}
             >
               {renderedContent || (message.attachments?.length ? '已附带文件。' : '')}

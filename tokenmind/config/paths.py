@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 from loguru import logger
+
 from tokenmind.config.loader import get_app_dir, get_config_path, get_legacy_app_dir
 from tokenmind.utils.helpers import ensure_dir
 
@@ -58,6 +59,11 @@ def get_cli_history_path() -> Path:
 def get_bridge_install_dir() -> Path:
     """Return the shared WhatsApp bridge installation directory."""
     return get_data_dir() / "bridge"
+
+
+def get_browser_runtime_install_dir() -> Path:
+    """Return the shared agent-browser runtime installation directory."""
+    return get_data_dir() / "browser_runtime"
 
 
 def get_legacy_sessions_dir() -> Path:

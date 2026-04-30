@@ -126,8 +126,16 @@ class GenerateImageTool(Tool):
             )
             self._delivered.append(ref)
             attachment = self._store.resolve(ref["id"]).to_dict()
+            # Don't surface the raw filename to the LLM — it tends to write
+            # `![](generated-image-xxx.jpeg)` markdown, which the browser then
+            # GETs as a relative URL and fetches as a 404. The attachment is
+            # already wired up to the reply via the side channel.
             if self._channel == "web":
-                return f"Generated image {ref['name']} and attached it to the current web reply."
+                return (
+                    "Image generated and attached to this reply. "
+                    "Do NOT embed it via markdown — the chat UI shows the "
+                    "attachment automatically."
+                )
             return f"Generated image saved to {attachment['storage_path']}."
         except Exception as exc:
             return f"Error generating image: {exc}"

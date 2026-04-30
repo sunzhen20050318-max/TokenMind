@@ -303,7 +303,6 @@ class AgentLoop:
         channel: str,
         chat_id: str,
         message_id: str | None = None,
-        project_id: str | None = None,
     ) -> None:
         """Update context for all tools that need routing info."""
         for name in (
@@ -312,18 +311,14 @@ class AgentLoop:
             "cron",
             "deliver_attachment",
             "generate_image",
-            "run_browser_task",
         ):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
-                    if name == "run_browser_task":
-                        tool.set_context(channel, chat_id, message_id, project_id)
-                    else:
-                        tool.set_context(
-                            channel,
-                            chat_id,
-                            *([message_id] if name in {"message", "deliver_attachment", "generate_image"} else []),
-                        )
+                    tool.set_context(
+                        channel,
+                        chat_id,
+                        *([message_id] if name in {"message", "deliver_attachment", "generate_image"} else []),
+                    )
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -884,7 +879,7 @@ class AgentLoop:
             key = f"{channel}:{chat_id}"
             session = self.sessions.get_or_create(key)
             await self.memory_consolidator.maybe_consolidate_by_tokens(session)
-            self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"), session.project_id)
+            self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"))
             history = session.get_history(max_messages=0)
             # Subagent results should be assistant role, other system messages use user role
             current_role = "assistant" if msg.sender_id == "subagent" else "user"
@@ -932,7 +927,7 @@ class AgentLoop:
             )
         await self.memory_consolidator.maybe_consolidate_by_tokens(session)
 
-        self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"), session.project_id)
+        self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
         if message_tool := self.tools.get("message"):
             if isinstance(message_tool, MessageTool):
                 message_tool.start_turn()

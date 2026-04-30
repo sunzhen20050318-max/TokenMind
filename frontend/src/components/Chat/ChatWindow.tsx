@@ -56,11 +56,6 @@ const STARTER_CARDS: StarterCard[] = [
     prompt: '请检查当前可用的 MCP 服务和工具，并告诉我它们可以帮我完成什么任务。',
   },
   {
-    id: 'browser',
-    title: '浏览器操作',
-    prompt: '请使用浏览器帮我完成这个网页任务：',
-  },
-  {
     id: 'task',
     title: '定时任务',
     prompt: '请帮我设计一个适合当前项目的自动化或定时任务方案。',
@@ -581,39 +576,47 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     let pendingArtifacts: TurnArtifacts | null = null;
     let pendingIsCurrentTurn = false;
 
+    const buildToolChain = (keySeed: string) => {
+      if (!pendingArtifacts) return null;
+
+      const hasToolArtifacts =
+        pendingArtifacts.toolCalls.length > 0 ||
+        pendingArtifacts.timelineEvents.length > 0 ||
+        (pendingIsCurrentTurn && isLoading && !!activeTool);
+
+      if (!hasToolArtifacts) return null;
+
+      return (
+        <ToolChain
+          key={`chain-${keySeed}`}
+          toolCalls={pendingArtifacts.toolCalls}
+          isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
+          isDone={
+            !pendingIsCurrentTurn ||
+            !isLoading ||
+            !pendingArtifacts.toolCalls.some((toolCall) => toolCall.status === 'running')
+          }
+          displayCount={pendingArtifacts.toolCalls.length}
+          activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
+          timelineEvents={pendingArtifacts.timelineEvents}
+          variant="embedded"
+        />
+      );
+    };
+
     const buildStandaloneChain = (keySeed: string) => {
       if (!pendingTurnKey || !pendingArtifacts) {
         return null;
       }
 
-      const hasArtifacts =
-        pendingArtifacts.toolCalls.length > 0 ||
-        pendingArtifacts.timelineEvents.length > 0 ||
-        (pendingIsCurrentTurn && isLoading && !!activeTool);
-
-      if (!hasArtifacts) {
-        return null;
-      }
+      const chain = buildToolChain(keySeed);
+      if (!chain) return null;
 
       return (
         <MessageBubble
           key={`toolchain-standalone-${keySeed}`}
           message={{ role: 'assistant', content: '' }}
-          embeddedToolChain={
-            <ToolChain
-              toolCalls={pendingArtifacts.toolCalls}
-              isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
-              isDone={
-                !pendingIsCurrentTurn ||
-                !isLoading ||
-                !pendingArtifacts.toolCalls.some((toolCall) => toolCall.status === 'running')
-              }
-              displayCount={pendingArtifacts.toolCalls.length}
-              activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
-              timelineEvents={pendingArtifacts.timelineEvents}
-              variant="embedded"
-            />
-          }
+          embeddedToolChain={chain}
         />
       );
     };
@@ -652,32 +655,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       }
 
       if (message.role === 'assistant' && pendingTurnKey && pendingArtifacts) {
-        const hasArtifacts =
-          pendingArtifacts.toolCalls.length > 0 ||
-          pendingArtifacts.timelineEvents.length > 0 ||
-          (pendingIsCurrentTurn && isLoading && !!activeTool);
+        const chain = buildToolChain(keyBase);
 
         nodes.push(
           <MessageBubble
             key={keyBase}
             message={message}
-            embeddedToolChain={
-              hasArtifacts ? (
-                <ToolChain
-                  toolCalls={pendingArtifacts.toolCalls}
-                  isActive={pendingIsCurrentTurn && isLoading && !!activeTool}
-                  isDone={
-                    !pendingIsCurrentTurn ||
-                    !isLoading ||
-                    !pendingArtifacts.toolCalls.some((toolCall) => toolCall.status === 'running')
-                  }
-                  displayCount={pendingArtifacts.toolCalls.length}
-                  activeToolName={pendingIsCurrentTurn ? activeTool || undefined : undefined}
-                  timelineEvents={pendingArtifacts.timelineEvents}
-                  variant="embedded"
-                />
-              ) : undefined
-            }
+            embeddedToolChain={chain ?? undefined}
           />
         );
         pendingTurnKey = null;
