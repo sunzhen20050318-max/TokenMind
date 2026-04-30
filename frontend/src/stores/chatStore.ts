@@ -126,6 +126,7 @@ interface ChatState {
   loadSessions: () => Promise<void>;
   loadHistory: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  deleteSessionMessage: (sessionId: string, timestamp: string) => Promise<void>;
   renameSession: (sessionId: string, title: string | null) => Promise<void>;
   startStreamingAssistant: () => void;
   appendStreamingAssistant: (chunk: string) => void;
@@ -574,6 +575,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to delete session' });
     }
+  },
+
+  deleteSessionMessage: async (sessionId, timestamp) => {
+    try {
+      await api.deleteSessionMessage(sessionId, timestamp);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to delete message' });
+      return;
+    }
+    // Mirror the backend's delete-with-tool-scaffolding behaviour locally so
+    // the UI updates instantly without a refetch:
+    //  • user message → drop just that one
+    //  • assistant message → drop it plus any directly-preceding
+    //    tool-call/tool-response messages (one logical turn)
+    const trim = (messages: Message[]): Message[] => {
+      const idx = messages.findIndex((m) => m.timestamp === timestamp);
+      if (idx === -1) return messages;
+      const target = messages[idx];
+      if (target.role === 'user') {
+        return messages.filter((_, i) => i !== idx);
+      }
+      if (target.role === 'assistant') {
+        let start = idx;
+        while (start > 0) {
+          const prev = messages[start - 1];
+          if (prev.role === 'tool') {
+            start -= 1;
+            continue;
+          }
+          if (prev.role === 'assistant' && Array.isArray(prev.tool_calls) && prev.tool_calls.length > 0) {
+            start -= 1;
+            continue;
+          }
+          break;
+        }
+        return [...messages.slice(0, start), ...messages.slice(idx + 1)];
+      }
+      return messages;
+    };
+
+    set((state) => {
+      const isForeground = state.currentSession === sessionId;
+      const slice = state.sessionsState[sessionId];
+      const next: Partial<ChatState> = {};
+      if (isForeground) {
+        next.messages = trim(state.messages);
+      }
+      if (slice) {
+        next.sessionsState = {
+          ...state.sessionsState,
+          [sessionId]: {
+            ...slice,
+            messages: trim(slice.messages),
+          },
+        };
+      }
+      return next;
+    });
   },
 
   renameSession: async (sessionId, title) => {

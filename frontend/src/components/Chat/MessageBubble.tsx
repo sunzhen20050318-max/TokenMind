@@ -31,6 +31,11 @@ function formatAttachmentSize(size?: number): string | null {
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedToolChain }) => {
   const isUser = message.role === 'user';
   const openAttachmentPreview = useChatStore((state) => state.openAttachmentPreview);
+  const currentSession = useChatStore((state) => state.currentSession);
+  const deleteSessionMessage = useChatStore((state) => state.deleteSessionMessage);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const renderedContent = extractTextContent(message.content, message.attachments);
   const visibleCitations = useMemo(
     () => resolveVisibleCitations(message, renderedContent),
@@ -136,6 +141,106 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
       </div>
     );
   };
+
+  const canCopy = renderedContent.trim().length > 0;
+  const canDelete =
+    !!message.timestamp &&
+    !!currentSession &&
+    !message.isStreaming &&
+    (message.role === 'user' || message.role === 'assistant');
+
+  const handleCopy = async () => {
+    if (!canCopy) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(renderedContent);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = renderedContent;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopyState('copied');
+      setTimeout(() => setCopyState('idle'), 1500);
+    } catch {
+      setCopyState('failed');
+      setTimeout(() => setCopyState('idle'), 1500);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!canDelete || !currentSession || !message.timestamp || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteSessionMessage(currentSession, message.timestamp);
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  };
+
+  const actionBar =
+    canCopy || canDelete ? (
+      <div className="message-bubble__actions" aria-label="消息操作">
+        {canCopy ? (
+          <button
+            type="button"
+            className="message-bubble__action"
+            onClick={() => void handleCopy()}
+            title={
+              copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'
+            }
+            aria-label="复制消息"
+          >
+            {copyState === 'copied' ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="9" y="9" width="11" height="11" rx="2" />
+                <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+              </svg>
+            )}
+          </button>
+        ) : null}
+        {canDelete ? (
+          <button
+            type="button"
+            className={`message-bubble__action ${confirmingDelete ? 'is-confirming' : ''}`}
+            onClick={() => {
+              if (confirmingDelete) {
+                void handleDelete();
+              } else {
+                setConfirmingDelete(true);
+                setTimeout(() => setConfirmingDelete(false), 3000);
+              }
+            }}
+            title={
+              deleting
+                ? '删除中…'
+                : confirmingDelete
+                  ? '再点一次确认删除'
+                  : message.role === 'assistant'
+                    ? '删除（连同前置工具调用）'
+                    : '删除消息'
+            }
+            aria-label="删除消息"
+            disabled={deleting}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 6h18" strokeLinecap="round" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+    ) : null;
 
   return (
     <div className={`message-row ${isUser ? 'is-user' : 'is-assistant'}`}>
@@ -403,6 +508,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
 
             {message.isStreaming ? <span className="message-bubble__cursor" /> : null}
           </div>
+
+          {actionBar}
         </div>
       </div>
 

@@ -177,6 +177,17 @@ export const api = {
     return res.json();
   },
 
+  async deleteSessionMessage(sessionId: string, timestamp: string): Promise<void> {
+    const params = new URLSearchParams({ timestamp });
+    const res = await fetch(
+      `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/messages?${params.toString()}`,
+      { method: 'DELETE' },
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to delete message: ${res.statusText}`);
+    }
+  },
+
   async getCronStatus(): Promise<CronStatus> {
     const res = await fetch(`${API_BASE}/cron/status`);
     if (!res.ok) {

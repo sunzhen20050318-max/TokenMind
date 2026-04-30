@@ -93,6 +93,27 @@ async def clear_session_history(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.delete("/{session_id}/messages")
+async def delete_session_message(
+    session_id: str,
+    timestamp: str,
+    service=Depends(get_chat_service),
+) -> dict:
+    """Remove a single message (identified by its timestamp) from a session.
+
+    Deleting an assistant reply also removes the immediately preceding
+    tool-call/tool-response messages so the LLM context stays consistent
+    on the next turn.
+    """
+    try:
+        removed = await service.delete_message(session_id, timestamp)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not removed:
+        raise HTTPException(status_code=404, detail="message not found")
+    return {"session_id": session_id, "removed": True}
+
+
 @router.put("/{session_id}", response_model=RenameSessionResponse)
 async def rename_session(
     session_id: str,

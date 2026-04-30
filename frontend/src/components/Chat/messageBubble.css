@@ -42,6 +42,60 @@
   flex: 1;
 }
 
+.message-bubble__actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.message-row:hover .message-bubble__actions,
+.message-bubble__actions:focus-within {
+  opacity: 1;
+}
+
+.message-row.is-user .message-bubble__actions {
+  justify-content: flex-end;
+}
+
+.message-bubble__action {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #6f727a;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.message-bubble__action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ececef;
+  border-color: #2c2e34;
+}
+
+.message-bubble__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.message-bubble__action.is-confirming {
+  color: #f37e7e;
+  border-color: #532727;
+  background: rgba(243, 126, 126, 0.1);
+}
+
+.message-row.is-user .message-bubble__action:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+  color: #2a2a2a;
+  border-color: #d9dce0;
+}
+
 .message-row__assistant-mark {
   display: block;
   opacity: 0.96;

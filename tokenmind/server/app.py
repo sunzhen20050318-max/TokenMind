@@ -1414,6 +1414,24 @@ class ChatService:
         """Delete a session."""
         return self._delete_session_now(session_id)
 
+    async def delete_message(self, session_id: str, timestamp: str) -> bool:
+        """Remove a single message from a session (and connected tool scaffolding)."""
+        session = self.session_manager.get_or_create(session_id)
+        if not session.delete_message(timestamp):
+            return False
+        self.session_manager.save(session)
+        channel, chat_id = (session_id.split(":", 1) if ":" in session_id else ("web", session_id))
+        self.audit.record(
+            "session.message.deleted",
+            "success",
+            session_key=session_id,
+            channel=channel,
+            chat_id=chat_id,
+            actor="web_user",
+            details={"timestamp": timestamp},
+        )
+        return True
+
     async def clear_history(self, session_id: str) -> bool:
         """Clear history for a session."""
         session = self.session_manager.get_or_create(session_id)

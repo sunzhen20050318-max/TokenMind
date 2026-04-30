@@ -72,6 +72,56 @@ class Session:
         self.messages.append(msg)
         self.updated_at = datetime.now()
 
+    def delete_message(self, timestamp: str) -> bool:
+        """Remove the message identified by ``timestamp`` and any directly
+        connected tool-call scaffolding.
+
+        Behaviour by role:
+
+        * ``user``: drop just that one message.
+        * ``assistant``: drop this assistant reply *and* the ``assistant``
+          ``tool_calls`` + ``tool`` response messages that immediately
+          precede it (they form one logical turn — keeping them around
+          would leave dangling tool calls without a user-visible answer).
+        * other roles (``tool``/``system``): refuse — those should only be
+          removed transitively via an assistant deletion.
+
+        Returns ``True`` when at least one message was removed.
+        """
+        target_idx: int | None = None
+        for i, msg in enumerate(self.messages):
+            if msg.get("timestamp") == timestamp:
+                target_idx = i
+                break
+        if target_idx is None:
+            return False
+
+        target = self.messages[target_idx]
+        role = target.get("role")
+
+        if role == "user":
+            del self.messages[target_idx]
+            self.updated_at = datetime.now()
+            return True
+
+        if role == "assistant":
+            start = target_idx
+            while start > 0:
+                prev = self.messages[start - 1]
+                prev_role = prev.get("role")
+                if prev_role == "tool":
+                    start -= 1
+                    continue
+                if prev_role == "assistant" and prev.get("tool_calls"):
+                    start -= 1
+                    continue
+                break
+            del self.messages[start : target_idx + 1]
+            self.updated_at = datetime.now()
+            return True
+
+        return False
+
     @staticmethod
     def _find_legal_start(messages: list[dict[str, Any]]) -> int:
         """Find first index where every tool result has a matching assistant tool_call."""
