@@ -142,12 +142,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
     );
   };
 
-  const canCopy = renderedContent.trim().length > 0;
-  const canDelete =
-    !!message.timestamp &&
-    !!currentSession &&
-    !message.isStreaming &&
-    (message.role === 'user' || message.role === 'assistant');
+  // Action bar (copy / delete) is only shown for user messages — by
+  // contract, deleting a user message also drops the assistant reply it
+  // triggered, so AI bubbles need no controls of their own.
+  const showActions = isUser && !message.isStreaming;
+  const canCopy = showActions && renderedContent.trim().length > 0;
+  const canDelete = showActions && !!message.timestamp && !!currentSession;
 
   const handleCopy = async () => {
     if (!canCopy) return;
@@ -508,9 +508,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
 
             {message.isStreaming ? <span className="message-bubble__cursor" /> : null}
           </div>
-
-          {actionBar}
         </div>
+
+        {actionBar}
       </div>
 
       {isUser ? (

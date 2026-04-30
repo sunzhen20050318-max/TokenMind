@@ -40,23 +40,31 @@
 .message-row__body {
   min-width: 0;
   flex: 1;
+  position: relative;
 }
 
 .message-bubble__actions {
+  position: absolute;
+  top: 100%;
+  right: 0;
   display: flex;
   gap: 4px;
-  margin-top: 4px;
+  /* padding (not margin) so the hit-box sits flush against the bubble:
+     the mouse can slide from bubble → action without hitting a gap that
+     would clear the :hover state. */
+  padding-top: 4px;
   opacity: 0;
   transition: opacity 120ms ease;
+  z-index: 1;
 }
 
+/* Show on bubble hover *or* once the cursor reaches the action bar itself
+   — that second selector is what prevents the buttons from blinking out
+   while the user is reaching for them. */
 .message-row:hover .message-bubble__actions,
+.message-bubble__actions:hover,
 .message-bubble__actions:focus-within {
   opacity: 1;
-}
-
-.message-row.is-user .message-bubble__actions {
-  justify-content: flex-end;
 }
 
 .message-bubble__action {
@@ -66,7 +74,7 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: #6f727a;
+  color: #979aa3;
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
@@ -74,7 +82,7 @@
 }
 
 .message-bubble__action:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
   color: #ececef;
   border-color: #2c2e34;
 }
@@ -88,12 +96,6 @@
   color: #f37e7e;
   border-color: #532727;
   background: rgba(243, 126, 126, 0.1);
-}
-
-.message-row.is-user .message-bubble__action:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.05);
-  color: #2a2a2a;
-  border-color: #d9dce0;
 }
 
 .message-row__assistant-mark {

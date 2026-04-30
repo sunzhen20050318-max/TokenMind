@@ -584,35 +584,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ error: e instanceof Error ? e.message : 'Failed to delete message' });
       return;
     }
-    // Mirror the backend's delete-with-tool-scaffolding behaviour locally so
-    // the UI updates instantly without a refetch:
-    //  • user message → drop just that one
-    //  • assistant message → drop it plus any directly-preceding
-    //    tool-call/tool-response messages (one logical turn)
+    // Mirror the backend logic locally so the UI updates instantly: a user
+    // message takes the entire assistant turn it triggered with it (the
+    // assistant tool-call message + any tool responses + the final
+    // assistant content message), stopping at the next user message.
     const trim = (messages: Message[]): Message[] => {
       const idx = messages.findIndex((m) => m.timestamp === timestamp);
       if (idx === -1) return messages;
-      const target = messages[idx];
-      if (target.role === 'user') {
-        return messages.filter((_, i) => i !== idx);
+      if (messages[idx].role !== 'user') return messages;
+      let end = idx + 1;
+      while (end < messages.length && messages[end].role !== 'user') {
+        end += 1;
       }
-      if (target.role === 'assistant') {
-        let start = idx;
-        while (start > 0) {
-          const prev = messages[start - 1];
-          if (prev.role === 'tool') {
-            start -= 1;
-            continue;
-          }
-          if (prev.role === 'assistant' && Array.isArray(prev.tool_calls) && prev.tool_calls.length > 0) {
-            start -= 1;
-            continue;
-          }
-          break;
-        }
-        return [...messages.slice(0, start), ...messages.slice(idx + 1)];
-      }
-      return messages;
+      return [...messages.slice(0, idx), ...messages.slice(end)];
     };
 
     set((state) => {

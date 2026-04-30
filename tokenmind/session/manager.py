@@ -73,18 +73,14 @@ class Session:
         self.updated_at = datetime.now()
 
     def delete_message(self, timestamp: str) -> bool:
-        """Remove the message identified by ``timestamp`` and any directly
-        connected tool-call scaffolding.
+        """Remove the user message identified by ``timestamp`` along with the
+        entire assistant turn it produced (tool calls, tool responses and
+        final assistant reply).
 
-        Behaviour by role:
-
-        * ``user``: drop just that one message.
-        * ``assistant``: drop this assistant reply *and* the ``assistant``
-          ``tool_calls`` + ``tool`` response messages that immediately
-          precede it (they form one logical turn — keeping them around
-          would leave dangling tool calls without a user-visible answer).
-        * other roles (``tool``/``system``): refuse — those should only be
-          removed transitively via an assistant deletion.
+        Only ``user`` messages are deletable from the chat UI — deleting
+        a user message is the user's way of taking back both the question
+        and any answer it triggered, so we drop everything from the user
+        message up to (but not including) the next user message.
 
         Returns ``True`` when at least one message was removed.
         """
@@ -97,30 +93,19 @@ class Session:
             return False
 
         target = self.messages[target_idx]
-        role = target.get("role")
+        if target.get("role") != "user":
+            # Non-user messages can only be removed transitively (via the
+            # parent user-message deletion above).
+            return False
 
-        if role == "user":
-            del self.messages[target_idx]
-            self.updated_at = datetime.now()
-            return True
-
-        if role == "assistant":
-            start = target_idx
-            while start > 0:
-                prev = self.messages[start - 1]
-                prev_role = prev.get("role")
-                if prev_role == "tool":
-                    start -= 1
-                    continue
-                if prev_role == "assistant" and prev.get("tool_calls"):
-                    start -= 1
-                    continue
+        end = target_idx + 1
+        while end < len(self.messages):
+            if self.messages[end].get("role") == "user":
                 break
-            del self.messages[start : target_idx + 1]
-            self.updated_at = datetime.now()
-            return True
-
-        return False
+            end += 1
+        del self.messages[target_idx:end]
+        self.updated_at = datetime.now()
+        return True
 
     @staticmethod
     def _find_legal_start(messages: list[dict[str, Any]]) -> int:
