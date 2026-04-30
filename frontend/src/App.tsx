@@ -45,7 +45,12 @@ const App: React.FC = () => {
   const { sessions } = useSessions();
   const [gateDismissed, setGateDismissed] = useState(false);
   const [gateExiting, setGateExiting] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    // Default to collapsed unless the user explicitly expanded last time.
+    return stored === null ? true : stored !== 'false';
+  });
   const [mainView, setMainView] = useState<
     | 'chat'
     | 'knowledge'
@@ -85,13 +90,6 @@ const App: React.FC = () => {
     }
     window.localStorage.setItem(LAST_SESSION_KEY, currentSession);
   }, [currentSession]);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    if (stored === 'true') {
-      setSidebarCollapsed(true);
-    }
-  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? 'true' : 'false');

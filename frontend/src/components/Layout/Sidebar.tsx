@@ -60,7 +60,8 @@ function SidebarIcon({
     | 'music'
     | 'voice'
     | 'video'
-    | 'project';
+    | 'project'
+    | 'more';
 }) {
   if (id === 'settings') {
     return (
@@ -155,6 +156,16 @@ function SidebarIcon({
     );
   }
 
+  if (id === 'more') {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="6" cy="12" r="1.6" />
+        <circle cx="12" cy="12" r="1.6" />
+        <circle cx="18" cy="12" r="1.6" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M12 5v14" />
@@ -238,8 +249,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
-  const [projectsExpanded, setProjectsExpanded] = useState(true);
-  const [voiceExpanded, setVoiceExpanded] = useState(() => VOICE_VIEWS.includes(mainView));
+  const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
   const [confirmState, setConfirmState] = useState<{
     kind: 'delete-project' | 'delete-project-session';
@@ -280,6 +292,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [sessionMenuOpen]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handler = (event: MouseEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [moreMenuOpen]);
 
   const filteredSessions = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -578,76 +601,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>资产库</span>
             </button>
 
-            <button
-              className={`shell-sidebar__nav-item ${mainView === 'music' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => onSelectMainView('music')}
-            >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="music" />
-              </span>
-              <span>音乐</span>
-            </button>
-
-            <div
-              className={`shell-sidebar__project-shell ${voiceExpanded ? 'is-open' : ''} ${
-                VOICE_VIEWS.includes(mainView) ? 'is-active' : ''
-              }`}
-            >
-              <button
-                className={`shell-sidebar__group-toggle ${voiceExpanded ? 'is-open' : ''} ${
-                  VOICE_VIEWS.includes(mainView) ? 'is-active' : ''
-                }`}
-                type="button"
-                onClick={() => setVoiceExpanded((value) => !value)}
-              >
-                <span className="shell-sidebar__group-label">
-                  <span className="shell-sidebar__icon">
-                    <SidebarIcon id="voice" />
-                  </span>
-                  <span>声音工程</span>
-                </span>
-                <span className={`shell-sidebar__group-caret ${voiceExpanded ? 'is-open' : ''}`}>▾</span>
-              </button>
-
-              {voiceExpanded ? (
-                <div className="shell-sidebar__voice-list">
-                  <button
-                    className={`shell-sidebar__nav-sub ${mainView === 'voice-clone' ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={() => onSelectMainView('voice-clone')}
-                  >
-                    声音克隆
-                  </button>
-                  <button
-                    className={`shell-sidebar__nav-sub ${mainView === 'tts' ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={() => onSelectMainView('tts')}
-                  >
-                    语音合成
-                  </button>
-                  <button
-                    className={`shell-sidebar__nav-sub ${mainView === 'voice-design' ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={() => onSelectMainView('voice-design')}
-                  >
-                    音色设计
-                  </button>
-                </div>
-              ) : null}
-            </div>
-
-            <button
-              className={`shell-sidebar__nav-item ${mainView === 'video' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => onSelectMainView('video')}
-            >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="video" />
-              </span>
-              <span>视频</span>
-            </button>
-
             <div className={`shell-sidebar__project-shell ${projectsExpanded ? 'is-open' : ''} ${isProjectViewActive ? 'is-active' : ''}`}>
               <button
                 className={`shell-sidebar__group-toggle ${projectsExpanded ? 'is-open' : ''} ${
@@ -769,6 +722,102 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
                     ))
                   )}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="shell-sidebar__more" ref={moreMenuRef}>
+              <button
+                className={`shell-sidebar__nav-item ${
+                  mainView === 'music' ||
+                  mainView === 'video' ||
+                  VOICE_VIEWS.includes(mainView)
+                    ? 'is-active'
+                    : ''
+                }`}
+                type="button"
+                onClick={() => setMoreMenuOpen((value) => !value)}
+                aria-expanded={moreMenuOpen}
+              >
+                <span className="shell-sidebar__icon">
+                  <SidebarIcon id="more" />
+                </span>
+                <span>更多</span>
+                <span className={`shell-sidebar__group-caret ${moreMenuOpen ? 'is-open' : ''}`}>▾</span>
+              </button>
+
+              {moreMenuOpen ? (
+                <div className="shell-sidebar__more-popover" role="menu">
+                  <button
+                    className={`shell-sidebar__more-item ${mainView === 'music' ? 'is-active' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectMainView('music');
+                      setMoreMenuOpen(false);
+                    }}
+                  >
+                    <span className="shell-sidebar__icon">
+                      <SidebarIcon id="music" />
+                    </span>
+                    <span>音乐</span>
+                  </button>
+                  <button
+                    className={`shell-sidebar__more-item ${mainView === 'voice-clone' ? 'is-active' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectMainView('voice-clone');
+                      setMoreMenuOpen(false);
+                    }}
+                  >
+                    <span className="shell-sidebar__icon">
+                      <SidebarIcon id="voice" />
+                    </span>
+                    <span>声音克隆</span>
+                  </button>
+                  <button
+                    className={`shell-sidebar__more-item ${mainView === 'tts' ? 'is-active' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectMainView('tts');
+                      setMoreMenuOpen(false);
+                    }}
+                  >
+                    <span className="shell-sidebar__icon">
+                      <SidebarIcon id="voice" />
+                    </span>
+                    <span>语音合成</span>
+                  </button>
+                  <button
+                    className={`shell-sidebar__more-item ${mainView === 'voice-design' ? 'is-active' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectMainView('voice-design');
+                      setMoreMenuOpen(false);
+                    }}
+                  >
+                    <span className="shell-sidebar__icon">
+                      <SidebarIcon id="voice" />
+                    </span>
+                    <span>音色设计</span>
+                  </button>
+                  <button
+                    className={`shell-sidebar__more-item ${mainView === 'video' ? 'is-active' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectMainView('video');
+                      setMoreMenuOpen(false);
+                    }}
+                  >
+                    <span className="shell-sidebar__icon">
+                      <SidebarIcon id="video" />
+                    </span>
+                    <span>视频</span>
+                  </button>
                 </div>
               ) : null}
             </div>

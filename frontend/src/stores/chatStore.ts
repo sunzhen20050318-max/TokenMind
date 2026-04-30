@@ -57,7 +57,19 @@ export interface SessionSlice {
   currentTurnId: string | null;
   linkedKnowledgeBaseIds: string[];
   pendingApproval: PendingToolApproval | null;
+  /**
+   * Messages typed while the agent was busy. Auto-flushed (one at a time)
+   * when ``isLoading`` flips back to ``false``. See ``ChatWindow`` for the
+   * drain effect.
+   */
+  pendingMessages: PendingChatMessage[];
   sessionExecTrusted: boolean;
+}
+
+export interface PendingChatMessage {
+  id: string;
+  content: string;
+  queuedAt: string;
 }
 
 const EMPTY_SLICE: SessionSlice = {
@@ -69,6 +81,7 @@ const EMPTY_SLICE: SessionSlice = {
   currentTurnId: null,
   linkedKnowledgeBaseIds: [],
   pendingApproval: null,
+  pendingMessages: [],
   sessionExecTrusted: false,
 };
 
@@ -88,6 +101,7 @@ interface ChatState {
   toolCalls: ToolCall[];
   timelineEvents: TimelineEvent[];
   pendingApproval: PendingToolApproval | null;
+  pendingMessages: PendingChatMessage[];
   sessionExecTrusted: boolean;
   sessionsState: Record<string, SessionSlice>;
   modelProviders: ModelProvider[];
@@ -173,8 +187,13 @@ interface ChatState {
     sessionId: string,
     event: Omit<TimelineEvent, 'id' | 'timestamp' | 'turnId'>,
   ) => void;
+  addSessionMessage: (sessionId: string, message: Message) => void;
 
   setSessionPendingApproval: (sessionId: string, approval: PendingToolApproval | null) => void;
+  enqueuePendingMessage: (sessionId: string, content: string) => void;
+  removePendingMessage: (sessionId: string, id: string) => void;
+  shiftPendingMessage: (sessionId: string) => PendingChatMessage | null;
+  clearPendingMessages: (sessionId: string) => void;
   setSessionExecTrusted: (sessionId: string, trusted: boolean) => void;
   setSessionError: (sessionId: string, error: string | null) => void;
 }
@@ -195,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   timelineEvents: [],
   currentTurnId: null,
   pendingApproval: null,
+  pendingMessages: [],
   sessionExecTrusted: false,
   sessionsState: {},
   modelProviders: [],
@@ -279,6 +299,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentTurnId: state.currentTurnId,
         linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
         pendingApproval: state.pendingApproval,
+        pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
       };
     }
@@ -295,6 +316,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentTurnId: restored?.currentTurnId ?? null,
       linkedKnowledgeBaseIds: restored?.linkedKnowledgeBaseIds ?? [],
       pendingApproval: restored?.pendingApproval ?? null,
+      pendingMessages: restored?.pendingMessages ?? [],
       sessionExecTrusted: restored?.sessionExecTrusted ?? false,
       error: null,
       activeProjectId: shouldTreatAsProject ? resolvedProjectId : null,
@@ -883,6 +905,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentTurnId: state.currentTurnId,
         linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
         pendingApproval: state.pendingApproval,
+        pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
       };
     }
@@ -1060,6 +1083,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
     applySliceUpdate(set, get, sessionId, () => ({ pendingApproval: approval }));
   },
 
+  addSessionMessage: (sessionId, message) => {
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      messages: [...slice.messages, message],
+    }));
+  },
+
+  enqueuePendingMessage: (sessionId, content) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    const entry: PendingChatMessage = {
+      id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      content: trimmed,
+      queuedAt: new Date().toISOString(),
+    };
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      pendingMessages: [...slice.pendingMessages, entry],
+    }));
+  },
+
+  removePendingMessage: (sessionId, id) => {
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      pendingMessages: slice.pendingMessages.filter((item) => item.id !== id),
+    }));
+  },
+
+  clearPendingMessages: (sessionId) => {
+    applySliceUpdate(set, get, sessionId, () => ({ pendingMessages: [] }));
+  },
+
+  shiftPendingMessage: (sessionId) => {
+    const state = get();
+    const slice =
+      state.currentSession === sessionId
+        ? ({
+            messages: state.messages,
+            toolCalls: state.toolCalls,
+            timelineEvents: state.timelineEvents,
+            activeTool: state.activeTool,
+            isLoading: state.isLoading,
+            currentTurnId: state.currentTurnId,
+            linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+            pendingApproval: state.pendingApproval,
+            pendingMessages: state.pendingMessages,
+            sessionExecTrusted: state.sessionExecTrusted,
+          } as SessionSlice)
+        : state.sessionsState[sessionId];
+    if (!slice || slice.pendingMessages.length === 0) return null;
+    const [head, ...rest] = slice.pendingMessages;
+    applySliceUpdate(set, get, sessionId, () => ({ pendingMessages: rest }));
+    return head;
+  },
+
   setSessionExecTrusted: (sessionId, trusted) => {
     applySliceUpdate(set, get, sessionId, () => ({ sessionExecTrusted: trusted }));
   },
@@ -1096,6 +1171,7 @@ function applySliceUpdate(
       currentTurnId: state.currentTurnId,
       linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
       pendingApproval: state.pendingApproval,
+      pendingMessages: state.pendingMessages,
       sessionExecTrusted: state.sessionExecTrusted,
     };
     const patch = updater(currentSlice);

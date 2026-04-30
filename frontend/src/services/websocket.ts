@@ -216,6 +216,18 @@ class WebSocketPool {
     );
   }
 
+  /**
+   * Send a real-time guidance hint while the agent is busy. Unlike a
+   * normal user message this is queued server-side and merged into the
+   * next LLM call — no new turn is started, the in-flight tool keeps
+   * running.
+   */
+  sendGuidance(sessionId: string, content: string): void {
+    const ws = this.socketFor(sessionId);
+    if (!ws) return;
+    ws.send(JSON.stringify({ type: 'guidance', content }));
+  }
+
   ping(sessionId: string): void {
     const ws = this.socketFor(sessionId);
     if (!ws) return;

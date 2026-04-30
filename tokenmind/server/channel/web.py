@@ -95,6 +95,20 @@ class WebChannel(BaseChannel):
             )
             return
 
+        if msg.metadata.get("_guidance_received"):
+            # Real-time user guidance — echo back so the chat UI can
+            # render an inline "💡 引导" bubble without waiting for the
+            # next assistant turn.
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "guidance_received",
+                    "content": msg.content,
+                    "channel": msg.channel,
+                },
+            )
+            return
+
         # Handle progress messages - tool events
         if msg.metadata.get("_progress"):
             if msg.metadata.get("_browser_task"):

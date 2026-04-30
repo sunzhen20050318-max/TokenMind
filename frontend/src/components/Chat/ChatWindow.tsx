@@ -12,6 +12,7 @@ import {
   isSessionExecTrusted,
   respondToToolApproval,
   sendMessage as sendChatMessage,
+  sendSessionGuidance,
   setSessionExecTrust,
   stopSessionTask,
 } from '../../hooks/useSessionOrchestrator';
@@ -269,8 +270,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     pendingSessionStarter,
     clearPendingSessionStarter,
     pendingApproval,
+    pendingMessages,
     sessionExecTrusted,
     setSessionPendingApproval,
+    enqueuePendingMessage,
+    removePendingMessage,
+    shiftPendingMessage,
     setSessionExecTrusted,
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -409,6 +414,17 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       return;
     }
 
+    // Agent is busy → defer this message instead of dropping it. Pending
+    // entries flush automatically the next time isLoading flips to false
+    // (see the drain effect below). Attachments aren't queued in this mode
+    // — keep the user's pending files staged so they ship with the next
+    // *foreground* send.
+    if (isLoading && pendingFiles.length === 0 && content.trim()) {
+      enqueuePendingMessage(sessionId, content);
+      setDraftMessage('');
+      return;
+    }
+
     let attachments: Attachment[] = [];
     setError(null);
 
@@ -456,13 +472,40 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setUploadProgress(null);
   }, [
     addMessage,
+    enqueuePendingMessage,
     isConnected,
+    isLoading,
     pendingFiles,
     sendMessage,
+    sessionId,
     setActiveTool,
     setCurrentTurnId,
     setError,
     setLoading,
+  ]);
+
+  // Drain the deferred-message queue once the agent goes idle. We only
+  // kick off one at a time — sending it flips ``isLoading`` back to true,
+  // and the next entry waits for the *next* idle transition. Bail out
+  // when there are no pending files so a queued plain-text message
+  // doesn't accidentally piggyback uploads the user staged afterwards.
+  useEffect(() => {
+    if (isLoading) return;
+    if (pendingMessages.length === 0) return;
+    if (pendingFiles.length > 0) return;
+    if (!isConnected) return;
+    const head = shiftPendingMessage(sessionId);
+    if (head) {
+      void handleSend(head.content);
+    }
+  }, [
+    handleSend,
+    isConnected,
+    isLoading,
+    pendingFiles.length,
+    pendingMessages.length,
+    sessionId,
+    shiftPendingMessage,
   ]);
 
   useEffect(() => {
@@ -767,6 +810,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             onSelectFiles={handleSelectFiles}
             onRemoveAttachment={handleRemoveAttachment}
             externalDragActive={isSurfaceDragActive}
+            pendingMessages={pendingMessages}
+            onCancelPendingMessage={(id) => removePendingMessage(sessionId, id)}
+            onSendGuidance={(id, content) => {
+              sendSessionGuidance(sessionId, content);
+              removePendingMessage(sessionId, id);
+            }}
             composerMode={hasConversation ? 'active' : 'launch'}
             modelOptions={composerModelOptions}
             activeModelId={activeModelId}

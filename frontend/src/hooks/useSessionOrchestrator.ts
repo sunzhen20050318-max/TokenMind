@@ -128,6 +128,17 @@ export function useSessionOrchestrator(): void {
             content: msg.content,
           });
           break;
+        case 'guidance_received':
+          // Server confirmed it queued the guidance — append a user
+          // bubble flagged as guidance so the chat shows what the user
+          // told the agent without spawning a brand-new turn.
+          store.addSessionMessage(sessionId, {
+            role: 'user',
+            content: msg.content,
+            timestamp: new Date().toISOString(),
+            is_guidance: true,
+          });
+          break;
         case 'approval_required':
           if (trusted.has(sessionId) || store.getSessionSlice(sessionId).sessionExecTrusted) {
             wsPool.respondToToolApproval(sessionId, msg.approval_id, true);
@@ -260,6 +271,11 @@ export function sendMessage(
 
 export function stopSessionTask(sessionId: string): void {
   wsPool.stop(sessionId);
+}
+
+export function sendSessionGuidance(sessionId: string, content: string): void {
+  void wsPool.ensureConnected(sessionId);
+  wsPool.sendGuidance(sessionId, content);
 }
 
 export function respondToToolApproval(

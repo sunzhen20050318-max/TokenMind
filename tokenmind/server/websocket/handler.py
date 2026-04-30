@@ -118,6 +118,31 @@ async def websocket_handler(
                 )
                 await inbound_queue.put(msg)
 
+            elif msg_type == "guidance":
+                from tokenmind.bus.events import InboundMessage
+
+                content = str(msg_data.get("content") or "").strip()
+                if not content:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": "Missing guidance content",
+                    })
+                    continue
+
+                msg = InboundMessage(
+                    channel="web",
+                    sender_id="web_user",
+                    chat_id=session_key,
+                    content=content,
+                    media=[],
+                    metadata={
+                        "websocket": True,
+                        "control": "guidance",
+                    },
+                    session_key_override=session_key,
+                )
+                await inbound_queue.put(msg)
+
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
 

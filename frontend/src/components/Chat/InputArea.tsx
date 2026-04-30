@@ -52,6 +52,17 @@ interface InputAreaProps {
   linkedKnowledgeBaseIds?: string[];
   onUpdateLinkedKnowledgeBases?: (knowledgeBaseIds: string[]) => void;
   externalDragActive?: boolean;
+  /**
+   * Messages the user typed while the agent was busy. Rendered as chips
+   * above the textarea; auto-flushed by the parent once the agent finishes.
+   */
+  pendingMessages?: ReadonlyArray<{ id: string; content: string }>;
+  onCancelPendingMessage?: (id: string) => void;
+  /**
+   * Promote a pending message to "real-time guidance" — sent immediately
+   * to the running agent without spawning a new turn.
+   */
+  onSendGuidance?: (id: string, content: string) => void;
 }
 
 interface InlineSelectOption {
@@ -186,7 +197,16 @@ export const InputArea: React.FC<InputAreaProps> = ({
   linkedKnowledgeBaseIds = [],
   onUpdateLinkedKnowledgeBases,
   externalDragActive = false,
+  pendingMessages = [],
+  onCancelPendingMessage,
+  onSendGuidance,
 }) => {
+  // Pending list collapses by default once it would dominate the screen.
+  const [pendingExpanded, setPendingExpanded] = useState(false);
+  useEffect(() => {
+    // When the queue empties, reset to collapsed so it expands fresh next time.
+    if (pendingMessages.length === 0) setPendingExpanded(false);
+  }, [pendingMessages.length]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const knowledgeRef = useRef<HTMLDivElement>(null);
@@ -339,6 +359,70 @@ export const InputArea: React.FC<InputAreaProps> = ({
       className={`composer composer--${composerMode} ${isUploading ? 'is-uploading' : ''}`}
       onSubmit={handleSubmit}
     >
+      {pendingMessages.length > 0 ? (
+        <div className="composer__pending" aria-label="待发送消息队列">
+          <button
+            type="button"
+            className="composer__pending-head"
+            onClick={() => setPendingExpanded((value) => !value)}
+            aria-expanded={pendingExpanded}
+          >
+            <span className="composer__pending-head-label">
+              <span>待发送 {pendingMessages.length} 条</span>
+              <span className="composer__pending-hint">
+                {pendingExpanded ? '点击收起' : '当前任务结束后会自动发出'}
+              </span>
+            </span>
+            <span className={`composer__pending-caret ${pendingExpanded ? 'is-open' : ''}`}>▾</span>
+          </button>
+          {pendingExpanded ? (
+            <ul className="composer__pending-list" role="list">
+              {pendingMessages.map((item) => (
+                <li className="composer__pending-item" role="listitem" key={item.id}>
+                  <span className="composer__pending-text" title={item.content}>
+                    {item.content}
+                  </span>
+                  {onSendGuidance && isStreaming ? (
+                    <button
+                      type="button"
+                      className="composer__pending-guide"
+                      onClick={() => onSendGuidance(item.id, item.content)}
+                      aria-label="作为实时引导发送给 AI"
+                      title="作为实时引导发送 — 不打断当前任务，AI 下一步会看到"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M9 18h6" />
+                        <path d="M10 22h4" />
+                        <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2v1.3h6v-1.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z" />
+                      </svg>
+                    </button>
+                  ) : null}
+                  {onCancelPendingMessage ? (
+                    <button
+                      type="button"
+                      className="composer__pending-cancel"
+                      onClick={() => onCancelPendingMessage(item.id)}
+                      aria-label="撤销这条排队消息"
+                      title="撤销"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {attachments.length > 0 ? (
         <div className="composer__attachments">
           <div className="composer__attachment-list">
@@ -511,24 +595,29 @@ export const InputArea: React.FC<InputAreaProps> = ({
                 disabled={!onStop}
                 className="composer__submit composer__submit--stop is-ready"
                 aria-label="停止生成"
+                title="停止当前任务"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <rect x="7" y="7" width="10" height="10" rx="2.2" />
                 </svg>
               </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                className={`composer__submit ${canSubmit ? 'is-ready' : ''}`}
-                aria-label="发送消息"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <line x1="12" y1="19" x2="12" y2="5" />
-                  <polyline points="5 12 12 5 19 12" />
-                </svg>
-              </button>
-            )}
+            ) : null}
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className={`composer__submit ${canSubmit ? 'is-ready' : ''}`}
+              aria-label={isStreaming ? '加入待发送队列' : '发送消息'}
+              title={
+                isStreaming
+                  ? '任务进行中 — 发送后将排队，等当前任务结束后自动发出'
+                  : '发送消息'
+              }
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>

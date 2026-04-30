@@ -30,6 +30,9 @@ export interface Message {
   citations?: MessageCitation[];
   tool_call_id?: string;
   name?: string;
+  /** True for user messages sent via the "guidance" path while the agent
+   *  was busy. Rendered as a distinct bubble in the chat. */
+  is_guidance?: boolean;
   tool_calls?: Array<{
     id?: string;
     name?: string;
@@ -266,6 +269,7 @@ export type WSMessageType =
   | { type: 'tool_end'; content: string; tool_id: string; tool_name: string; duration: number; channel: string }
   | { type: 'tool_error'; content: string; tool_id: string; tool_name: string; detail?: string; channel: string }
   | { type: 'progress'; content: string }
+  | { type: 'guidance_received'; content: string; channel: string }
   | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
   | { type: 'error'; content: string }
   | { type: 'pong' };

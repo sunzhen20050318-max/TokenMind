@@ -179,6 +179,13 @@ class AgentLoop:
         self._background_tasks: set[asyncio.Task] = set()
         self._processing_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._pending_approvals: dict[str, PendingApproval] = {}
+        # Session-keyed queue of "guidance" snippets the user typed while
+        # the agent was working. Each entry is a plain Chinese sentence;
+        # the main ReAct loop flushes the queue right before each LLM call
+        # so the next decision can take it into account without
+        # interrupting the current tool. Persisted onto the session JSONL
+        # at injection time so reloads keep the breadcrumb.
+        self._pending_guidance: dict[str, list[str]] = {}
         self.audit = AuditLogger(workspace)
         self.memory_consolidator = MemoryConsolidator(
             workspace=workspace,
@@ -481,6 +488,48 @@ class AgentLoop:
         if not pending.future.done():
             pending.future.set_result(approved)
 
+    async def _handle_guidance(self, msg: InboundMessage) -> None:
+        """Receive a real-time guidance hint from the user.
+
+        Guidance is queued (not dispatched as a normal turn) so the
+        currently-running ReAct loop picks it up between LLM calls without
+        interrupting the in-flight tool. We also persist it to the session
+        log so the chat UI can replay it on reload.
+        """
+        content = (msg.content or "").strip()
+        if not content:
+            return
+        session_key = msg.session_key
+        self._pending_guidance.setdefault(session_key, []).append(content)
+        # Persist as a user message marked is_guidance=True. The frontend
+        # uses that flag to render a distinct chip; the prefixed content
+        # also gives the LLM a clear cue.
+        try:
+            session = self.sessions.get_or_create(session_key)
+            session.add_message(
+                role="user",
+                content=content,
+                is_guidance=True,
+            )
+            self.sessions.save(session)
+        except Exception:
+            logger.exception("Failed to persist guidance for session {}", session_key)
+        # Mirror the guidance back to the chat UI as an outbound progress
+        # event so the bubble renders immediately, even before the next LLM
+        # turn.
+        await self.bus.publish_outbound(
+            OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content=content,
+                metadata={"_guidance_received": True},
+            )
+        )
+
+    def _flush_guidance(self, session_key: str) -> list[str]:
+        """Pop and return the currently-pending guidance lines for a session."""
+        return self._pending_guidance.pop(session_key, [])
+
     def _cancel_pending_approvals(self, session_key: str) -> int:
         """Reject and clear any pending approvals for a session."""
         cancelled = 0
@@ -512,6 +561,20 @@ class AgentLoop:
             iteration += 1
 
             tool_defs = self.tools.get_definitions()
+
+            # Flush any guidance the user typed while we were busy. Each
+            # line becomes its own user message so the LLM sees them in
+            # order; the prefix flags them as steering, not a brand-new
+            # task.
+            if msg is not None:
+                for guidance in self._flush_guidance(msg.session_key):
+                    messages = [
+                        *messages,
+                        {
+                            "role": "user",
+                            "content": f"[实时引导] {guidance}",
+                        },
+                    ]
 
             response = await self.provider.chat_with_retry(
                 messages=messages,
@@ -722,6 +785,8 @@ class AgentLoop:
                 await self._handle_restart(msg)
             elif (msg.metadata or {}).get("control") == "tool_approval":
                 await self._handle_tool_approval(msg)
+            elif (msg.metadata or {}).get("control") == "guidance":
+                await self._handle_guidance(msg)
             else:
                 task = asyncio.create_task(self._dispatch(msg))
                 self._active_tasks.setdefault(msg.session_key, []).append(task)
