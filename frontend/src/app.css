@@ -40,14 +40,16 @@
 
 .app-main {
   display: grid;
-  grid-template-columns: 312px minmax(0, 1fr);
+  /* Sidebar column tracks the sidebar's actual rendered width — the
+     sidebar sets it via inline ``width`` (user-resizable, max 312px) and
+     drops to 88px when collapsed. Using ``auto`` here means the grid
+     column shrinks/grows in lockstep, so we never expose the underlying
+     app-shell background as a vertical strip between the sidebar and
+     the main content. */
+  grid-template-columns: auto minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-
-.app-shell--sidebar-collapsed .app-main {
-  grid-template-columns: 88px minmax(0, 1fr);
 }
 
 .app-main__content {
@@ -71,42 +73,7 @@
   font-size: 14px;
 }
 
-@media (max-width: 1080px) {
-  .app-main {
-    grid-template-columns: 288px minmax(0, 1fr);
-  }
-
-  .app-shell--sidebar-collapsed .app-main {
-    grid-template-columns: 84px minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 900px) {
-  .app-main {
-    grid-template-columns: 252px minmax(0, 1fr);
-  }
-
-  .app-shell--sidebar-collapsed .app-main {
-    grid-template-columns: 76px minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 760px) {
-  .app-main {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-
-  .app-shell--sidebar-collapsed .app-main {
-    grid-template-columns: 70px minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 640px) {
-  .app-main {
-    grid-template-columns: 204px minmax(0, 1fr);
-  }
-
-  .app-shell--sidebar-collapsed .app-main {
-    grid-template-columns: 66px minmax(0, 1fr);
-  }
-}
+/* Responsive breakpoints below used to set fixed grid column widths;
+   now that the column is ``auto`` and tracks the sidebar's own width
+   (controlled by Sidebar.tsx + user resize), we no longer need to
+   redeclare grid-template-columns here. */

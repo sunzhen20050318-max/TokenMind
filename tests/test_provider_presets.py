@@ -9,6 +9,7 @@ SUPPORTED_PROVIDER_PRESETS = {
     "dashscope",
     "deepseek",
     "gemini",
+    "mimo",
     "minimax",
     "moonshot",
     "ollama",

@@ -78,9 +78,6 @@ export const CreativeWorkspacePage: React.FC<CreativeWorkspacePageProps> = ({
         </div>
         <div className="creative-workspace__canvas-copy">
           <h2>入口已预留</h2>
-          <p>
-            当前版本先固定页面结构、能力状态和模型展示。后续你给我设计方向后，我们再把交互和视觉完整铺开。
-          </p>
         </div>
       </article>
     </section>

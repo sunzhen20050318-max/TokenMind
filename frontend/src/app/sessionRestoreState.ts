@@ -13,7 +13,8 @@ interface SessionRestoreStateOptions {
     | 'video'
     | 'project-home'
     | 'project-chat'
-    | 'settings';
+    | 'settings'
+    | 'tasks';
   activeProjectId: string | null;
 }
 

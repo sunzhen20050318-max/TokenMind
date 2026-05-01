@@ -785,6 +785,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         dashscope: 'DashScope',
         moonshot: 'Moonshot',
         minimax: 'MiniMax',
+        mimo: 'MiMo',
         ollama: 'Ollama',
         siliconflow: 'SiliconFlow',
         custom: '自定义',

@@ -14,6 +14,39 @@
   width: 88px;
 }
 
+/* While the user is dragging the right edge, kill the width transition
+   so the bar tracks the cursor 1:1 instead of easing behind it. Also
+   suppress text selection in the rest of the app. */
+.shell-sidebar.is-resizing {
+  transition: none;
+}
+
+.shell-sidebar.is-resizing,
+.shell-sidebar.is-resizing ~ * {
+  user-select: none;
+}
+
+.shell-sidebar__resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  z-index: 4;
+  cursor: col-resize;
+  background: transparent;
+  transition: background-color 0.18s ease;
+}
+
+.shell-sidebar__resize-handle:hover,
+.shell-sidebar.is-resizing .shell-sidebar__resize-handle {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.shell-sidebar.is-collapsed .shell-sidebar__resize-handle {
+  display: none;
+}
+
 .shell-sidebar__edge-toggle {
   position: absolute;
   top: 22px;

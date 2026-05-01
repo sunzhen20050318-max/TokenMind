@@ -70,6 +70,7 @@ class ProvidersConfig(Base):
     gemini: ProviderConfig = Field(default_factory=ProviderConfig)
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
     minimax: ProviderConfig = Field(default_factory=ProviderConfig)
+    mimo: ProviderConfig = Field(default_factory=ProviderConfig)  # Xiaomi MiMo
     siliconflow: ProviderConfig = Field(default_factory=ProviderConfig)  # SiliconFlow
 
 

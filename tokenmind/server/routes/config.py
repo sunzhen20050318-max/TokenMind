@@ -26,6 +26,7 @@ _PROVIDER_DEFAULT_MODELS: dict[str, str] = {
     "gemini": "gemini-2.0-flash",
     "moonshot": "kimi-k2.5",
     "minimax": "MiniMax-M2.7",
+    "mimo": "",
     "siliconflow": "Qwen/Qwen2.5-7B-Instruct",
 }
 

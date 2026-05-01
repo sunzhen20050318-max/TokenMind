@@ -123,6 +123,13 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         default_api_base="https://api.minimax.io/v1",
     ),
     ProviderSpec(
+        name="mimo",
+        keywords=("mimo",),
+        display_name="MiMo",
+        backend="openai_compat",
+        default_api_base="https://token-plan-sgp.xiaomimimo.com/v1",
+    ),
+    ProviderSpec(
         name="ollama",
         keywords=("ollama", "nemotron"),
         display_name="Ollama",

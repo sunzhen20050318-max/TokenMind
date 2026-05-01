@@ -22,9 +22,25 @@ export type SidebarMainView =
   | 'video'
   | 'project-home'
   | 'project-chat'
-  | 'settings';
+  | 'settings'
+  | 'tasks';
 
 const VOICE_VIEWS: SidebarMainView[] = ['voice-clone', 'tts', 'voice-design'];
+
+// User-resizable sidebar bounds. Max equals the original fixed width so the
+// pinned sidebar never grows beyond its current footprint; min keeps the
+// session list and labels readable.
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 312;
+const SIDEBAR_WIDTH_STORAGE_KEY = 'tokenmind:sidebar-width';
+
+function readStoredSidebarWidth(): number {
+  if (typeof window === 'undefined') return SIDEBAR_MAX_WIDTH;
+  const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return SIDEBAR_MAX_WIDTH;
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, parsed));
+}
 
 interface SidebarProps {
   collapsed: boolean;
@@ -61,7 +77,8 @@ function SidebarIcon({
     | 'voice'
     | 'video'
     | 'project'
-    | 'more';
+    | 'more'
+    | 'task';
 }) {
   if (id === 'settings') {
     return (
@@ -152,6 +169,18 @@ function SidebarIcon({
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <rect x="3" y="5" width="14" height="14" rx="3" />
         <path d="m17 10 4-2v8l-4-2" />
+      </svg>
+    );
+  }
+
+  if (id === 'task') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="4" y="5" width="16" height="15" rx="3" />
+        <path d="M8 3v4" />
+        <path d="M16 3v4" />
+        <path d="M8 11h8" />
+        <path d="M12 11v5" />
       </svg>
     );
   }
@@ -260,6 +289,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
   } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Persisted user-chosen pinned-sidebar width. Stays at MAX (current fixed
+  // value) by default; user can drag the right edge to shrink it down to MIN.
+  const [sidebarWidth, setSidebarWidth] = useState<number>(readStoredSidebarWidth);
+  const [isResizing, setIsResizing] = useState(false);
+  const widthRef = useRef(sidebarWidth);
+  widthRef.current = sidebarWidth;
+
+  const handleResizeStart = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (collapsed) return;
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = widthRef.current;
+      setIsResizing(true);
+
+      const onMove = (moveEvent: MouseEvent) => {
+        const next = Math.min(
+          SIDEBAR_MAX_WIDTH,
+          Math.max(SIDEBAR_MIN_WIDTH, startWidth + (moveEvent.clientX - startX)),
+        );
+        setSidebarWidth(next);
+      };
+
+      const onEnd = () => {
+        setIsResizing(false);
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onEnd);
+        try {
+          window.localStorage.setItem(
+            SIDEBAR_WIDTH_STORAGE_KEY,
+            String(Math.round(widthRef.current)),
+          );
+        } catch {
+          // localStorage may be disabled — just lose the persisted value.
+        }
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onEnd);
+    },
+    [collapsed],
+  );
 
   useEffect(() => {
     void loadProjects();
@@ -549,7 +621,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className={`shell-sidebar ${collapsed ? 'is-collapsed' : ''}`}>
+    <aside
+      className={`shell-sidebar ${collapsed ? 'is-collapsed' : ''} ${
+        isResizing ? 'is-resizing' : ''
+      }`}
+      style={collapsed ? undefined : { width: sidebarWidth }}
+    >
+      {!collapsed ? (
+        <div
+          className="shell-sidebar__resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="拖动调整侧边栏宽度"
+          onMouseDown={handleResizeStart}
+        />
+      ) : null}
       <button
         className={`shell-sidebar__edge-toggle ${collapsed ? 'is-collapsed' : ''}`}
         onClick={onToggleCollapse}
@@ -822,6 +908,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <SidebarIcon id="video" />
                     </span>
                     <span>视频</span>
+                  </button>
+                  <button
+                    className={`shell-sidebar__more-item ${mainView === 'tasks' ? 'is-active' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectMainView('tasks');
+                      setMoreMenuOpen(false);
+                    }}
+                  >
+                    <span className="shell-sidebar__icon">
+                      <SidebarIcon id="task" />
+                    </span>
+                    <span>定时任务</span>
                   </button>
                 </div>
               ) : null}

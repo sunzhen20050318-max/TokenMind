@@ -63,6 +63,7 @@ const App: React.FC = () => {
     | 'project-home'
     | 'project-chat'
     | 'settings'
+    | 'tasks'
   >('chat');
   const enterTimerRef = useRef<number | null>(null);
   const appReady = gateDismissed || gateExiting;
@@ -144,6 +145,17 @@ const App: React.FC = () => {
             <Header />
             {mainView === 'settings' ? (
               <SettingsPage
+                onNavigateBack={() => setMainView('chat')}
+                onNavigateToSession={(sessionId) => {
+                  setCurrentSession(sessionId);
+                  setMainView('chat');
+                }}
+              />
+            ) : mainView === 'tasks' ? (
+              <SettingsPage
+                key="tasks-page"
+                initialSection="automation"
+                hideNav
                 onNavigateBack={() => setMainView('chat')}
                 onNavigateToSession={(sessionId) => {
                   setCurrentSession(sessionId);

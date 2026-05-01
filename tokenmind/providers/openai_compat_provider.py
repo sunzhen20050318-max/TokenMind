@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -11,6 +12,92 @@ from openai import AsyncOpenAI
 
 from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from tokenmind.providers.registry import ProviderSpec
+
+
+# Some "OpenAI-compatible" gateways (notably Xiaomi MiMo) advertise tool
+# calling but actually emit it as XML embedded in `content` instead of the
+# OpenAI-standard structured `tool_calls` field. Example:
+#
+#   <tool_call>
+#   <function=generate_image>
+#   <parameter=prompt>...</parameter>
+#   <parameter=size>1024x1024</parameter>
+#   </function>
+#   </tool_call>
+#
+# The patterns below recover those calls so the agent loop can still execute
+# them. Compiled once at import; no runtime cost on the (typical) standard path.
+_XML_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*(?P<body>.*?)\s*</tool_call>",
+    re.DOTALL | re.IGNORECASE,
+)
+_XML_FUNCTION_RE = re.compile(
+    r"<function\s*=\s*(?P<name>[A-Za-z0-9_.\-]+)\s*>\s*(?P<args>.*?)\s*</function>",
+    re.DOTALL | re.IGNORECASE,
+)
+_XML_PARAMETER_RE = re.compile(
+    r"<parameter\s*=\s*(?P<key>[A-Za-z0-9_.\-]+)\s*>\s*(?P<value>.*?)\s*</parameter>",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _coerce_param_value(raw: str) -> Any:
+    """Try to JSON-decode a parameter value; fall back to the raw string."""
+    text = raw.strip()
+    if not text:
+        return text
+    if text.lower() in ("true", "false"):
+        return text.lower() == "true"
+    if text.lower() == "null":
+        return None
+    # Numeric? — try int then float so 1024 stays int, 0.5 stays float.
+    try:
+        if "." not in text and "e" not in text.lower():
+            return int(text)
+        return float(text)
+    except ValueError:
+        pass
+    # Looks like JSON object/array? Repair-parse it.
+    if text[:1] in "{[":
+        try:
+            return json_repair.loads(text)
+        except Exception:  # noqa: BLE001
+            return text
+    return text
+
+
+def _extract_xml_tool_calls(content: str) -> tuple[list[ToolCallRequest], str]:
+    """Pull XML-style tool calls out of ``content``.
+
+    Returns the parsed :class:`ToolCallRequest` list and the residual text
+    with all matched ``<tool_call>`` blocks stripped. Empty list when
+    nothing matches — caller can treat as "no fallback needed".
+    """
+    if not content or "<tool_call" not in content.lower():
+        return [], content
+
+    parsed: list[ToolCallRequest] = []
+    cleaned = content
+
+    for tool_call_match in _XML_TOOL_CALL_RE.finditer(content):
+        body = tool_call_match.group("body")
+        for fn_match in _XML_FUNCTION_RE.finditer(body):
+            name = fn_match.group("name").strip()
+            arg_text = fn_match.group("args")
+            arguments: dict[str, Any] = {}
+            for param_match in _XML_PARAMETER_RE.finditer(arg_text):
+                key = param_match.group("key").strip()
+                arguments[key] = _coerce_param_value(param_match.group("value"))
+            parsed.append(
+                ToolCallRequest(
+                    id=f"call_{uuid.uuid4().hex[:12]}",
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+        cleaned = cleaned.replace(tool_call_match.group(0), "", 1)
+
+    return parsed, cleaned.strip()
 
 _OPENAI_MSG_KEYS = frozenset(
     {"role", "content", "tool_calls", "tool_call_id", "name", "reasoning_content"}
@@ -251,6 +338,18 @@ class OpenAICompatProvider(LLMProvider):
                     ),
                 )
             )
+
+        # Fallback: gateways like Xiaomi MiMo emit tool calls as XML in the
+        # content field instead of the structured `tool_calls`. Only kicks
+        # in when the standard field is empty AND content looks like it has
+        # a `<tool_call>` block, so the standard path stays untouched.
+        if not tool_calls and isinstance(content, str):
+            xml_calls, cleaned_content = _extract_xml_tool_calls(content)
+            if xml_calls:
+                tool_calls = xml_calls
+                content = cleaned_content or None
+                if finish_reason == "stop":
+                    finish_reason = "tool_calls"
 
         usage_obj = getattr(response, "usage", None)
         usage = {}

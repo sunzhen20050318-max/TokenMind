@@ -33,21 +33,93 @@ const PROVIDER_META: Record<
   {
     label: string;
     defaultModel: string;
+    /**
+     * Pre-fills the API Base input when the user opens this provider for
+     * the first time. Mirrors ``ProviderSpec.default_api_base`` in
+     * ``tokenmind/providers/registry.py`` — keep both in sync.
+     */
+    defaultApiBase: string;
     mode: 'api' | 'local' | 'oauth';
   }
 > = {
-  openai: { label: 'OpenAI', defaultModel: 'gpt-4o', mode: 'api' },
-  anthropic: { label: 'Anthropic', defaultModel: 'claude-sonnet-4-5', mode: 'api' },
-  gemini: { label: 'Gemini', defaultModel: 'gemini-2.0-flash', mode: 'api' },
-  deepseek: { label: 'DeepSeek', defaultModel: 'deepseek-chat', mode: 'api' },
-  moonshot: { label: 'Moonshot', defaultModel: 'kimi-k2.5', mode: 'api' },
-  minimax: { label: 'MiniMax', defaultModel: 'MiniMax-M2.7', mode: 'api' },
-  zhipu: { label: 'GLM', defaultModel: 'glm-4', mode: 'api' },
-  dashscope: { label: 'Qwen', defaultModel: 'qwen-max', mode: 'api' },
-  openrouter: { label: 'OpenRouter', defaultModel: 'anthropic/claude-sonnet-4-5', mode: 'api' },
-  siliconflow: { label: 'SiliconFlow', defaultModel: 'Qwen/Qwen2.5-7B-Instruct', mode: 'api' },
-  ollama: { label: 'Ollama', defaultModel: 'llama3.2', mode: 'local' },
-  custom: { label: '自定义', defaultModel: 'default', mode: 'api' },
+  openai: {
+    label: 'OpenAI',
+    defaultModel: 'gpt-4o',
+    defaultApiBase: 'https://api.openai.com/v1',
+    mode: 'api',
+  },
+  anthropic: {
+    label: 'Anthropic',
+    defaultModel: 'claude-sonnet-4-5',
+    defaultApiBase: 'https://api.anthropic.com/v1/',
+    mode: 'api',
+  },
+  gemini: {
+    label: 'Gemini',
+    defaultModel: 'gemini-2.0-flash',
+    defaultApiBase: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    mode: 'api',
+  },
+  deepseek: {
+    label: 'DeepSeek',
+    defaultModel: 'deepseek-chat',
+    defaultApiBase: 'https://api.deepseek.com',
+    mode: 'api',
+  },
+  moonshot: {
+    label: 'Moonshot',
+    defaultModel: 'kimi-k2.5',
+    defaultApiBase: 'https://api.moonshot.ai/v1',
+    mode: 'api',
+  },
+  minimax: {
+    label: 'MiniMax',
+    defaultModel: 'MiniMax-M2.7',
+    defaultApiBase: 'https://api.minimax.io/v1',
+    mode: 'api',
+  },
+  mimo: {
+    label: 'MiMo',
+    defaultModel: '',
+    defaultApiBase: 'https://token-plan-sgp.xiaomimimo.com/v1',
+    mode: 'api',
+  },
+  zhipu: {
+    label: 'GLM',
+    defaultModel: 'glm-4',
+    defaultApiBase: 'https://open.bigmodel.cn/api/paas/v4/',
+    mode: 'api',
+  },
+  dashscope: {
+    label: 'Qwen',
+    defaultModel: 'qwen-max',
+    defaultApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    mode: 'api',
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    defaultModel: 'anthropic/claude-sonnet-4-5',
+    defaultApiBase: 'https://openrouter.ai/api/v1',
+    mode: 'api',
+  },
+  siliconflow: {
+    label: 'SiliconFlow',
+    defaultModel: 'Qwen/Qwen2.5-7B-Instruct',
+    defaultApiBase: 'https://api.siliconflow.cn/v1',
+    mode: 'api',
+  },
+  ollama: {
+    label: 'Ollama',
+    defaultModel: 'llama3.2',
+    defaultApiBase: 'http://localhost:11434/v1',
+    mode: 'local',
+  },
+  custom: {
+    label: '自定义',
+    defaultModel: 'default',
+    defaultApiBase: '',
+    mode: 'api',
+  },
 };
 
 const CREATIVE_CAPABILITY_META: Record<
@@ -138,9 +210,25 @@ const SECTION_META = [
   { id: 'skills', title: '技能', copy: '启用或停用已安装的智能体技能。', group: 'core' },
   { id: 'runtime', title: '运行时', copy: '管理进度推送、网关和心跳设置。', group: 'core' },
   { id: 'memory', title: '记忆中心', copy: '查看长期记忆、当前上下文和近期归档。', group: 'workspace' },
+  // 'automation' 仍然保留在 SECTION_META 里，让 SettingsModal initialSection
+  // 能定位到 renderAutomationCenter；但下方左侧 nav 渲染时会过滤掉它，因为
+  // 入口已经搬到主页侧边栏的「更多」菜单（mainView='tasks'）。
   { id: 'automation', title: '定时任务', copy: '统一管理自动化任务、结果投递和失败状态。', group: 'workspace' },
   { id: 'storage', title: '文件中心', copy: '管理上传文件、存储配额和清理策略。', group: 'workspace' },
 ] as const;
+
+const HIDDEN_NAV_SECTIONS: ReadonlySet<string> = new Set(['automation']);
+
+/** Capabilities that are MiniMax-only (audio / music pipelines). They get
+ * grouped under a collapsible "MiniMax 音乐工程" header so the top-level
+ * creative list shows only the multi-vendor capabilities (image / video). */
+const MINIMAX_STUDIO_IDS: ReadonlySet<CreativeCapabilityKey> = new Set([
+  'music',
+  'music_cover',
+  'voice_clone',
+  'tts',
+  'voice_design',
+]);
 
 const NAV_GROUPS: Array<{ id: 'core' | 'workspace'; label: string }> = [
   { id: 'core', label: '核心设置' },
@@ -342,6 +430,18 @@ interface SettingsModalProps {
   onClose?: () => void;
   onNavigateToSession?: (sessionId: string) => void;
   onNavigateBack?: () => void;
+  /**
+   * Pre-selected section. When this is one of the SECTION_META ids the
+   * settings center opens directly on that page; combine with ``hideNav``
+   * to embed a single section as a standalone page (e.g. 定时任务 lives
+   * in the sidebar's "更多" menu but reuses this exact UI).
+   */
+  initialSection?: SectionId;
+  /**
+   * Hide the left-side section nav. The main panel still renders, so a
+   * single section can be exposed as its own top-level page.
+   */
+  hideNav?: boolean;
 }
 
 function prettyJson(value?: Record<string, string> | null): string {
@@ -385,7 +485,7 @@ function textToList(text: string): string[] {
 
 function buildProviderForm(providerId: string, provider?: ProviderSettings): ProviderFormState {
   return {
-    apiBase: provider?.api_base || '',
+    apiBase: provider?.api_base || PROVIDER_META[providerId]?.defaultApiBase || '',
     apiKey: '',
     defaultModel: provider?.default_model || PROVIDER_META[providerId]?.defaultModel || '',
     extraHeadersText: prettyJson(provider?.extra_headers),
@@ -636,7 +736,13 @@ function SettingsNavIcon({ section }: { section: SectionId }) {
   );
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigateToSession, onNavigateBack }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  onClose,
+  onNavigateToSession,
+  onNavigateBack,
+  initialSection,
+  hideNav,
+}) => {
   const {
     currentSession,
     sessions,
@@ -653,7 +759,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
       onClose?.();
     }
   };
-  const [selectedSection, setSelectedSection] = useState<SectionId>('models');
+  const [selectedSection, setSelectedSection] = useState<SectionId>(initialSection || 'models');
   const [providers, setProviders] = useState<Record<string, ProviderSettings>>({});
   const [agentDraft, setAgentDraft] = useState<AgentSettings | null>(null);
   const [toolsDraft, setToolsDraft] = useState<ToolsSettings | null>(null);
@@ -674,6 +780,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [creativeDraft, setCreativeDraft] = useState<CreativeSettings | null>(null);
   const [selectedCreativeId, setSelectedCreativeId] = useState<CreativeCapabilityKey>('image');
+  const [minimaxStudioExpanded, setMinimaxStudioExpanded] = useState(false);
   const [editingCreativeId, setEditingCreativeId] = useState<CreativeCapabilityKey | null>(null);
   const [creativeForm, setCreativeForm] = useState<CreativeCapabilityFormState>(
     buildCreativeCapabilityForm('image')
@@ -844,6 +951,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
       };
     });
   }, [creativeDraft]);
+
+  const minimaxStudioCards = useMemo(
+    () => creativeCards.filter((capability) => MINIMAX_STUDIO_IDS.has(capability.id)),
+    [creativeCards],
+  );
+
+  type CapabilityCard = (typeof creativeCards)[number];
+  const renderCapabilityCard = (capability: CapabilityCard) => (
+    <div
+      className={`settings-provider-card ${capability.enabled ? 'active' : ''} ${
+        selectedCreativeId === capability.id ? 'is-selected' : ''
+      }`}
+      key={capability.id}
+    >
+      <div className="settings-provider-head">
+        <div>
+          <div className="settings-provider-name">{capability.label}</div>
+          <div className="settings-badges">
+            <span className="settings-badge">
+              {capability.configured ? '已配置' : '未配置'}
+            </span>
+            <span className={`settings-badge ${capability.enabled ? 'active' : ''}`}>
+              {capability.enabled ? '已启用' : '未启用'}
+            </span>
+            <span className="settings-badge">{capability.usage}</span>
+          </div>
+        </div>
+      </div>
+      <div className="settings-provider-desc">
+        <div>{capability.description}</div>
+        <div>
+          {capability.provider} / {capability.model}
+        </div>
+      </div>
+      <div className="settings-provider-actions">
+        <button
+          className="settings-button-secondary"
+          onClick={() => openCreativeEditor(capability.id)}
+          type="button"
+        >
+          配置能力
+        </button>
+        <button
+          className="settings-button"
+          disabled={savingSection === `creative-${capability.id}` || !capability.configured}
+          onClick={() => void handleToggleCreativeCapability(capability.id, !capability.enabled)}
+          type="button"
+        >
+          {capability.enabled ? '停用' : '启用'}
+        </button>
+      </div>
+    </div>
+  );
 
   const mcpEntries = useMemo(
     () => Object.entries(toolsDraft?.mcp_servers || {}).sort(([a], [b]) => a.localeCompare(b)),
@@ -1979,50 +2139,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
           <p>这里的能力模型不会覆盖默认聊天模型，只决定对应创作入口是否可用。</p>
         </div>
         <div className="settings-provider-grid">
-          {creativeCards.map((capability) => (
-            <div
-              className={`settings-provider-card ${capability.enabled ? 'active' : ''} ${
-                selectedCreativeId === capability.id ? 'is-selected' : ''
+          {creativeCards
+            .filter((capability) => !MINIMAX_STUDIO_IDS.has(capability.id))
+            .map((capability) => renderCapabilityCard(capability))}
+
+          <div className="settings-creative-group">
+            <button
+              type="button"
+              className={`settings-creative-group__header ${
+                minimaxStudioExpanded ? 'is-open' : ''
               }`}
-              key={capability.id}
+              aria-expanded={minimaxStudioExpanded}
+              onClick={() => setMinimaxStudioExpanded((value) => !value)}
             >
-              <div className="settings-provider-head">
-                <div>
-                  <div className="settings-provider-name">{capability.label}</div>
-                  <div className="settings-badges">
-                    <span className="settings-badge">
-                      {capability.configured ? '已配置' : '未配置'}
-                    </span>
-                    <span className={`settings-badge ${capability.enabled ? 'active' : ''}`}>
-                      {capability.enabled ? '已启用' : '未启用'}
-                    </span>
-                    <span className="settings-badge">{capability.usage}</span>
-                  </div>
-                </div>
+              <span className="settings-creative-group__title">MiniMax 音乐工程</span>
+              <span className="settings-creative-group__count">
+                {minimaxStudioCards.length} 项
+              </span>
+              <span
+                className={`settings-creative-group__caret ${
+                  minimaxStudioExpanded ? 'is-open' : ''
+                }`}
+                aria-hidden
+              >
+                ▾
+              </span>
+            </button>
+            {minimaxStudioExpanded ? (
+              <div className="settings-creative-group__body">
+                {minimaxStudioCards.map((capability) => renderCapabilityCard(capability))}
               </div>
-              <div className="settings-provider-desc">
-                <div>{capability.description}</div>
-                <div>{capability.provider} / {capability.model}</div>
-              </div>
-              <div className="settings-provider-actions">
-                <button
-                  className="settings-button-secondary"
-                  onClick={() => openCreativeEditor(capability.id)}
-                  type="button"
-                >
-                  配置能力
-                </button>
-                <button
-                  className="settings-button"
-                  disabled={savingSection === `creative-${capability.id}` || !capability.configured}
-                  onClick={() => void handleToggleCreativeCapability(capability.id, !capability.enabled)}
-                  type="button"
-                >
-                  {capability.enabled ? '停用' : '启用'}
-                </button>
-              </div>
-            </div>
-          ))}
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
@@ -5325,8 +5473,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
   };
 
   return (
-    <div className="settings-page">
+    <div className={`settings-page ${hideNav ? 'settings-page--no-nav' : ''}`}>
       <div className="settings-modal settings-modal--manus settings-modal--inline">
+        {hideNav ? null : (
         <aside className="settings-sidebar">
           {onNavigateBack ? (
             <button
@@ -5345,7 +5494,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
           <div className="settings-sidebar-title">设置中心</div>
 
           <nav className="settings-nav">
-            {SECTION_META.map((section) => (
+            {SECTION_META.filter((section) => !HIDDEN_NAV_SECTIONS.has(section.id)).map((section) => (
               <button
                 className={`settings-nav-button ${selectedSection === section.id ? 'is-active' : ''}`}
                 key={section.id}
@@ -5363,6 +5512,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
             ))}
           </nav>
         </aside>
+        )}
 
         <section className="settings-main">
           <header className="settings-header">
@@ -5395,11 +5545,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onNavigat
   );
 };
 
-interface SettingsPageProps {
+interface SettingsPageProps extends Pick<SettingsModalProps, 'initialSection' | 'hideNav'> {
   onNavigateToSession?: (sessionId: string) => void;
   onNavigateBack?: () => void;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigateToSession, onNavigateBack }) => (
-  <SettingsModal onNavigateToSession={onNavigateToSession} onNavigateBack={onNavigateBack} />
+export const SettingsPage: React.FC<SettingsPageProps> = ({
+  onNavigateToSession,
+  onNavigateBack,
+  initialSection,
+  hideNav,
+}) => (
+  <SettingsModal
+    onNavigateToSession={onNavigateToSession}
+    onNavigateBack={onNavigateBack}
+    initialSection={initialSection}
+    hideNav={hideNav}
+  />
 );
