@@ -11,6 +11,8 @@ import type {
   MusicGenerateRequest,
   MusicGenerateResponse,
   SkillListResponse,
+  SkillSuggestion,
+  SkillSuggestionListResponse,
   SkillSummary,
   TtsSynthesizeRequest,
   TtsSynthesizeResponse,
@@ -417,6 +419,47 @@ export const api = {
           ? error.detail
           : null;
       throw new Error(detail || `Failed to update skill: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listSkillSuggestions(): Promise<SkillSuggestion[]> {
+    const res = await fetch(`${API_BASE}/skills/suggestions`);
+    if (!res.ok) {
+      throw new Error(`Failed to load skill suggestions: ${res.statusText}`);
+    }
+    const payload = (await res.json()) as SkillSuggestionListResponse;
+    return payload.items ?? [];
+  },
+
+  async approveSkillSuggestion(id: string, overwrite = false): Promise<SkillSuggestion> {
+    const res = await fetch(`${API_BASE}/skills/suggestions/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overwrite }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to approve skill suggestion: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async rejectSkillSuggestion(id: string): Promise<{ deleted: boolean }> {
+    const res = await fetch(`${API_BASE}/skills/suggestions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to reject skill suggestion: ${res.statusText}`);
     }
     return res.json();
   },

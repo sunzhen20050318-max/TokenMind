@@ -25,7 +25,7 @@ import type {
 import type { CronJob, CronStatus, CreateCronJobPayload } from '../types/cron';
 import type { MemoryOverviewResponse } from '../types/memory';
 import type { StorageFileItem, StorageOverviewResponse } from '../types/storage';
-import type { SkillSummary } from '../types';
+import type { SkillSuggestion, SkillSummary } from '../types';
 import './settings.css';
 
 const PROVIDER_META: Record<
@@ -788,9 +788,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [mcpCatalog, setMcpCatalog] = useState<Record<string, McpServerToolsState>>({});
   const [loadingMcpCatalog, setLoadingMcpCatalog] = useState(false);
   const [skills, setSkills] = useState<SkillSummary[] | null>(null);
+  const [skillSuggestions, setSkillSuggestions] = useState<SkillSuggestion[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [togglingSkill, setTogglingSkill] = useState<string | null>(null);
+  const [skillSuggestionBusy, setSkillSuggestionBusy] = useState<string | null>(null);
+  const [selectedSkillSuggestion, setSelectedSkillSuggestion] = useState<SkillSuggestion | null>(null);
   const [memoryOverview, setMemoryOverview] = useState<MemoryOverviewResponse | null>(null);
   const [memoryDraft, setMemoryDraft] = useState('');
   const [memoryArchiveQuery, setMemoryArchiveQuery] = useState('');
@@ -1105,8 +1108,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSkillsLoading(true);
     setSkillsError(null);
     try {
-      const items = await api.listSkills();
+      const [items, suggestions] = await Promise.all([
+        api.listSkills(),
+        api.listSkillSuggestions(),
+      ]);
       setSkills(items);
+      setSkillSuggestions(suggestions);
     } catch (error) {
       setSkillsError(error instanceof Error ? error.message : '加载技能失败');
     } finally {
@@ -1129,6 +1136,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFailure(error, '切换技能状态失败');
     } finally {
       setTogglingSkill(null);
+    }
+  };
+
+  const approveSkillSuggestion = async (suggestion: SkillSuggestion) => {
+    setSkillSuggestionBusy(suggestion.id);
+    try {
+      await api.approveSkillSuggestion(suggestion.id);
+      await loadSkills();
+      setSelectedSkillSuggestion(null);
+      setSuccess(`已确认技能建议：${suggestion.name}`);
+    } catch (error) {
+      setFailure(error, '确认技能建议失败');
+    } finally {
+      setSkillSuggestionBusy(null);
+    }
+  };
+
+  const rejectSkillSuggestion = async (suggestion: SkillSuggestion) => {
+    setSkillSuggestionBusy(suggestion.id);
+    try {
+      await api.rejectSkillSuggestion(suggestion.id);
+      setSkillSuggestions((prev) => prev.filter((item) => item.id !== suggestion.id));
+      setSelectedSkillSuggestion((current) => (current?.id === suggestion.id ? null : current));
+      setSuccess(`已忽略技能建议：${suggestion.name}`);
+    } catch (error) {
+      setFailure(error, '忽略技能建议失败');
+    } finally {
+      setSkillSuggestionBusy(null);
     }
   };
 
@@ -5362,6 +5397,110 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     );
   };
 
+  const renderSkillSuggestionDetail = () => {
+    const suggestion = selectedSkillSuggestion;
+    if (!suggestion) {
+      return null;
+    }
+    const busy = skillSuggestionBusy === suggestion.id;
+    const kind = suggestion.kind === 'update' ? '更新已有技能' : '新增技能';
+    const previewPath = suggestion.path || `workspace/skills/${suggestion.name}/SKILL.md`;
+
+    return (
+      <div
+        className="settings-modal-overlay"
+        role="presentation"
+        onClick={() => setSelectedSkillSuggestion(null)}
+      >
+        <div
+          className="settings-skill-detail"
+          role="dialog"
+          aria-modal="true"
+          aria-label="技能建议详情"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="settings-skill-detail__head">
+            <div>
+              <span>待确认技能建议</span>
+              <h3>{suggestion.name}</h3>
+              <p>{suggestion.description}</p>
+            </div>
+            <button
+              aria-label="关闭技能建议详情"
+              className="settings-close"
+              onClick={() => setSelectedSkillSuggestion(null)}
+              type="button"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+
+          <div className="settings-skill-detail__meta">
+            <div>
+              <span>类型</span>
+              <code>{kind}</code>
+            </div>
+            {suggestion.target_skill ? (
+              <div>
+                <span>目标技能</span>
+                <code>{suggestion.target_skill}</code>
+              </div>
+            ) : null}
+            <div>
+              <span>写入位置</span>
+              <code>{previewPath}</code>
+            </div>
+            {suggestion.source_session_id ? (
+              <div>
+                <span>来源会话</span>
+                <code>{suggestion.source_session_id}</code>
+              </div>
+            ) : null}
+          </div>
+
+          {suggestion.triggers.length > 0 ? (
+            <div className="settings-skill-detail__tags">
+              {suggestion.triggers.map((trigger) => (
+                <span key={trigger}>{trigger}</span>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="settings-skill-detail__preview">
+            <div className="settings-skill-detail__preview-title">SKILL.md 预览</div>
+            <pre>{suggestion.preview_markdown}</pre>
+          </div>
+
+          {suggestion.kind === 'update' && suggestion.diff_markdown ? (
+            <div className="settings-skill-detail__preview">
+              <div className="settings-skill-detail__preview-title">变更 Diff</div>
+              <pre>{suggestion.diff_markdown}</pre>
+            </div>
+          ) : null}
+
+          <div className="settings-provider-actions">
+            <button
+              className="settings-button-secondary"
+              disabled={busy}
+              onClick={() => void rejectSkillSuggestion(suggestion)}
+              type="button"
+            >
+              忽略
+            </button>
+            <button
+              className="settings-button"
+              disabled={busy}
+              onClick={() => void approveSkillSuggestion(suggestion)}
+              type="button"
+            >
+              {busy ? '处理中…' : '确认保存'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderSkills = () => {
     if (skillsLoading && !skills) {
       return <div className="settings-loading">正在加载技能…</div>;
@@ -5384,6 +5523,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
         </div>
+
+        {skillSuggestions.length > 0 ? (
+          <div className="settings-skill-suggestions">
+            <div className="settings-skill-suggestions__head">
+              <div>
+                <h4>待确认建议</h4>
+                <p>Agent 会把可复用流程先保存为草稿，只有你确认后才会写入技能库。</p>
+              </div>
+              <span>{skillSuggestions.length} 条</span>
+            </div>
+            <div className="settings-skill-suggestions__list">
+              {skillSuggestions.map((suggestion) => {
+                const busy = skillSuggestionBusy === suggestion.id;
+                return (
+                  <div key={suggestion.id} className="settings-skill-suggestion">
+                    <div className="settings-skill-suggestion__body">
+                      <div className="settings-skill-suggestion__name">
+                        {suggestion.name}
+                        {suggestion.kind === 'update' ? ' · 更新' : ''}
+                      </div>
+                      <div className="settings-skill-suggestion__desc">{suggestion.description}</div>
+                      {suggestion.triggers.length > 0 ? (
+                        <div className="settings-skill-suggestion__tags">
+                          {suggestion.triggers.slice(0, 4).map((trigger) => (
+                            <span key={trigger}>{trigger}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="settings-skill-suggestion__actions">
+                      <button
+                        className="settings-button-secondary"
+                        disabled={busy}
+                        onClick={() => void rejectSkillSuggestion(suggestion)}
+                        type="button"
+                      >
+                        忽略
+                      </button>
+                      <button
+                        className="settings-button"
+                        disabled={busy}
+                        onClick={() => setSelectedSkillSuggestion(suggestion)}
+                        type="button"
+                      >
+                        查看详情
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {items.length === 0 ? (
           <div className="settings-mcp-empty">
@@ -5443,6 +5635,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             })}
           </div>
         )}
+        {renderSkillSuggestionDetail()}
       </div>
     );
   };

@@ -636,6 +636,14 @@
   color: #ffffff;
 }
 
+.shell-sidebar__more-toggle {
+  justify-content: space-between;
+}
+
+.shell-sidebar__more-toggle .shell-sidebar__group-label {
+  min-width: 0;
+}
+
 .shell-sidebar__more {
   position: relative;
 }

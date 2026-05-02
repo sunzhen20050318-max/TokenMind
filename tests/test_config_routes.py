@@ -42,6 +42,9 @@ async def test_get_config_returns_extended_sections(temp_config_path):
     response = await get_config()
 
     assert response.agent["context_window_tokens"] == 65_536
+    assert "memory_provider" not in response.agent
+    assert "memory_model" not in response.agent
+    assert not hasattr(response, "memory_model")
     assert response.providers["openai"]["api_key"] == "****5678"
     assert response.providers["openai"]["default_model"] == "gpt-4.1"
     assert response.tools["web"]["search"]["api_key"] == "****9876"
@@ -253,6 +256,9 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
     assert config.providers.openai.default_model == "gpt-4.1-mini"
     assert config.agents.defaults.workspace == "~/workspace-test"
     assert config.agents.defaults.reasoning_effort == "medium"
+    assert not hasattr(config.agents.defaults, "memory_provider")
+    assert not hasattr(config.agents.defaults, "memory_model")
+    assert not hasattr(config.agents, "memory_model")
     assert config.tools.restrict_to_workspace is True
     assert config.tools.web.search.provider == "tavily"
     assert config.tools.exec.timeout == 90

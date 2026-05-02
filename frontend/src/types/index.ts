@@ -181,8 +181,30 @@ export interface SkillSummary {
   emoji?: string | null;
 }
 
+export interface SkillSuggestion {
+  id: string;
+  kind?: 'create' | 'update';
+  name: string;
+  description: string;
+  body: string;
+  markdown?: string | null;
+  target_skill?: string | null;
+  previous_markdown?: string | null;
+  triggers: string[];
+  source_session_id?: string | null;
+  source_message?: string | null;
+  created_at: string;
+  path?: string | null;
+  preview_markdown: string;
+  diff_markdown?: string;
+}
+
 export interface SkillListResponse {
   items: SkillSummary[];
+}
+
+export interface SkillSuggestionListResponse {
+  items: SkillSuggestion[];
 }
 
 export interface VoiceCloneCreateResponse extends VoiceCloneRecord {

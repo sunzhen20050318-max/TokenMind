@@ -5,7 +5,7 @@ interface BrandMarkProps {
   alt?: string;
   className?: string;
   style?: React.CSSProperties;
-  variant?: 'icon' | 'wordmark';
+  variant?: 'icon' | 'wordmark' | 'sidebar-wordmark';
   tone?: 'light' | 'dark';
 }
 
@@ -19,7 +19,11 @@ export const BrandMark: React.FC<BrandMarkProps> = ({
 }) => (
   <img
     src={
-      variant === 'wordmark'
+      variant === 'sidebar-wordmark'
+        ? tone === 'dark'
+          ? '/tokenmind-sidebar-wordmark-black.svg'
+          : '/tokenmind-sidebar-wordmark.svg'
+        : variant === 'wordmark'
         ? tone === 'dark'
           ? '/tokenmind-wordmark-black.svg'
           : '/tokenmind-wordmark.svg'

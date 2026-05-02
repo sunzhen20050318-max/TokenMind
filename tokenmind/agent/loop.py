@@ -20,6 +20,7 @@ from loguru import logger
 
 from tokenmind.agent.context import ContextBuilder
 from tokenmind.agent.memory import MemoryConsolidator
+from tokenmind.agent.skill_suggestions import SkillSuggestionStore
 from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
 from tokenmind.agent.subagent import SubagentManager
 from tokenmind.agent.tools.cron import CronTool
@@ -82,6 +83,9 @@ class AgentLoop:
     """
 
     _TOOL_RESULT_MAX_CHARS = 16_000
+    _SKILL_REFLECTION_INTERVAL = 15
+    _SKILL_REFLECTION_MAX_CHARS = 18_000
+    _SKILL_REFLECTION_MESSAGE_MAX_CHARS = 2_000
 
     def __init__(
         self,
@@ -867,6 +871,314 @@ class AgentLoop:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
+    def _maybe_schedule_skill_reflection(self, session: Session) -> None:
+        """Run skill suggestion reflection every N user turns, outside the main chat loop."""
+
+        user_turn_count = self._count_user_turns(session.messages)
+        if user_turn_count < self._SKILL_REFLECTION_INTERVAL:
+            return
+        try:
+            last_reflected = int(session.metadata.get("last_skill_reflection_user_count") or 0)
+        except (TypeError, ValueError):
+            last_reflected = 0
+        if user_turn_count - last_reflected < self._SKILL_REFLECTION_INTERVAL:
+            return
+
+        session.metadata["last_skill_reflection_user_count"] = user_turn_count
+        self.sessions.save(session)
+        self._schedule_background(self._reflect_skills_for_session(session.key, user_turn_count))
+
+    async def _reflect_skills_for_session(self, session_key: str, user_turn_count: int) -> None:
+        """Ask the model, in the background, whether recent turns deserve a skill draft."""
+
+        try:
+            session = self.sessions.get_or_create(session_key)
+            transcript = self._format_recent_turns_for_skill_reflection(session.messages)
+            if not transcript:
+                return
+
+            skill_index = self.context.skills.build_skill_route_index() or "(no installed skills)"
+            prompt = (
+                "你是 TokenMind 的技能沉淀审查器。请只判断最近 15 个用户回合里，"
+                "是否出现了值得沉淀为可复用 Skill 的流程。\n\n"
+                "只有满足以下条件才 should_create=true：\n"
+                "- 是可重复使用的工作流、排错步骤、发布流程、集成步骤、工具/API 使用方法；\n"
+                "- 未来很可能再次遇到；\n"
+                "- 不只是普通事实、个人偏好、一次性回答、临时路径或当前会话状态；\n"
+                "- 不包含 API Key、token、密码、手机号、邮箱等隐私或密钥。\n\n"
+                "如果已有 skill 明显覆盖这个流程，请 should_create=false，不要制造重复 skill。\n\n"
+                "请只返回 JSON，不要 Markdown，不要解释。格式：\n"
+                "{\n"
+                '  "should_create": true,\n'
+                '  "name": "short-kebab-name",\n'
+                '  "description": "一句话描述",\n'
+                '  "triggers": ["触发场景1", "触发场景2"],\n'
+                '  "body": "写入 SKILL.md Procedure 的可复用步骤",\n'
+                '  "source_message": "为什么建议创建的简短说明"\n'
+                "}\n"
+                "如果不值得创建，返回：{\"should_create\": false}\n\n"
+                f"已有 Skill 索引：\n{skill_index}\n\n"
+                f"最近 15 个用户回合（截至第 {user_turn_count} 个用户回合）：\n{transcript}"
+            )
+            prompt = self._build_skill_reflection_prompt(skill_index, transcript, user_turn_count)
+            response = await self.provider.chat_with_retry(
+                messages=[
+                    {"role": "system", "content": "你只负责提出待确认技能建议，不直接修改文件。"},
+                    {"role": "user", "content": prompt},
+                ],
+                tools=None,
+                model=self.model,
+                max_tokens=1800,
+                temperature=0.1,
+            )
+            if response.finish_reason == "error":
+                logger.warning("Skill reflection failed for {}: {}", session_key, response.content)
+                return
+            payload = self._parse_skill_reflection_payload(response.content or response.reasoning_content or "")
+            if not payload:
+                return
+            action = str(payload.get("action") or "").strip().lower()
+            if not action and payload.get("should_create"):
+                action = "create"
+            if action == "create":
+                await self._create_skill_suggestion_from_payload(payload, session_key)
+                return
+            if action == "update_candidate":
+                await self._create_skill_update_suggestion_from_payload(payload, session_key, transcript)
+                return
+        except Exception:
+            logger.exception("Skill reflection failed for session {}", session_key)
+
+    @staticmethod
+    def _build_skill_reflection_prompt(skill_index: str, transcript: str, user_turn_count: int) -> str:
+        return (
+            "You are TokenMind's skill curator. Review only the latest 15 user turns and decide "
+            "whether they contain reusable procedural knowledge.\n\n"
+            "Return JSON only. Do not write Markdown outside JSON.\n\n"
+            "Allowed actions:\n"
+            "- none: no reusable skill should be suggested.\n"
+            "- create: this is a new reusable workflow not covered by existing skills.\n"
+            "- update_candidate: an existing skill likely covers this workflow but should be improved.\n\n"
+            "Use create/update_candidate only for repeatable workflows, troubleshooting playbooks, "
+            "release steps, integration steps, or tool/API usage methods likely to recur. Never save "
+            "personal facts, one-off answers, temporary paths, session state, API keys, tokens, passwords, "
+            "phone numbers, emails, cookies, or secrets.\n\n"
+            "For create, return:\n"
+            "{\n"
+            '  "action": "create",\n'
+            '  "name": "short-kebab-name",\n'
+            '  "description": "one sentence",\n'
+            '  "triggers": ["trigger 1", "trigger 2"],\n'
+            '  "body": "Reusable procedure steps for SKILL.md",\n'
+            '  "source_message": "short reason"\n'
+            "}\n"
+            "For update_candidate, return:\n"
+            "{\n"
+            '  "action": "update_candidate",\n'
+            '  "target_skill": "existing-skill-name",\n'
+            '  "description": "what should change",\n'
+            '  "triggers": ["trigger 1"],\n'
+            '  "source_message": "short reason"\n'
+            "}\n"
+            'For none, return: {"action": "none"}\n\n'
+            f"Existing short skill index:\n{skill_index}\n\n"
+            f"Latest 15 user turns up to user turn {user_turn_count}:\n{transcript}"
+        )
+
+    async def _create_skill_suggestion_from_payload(self, payload: dict[str, Any], session_key: str) -> None:
+        store = SkillSuggestionStore(self.workspace)
+        safe_name = store._sanitize_name(str(payload.get("name") or ""))
+        if not safe_name:
+            return
+        existing_names = {skill["name"] for skill in self.context.skills.list_all_skills()}
+        pending_names = {suggestion.name for suggestion in store.list_pending()}
+        if safe_name in existing_names or safe_name in pending_names:
+            logger.info("Skill reflection skipped duplicate suggestion {}", safe_name)
+            return
+
+        description = str(payload.get("description") or safe_name).strip()
+        body = str(payload.get("body") or "").strip()
+        if len(body) < 20:
+            return
+        triggers = payload.get("triggers")
+        if not isinstance(triggers, list):
+            triggers = []
+        source_message = str(payload.get("source_message") or "").strip() or None
+        suggestion = store.create(
+            name=safe_name,
+            description=description,
+            body=body,
+            triggers=[str(item) for item in triggers if str(item).strip()],
+            source_session_id=session_key,
+            source_message=source_message,
+        )
+        logger.info("Skill reflection created pending suggestion {}", suggestion.name)
+
+    async def _create_skill_update_suggestion_from_payload(
+        self,
+        payload: dict[str, Any],
+        session_key: str,
+        transcript: str,
+    ) -> None:
+        store = SkillSuggestionStore(self.workspace)
+        target = store._sanitize_name(str(payload.get("target_skill") or ""))
+        if not target:
+            return
+        installed = {skill["name"] for skill in self.context.skills.list_all_skills()}
+        if target not in installed:
+            logger.info("Skill reflection skipped update for unknown skill {}", target)
+            return
+        for suggestion in store.list_pending():
+            if suggestion.kind == "update" and suggestion.target_skill == target:
+                logger.info("Skill reflection skipped duplicate update suggestion {}", target)
+                return
+
+        current_markdown = self.context.skills.load_skill(target)
+        if not current_markdown:
+            return
+
+        update_prompt = (
+            "You are updating an existing TokenMind SKILL.md. Produce a complete replacement SKILL.md "
+            "that preserves useful existing guidance and adds only reusable improvements from the recent "
+            "conversation. Do not include secrets, one-off facts, temporary paths, personal data, or "
+            "session-only state.\n\n"
+            "Return JSON only:\n"
+            "{\n"
+            '  "action": "update",\n'
+            f'  "target_skill": "{target}",\n'
+            '  "description": "one sentence",\n'
+            '  "triggers": ["trigger 1"],\n'
+            '  "markdown": "full SKILL.md content including frontmatter",\n'
+            '  "source_message": "short reason"\n'
+            "}\n\n"
+            f"Current SKILL.md for {target}:\n{current_markdown}\n\n"
+            f"Recent conversation evidence:\n{transcript}\n\n"
+            "The markdown must start with YAML frontmatter and keep the same name."
+        )
+        response = await self.provider.chat_with_retry(
+            messages=[
+                {"role": "system", "content": "You draft pending skill updates. Never modify files."},
+                {"role": "user", "content": update_prompt},
+            ],
+            tools=None,
+            model=self.model,
+            max_tokens=3000,
+            temperature=0.1,
+        )
+        if response.finish_reason == "error":
+            logger.warning("Skill update reflection failed for {}: {}", target, response.content)
+            return
+        update_payload = self._parse_skill_reflection_payload(response.content or response.reasoning_content or "")
+        if not update_payload:
+            return
+        markdown = str(update_payload.get("markdown") or "").strip()
+        if len(markdown) < 40:
+            return
+        triggers = update_payload.get("triggers")
+        if not isinstance(triggers, list):
+            fallback_triggers = payload.get("triggers")
+            triggers = fallback_triggers if isinstance(fallback_triggers, list) else []
+        description = str(update_payload.get("description") or payload.get("description") or target).strip()
+        source_message = str(update_payload.get("source_message") or payload.get("source_message") or "").strip() or None
+        suggestion = store.create_update(
+            target_skill=target,
+            description=description,
+            markdown=markdown,
+            previous_markdown=current_markdown,
+            triggers=[str(item) for item in triggers if str(item).strip()],
+            source_session_id=session_key,
+            source_message=source_message,
+        )
+        logger.info("Skill reflection created pending update suggestion {}", suggestion.name)
+
+    @classmethod
+    def _format_recent_turns_for_skill_reflection(cls, messages: list[dict[str, Any]]) -> str:
+        turns = cls._last_user_turns(messages, cls._SKILL_REFLECTION_INTERVAL)
+        parts: list[str] = []
+        for index, turn in enumerate(turns, start=1):
+            turn_parts = [part for message in turn if (part := cls._format_skill_reflection_message(message))]
+            if turn_parts:
+                parts.append(f"## Turn {index}\n" + "\n".join(turn_parts))
+        text = "\n\n".join(parts).strip()
+        if len(text) <= cls._SKILL_REFLECTION_MAX_CHARS:
+            return text
+        return text[-cls._SKILL_REFLECTION_MAX_CHARS :]
+
+    @staticmethod
+    def _last_user_turns(messages: list[dict[str, Any]], limit: int) -> list[list[dict[str, Any]]]:
+        turns: list[list[dict[str, Any]]] = []
+        current: list[dict[str, Any]] = []
+        for message in messages:
+            role = str(message.get("role") or "").lower()
+            if role == "user":
+                if current:
+                    turns.append(current)
+                current = [message]
+            elif current:
+                current.append(message)
+        if current:
+            turns.append(current)
+        return turns[-limit:]
+
+    @classmethod
+    def _format_skill_reflection_message(cls, message: dict[str, Any]) -> str | None:
+        role = str(message.get("role") or "").lower()
+        content = message.get("content")
+        if isinstance(content, list):
+            text = " ".join(
+                str(block.get("text") or block.get("content") or "")
+                for block in content
+                if isinstance(block, dict)
+            )
+        elif isinstance(content, str):
+            text = content
+        elif content is None:
+            text = ""
+        else:
+            text = json.dumps(content, ensure_ascii=False)
+
+        if role == "assistant":
+            text = cls._strip_think(text) or ""
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list) and tool_calls:
+                names = []
+                for tool_call in tool_calls:
+                    if isinstance(tool_call, dict):
+                        names.append(str(tool_call.get("name") or (tool_call.get("function") or {}).get("name") or "?"))
+                if names:
+                    text = f"[called tools: {', '.join(names)}]\n{text}".strip()
+        elif role == "tool":
+            name = str(message.get("name") or "tool")
+            text = f"[{name}] {text}"
+
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            return None
+        if len(text) > cls._SKILL_REFLECTION_MESSAGE_MAX_CHARS:
+            text = text[: cls._SKILL_REFLECTION_MESSAGE_MAX_CHARS] + "...[truncated]"
+        return f"{role.upper()}: {text}"
+
+    @staticmethod
+    def _parse_skill_reflection_payload(text: str) -> dict[str, Any] | None:
+        raw = text.strip()
+        if not raw:
+            return None
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+            raw = re.sub(r"\s*```$", "", raw)
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if match:
+            raw = match.group(0)
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _count_user_turns(messages: list[dict[str, Any]]) -> int:
+        return sum(1 for message in messages if message.get("role") == "user")
+
     # ── session title auto-summarization ─────────────────────────────────
 
     _TITLE_MAX_CHARS = 10
@@ -1320,6 +1632,7 @@ class AgentLoop:
         saved_entries = self._save_turn(session, all_msgs, 1 + len(history))
         self._save_timeline_events(session, saved_entries, raw_timeline_events)
         self.sessions.save(session)
+        self._maybe_schedule_skill_reflection(session)
         self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
 
         if (

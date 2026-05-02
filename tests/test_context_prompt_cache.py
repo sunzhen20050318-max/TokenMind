@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import datetime as datetime_module
 from datetime import datetime as real_datetime
 from importlib.resources import files as pkg_files
 from pathlib import Path
-import datetime as datetime_module
 
 from tokenmind.agent.context import ContextBuilder
 
@@ -45,6 +45,16 @@ def test_system_prompt_stays_stable_when_clock_changes(tmp_path, monkeypatch) ->
     prompt2 = builder.build_system_prompt()
 
     assert prompt1 == prompt2
+
+
+def test_system_prompt_does_not_run_skill_suggestion_policy_every_turn(tmp_path) -> None:
+    workspace = _make_workspace(tmp_path)
+    builder = ContextBuilder(workspace)
+
+    prompt = builder.build_system_prompt()
+
+    assert "# Skill Suggestion Policy" not in prompt
+    assert "propose_skill" not in prompt
 
 
 def test_runtime_context_is_separate_untrusted_user_message(tmp_path) -> None:

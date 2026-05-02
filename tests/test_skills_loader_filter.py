@@ -58,6 +58,25 @@ def test_build_skills_summary_excludes_disabled(tmp_path: Path) -> None:
     assert "alpha" not in summary
 
 
+def test_build_skill_route_index_is_compact_and_includes_triggers(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    builtin = tmp_path / "builtin"
+    _write_skill(
+        workspace / "skills",
+        "pypi-release",
+        "Publish Python packages",
+        metadata='{"tokenmind":{"triggers":["twine upload","pip install"],"capabilities":["wheel build"]}}',
+    )
+
+    loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
+    index = loader.build_skill_route_index()
+
+    assert "pypi-release: Publish Python packages" in index
+    assert "twine" in index
+    assert "wheel" in index
+    assert "<skill" not in index
+
+
 def test_get_always_skills_honors_disabled(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     builtin = tmp_path / "builtin"

@@ -158,6 +158,25 @@ class SkillsLoader:
 
         return "\n".join(lines)
 
+    def build_skill_route_index(self, max_hints: int = 10) -> str:
+        """Build a compact one-line-per-skill index for create/update routing."""
+
+        skills = self.list_skills(filter_unavailable=False)
+        if not skills:
+            return ""
+
+        lines: list[str] = []
+        for skill in skills:
+            name = skill["name"]
+            desc = self._get_skill_description(name)
+            meta = self._get_skill_meta(name)
+            hints = self._skill_hints(name, desc, meta, max_hints=max_hints)
+            hint_text = ", ".join(hints) if hints else "none"
+            source = skill.get("source") or "unknown"
+            path = skill.get("path") or ""
+            lines.append(f"- {name}: {desc} | hints: {hint_text} | source: {source} | path: {path}")
+        return "\n".join(lines)
+
     def _get_missing_requirements(self, skill_meta: dict) -> str:
         """Get a description of missing requirements."""
         missing = []
@@ -176,6 +195,43 @@ class SkillsLoader:
         if meta and meta.get("description"):
             return meta["description"]
         return name  # Fallback to skill name
+
+    @classmethod
+    def _skill_hints(
+        cls,
+        name: str,
+        description: str,
+        skill_meta: dict,
+        max_hints: int,
+    ) -> list[str]:
+        raw_items: list[str] = [name, description]
+        for key in ("triggers", "hints", "capabilities"):
+            value = skill_meta.get(key)
+            if isinstance(value, list):
+                raw_items.extend(str(item) for item in value)
+            elif isinstance(value, str):
+                raw_items.append(value)
+        scope = skill_meta.get("scope")
+        if isinstance(scope, str):
+            raw_items.append(scope)
+
+        seen: set[str] = set()
+        hints: list[str] = []
+        for item in raw_items:
+            for token in cls._hint_tokens(item):
+                lowered = token.lower()
+                if lowered in seen:
+                    continue
+                seen.add(lowered)
+                hints.append(token)
+                if len(hints) >= max_hints:
+                    return hints
+        return hints
+
+    @staticmethod
+    def _hint_tokens(text: str) -> list[str]:
+        tokens = re.findall(r"[A-Za-z0-9_.:/+-]{3,}|[\u4e00-\u9fff]{2,}", text or "")
+        return [token.strip("-_.,:;/ ") for token in tokens if token.strip("-_.,:;/ ")]
 
     def _strip_frontmatter(self, content: str) -> str:
         """Remove YAML frontmatter from markdown content."""

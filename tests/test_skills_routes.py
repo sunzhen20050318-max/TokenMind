@@ -138,3 +138,83 @@ def test_seeded_disabled_skill_reflected_in_list(temp_config_path: Path, fake_sk
     items = response.json()["items"]
     github = next(item for item in items if item["name"] == "github")
     assert github["enabled"] is False
+
+
+def test_skill_suggestion_routes_approve_and_reject(
+    temp_config_path: Path,
+    fake_skills,
+) -> None:
+    from tokenmind.agent.skill_suggestions import SkillSuggestionStore
+
+    store = SkillSuggestionStore(fake_skills["workspace"])
+    first = store.create(name="new workflow", description="New workflow", body="Do it safely.")
+    second = store.create(name="reject me", description="Reject me", body="Nope.")
+
+    client = build_client()
+
+    listed = client.get("/api/skills/suggestions")
+    assert listed.status_code == 200
+    listed_items = listed.json()["items"]
+    assert {item["id"] for item in listed_items} == {first.id, second.id}
+    first_payload = next(item for item in listed_items if item["id"] == first.id)
+    assert first_payload["preview_markdown"].startswith("---\n")
+    assert "Do it safely." in first_payload["preview_markdown"]
+
+    approved = client.post(f"/api/skills/suggestions/{first.id}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["name"] == "new-workflow"
+    assert (fake_skills["workspace"] / "skills" / "new-workflow" / "SKILL.md").exists()
+
+    rejected = client.delete(f"/api/skills/suggestions/{second.id}")
+    assert rejected.status_code == 200
+    assert rejected.json()["deleted"] is True
+    assert SkillSuggestionStore(fake_skills["workspace"]).list_pending() == []
+
+
+def test_skill_update_suggestion_route_exposes_diff_and_approves(
+    temp_config_path: Path,
+    fake_skills,
+) -> None:
+    from tokenmind.agent.skill_suggestions import SkillSuggestionStore
+
+    skill_dir = fake_skills["workspace"] / "skills" / "local"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    old = """---
+name: local
+description: "Old local skill"
+---
+
+# local
+"""
+    (skill_dir / "SKILL.md").write_text(old, encoding="utf-8")
+    new = """---
+name: local
+description: "Updated local skill"
+---
+
+# local
+
+## Procedure
+
+1. Use the updated flow.
+"""
+    store = SkillSuggestionStore(fake_skills["workspace"])
+    suggestion = store.create_update(
+        target_skill="local",
+        description="Updated local skill",
+        markdown=new,
+        previous_markdown=old,
+    )
+
+    client = build_client()
+    listed = client.get("/api/skills/suggestions")
+    payload = next(item for item in listed.json()["items"] if item["id"] == suggestion.id)
+
+    assert payload["kind"] == "update"
+    assert payload["target_skill"] == "local"
+    assert "+1. Use the updated flow." in payload["diff_markdown"]
+
+    approved = client.post(f"/api/skills/suggestions/{suggestion.id}/approve")
+
+    assert approved.status_code == 200
+    assert "Updated local skill" in (skill_dir / "SKILL.md").read_text(encoding="utf-8")

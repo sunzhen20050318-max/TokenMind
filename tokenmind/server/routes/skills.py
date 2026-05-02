@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from tokenmind.agent.skill_suggestions import SkillSuggestion, SkillSuggestionStore
 from tokenmind.agent.skills import SkillsLoader
 from tokenmind.config.loader import load_config, save_config
 
@@ -31,6 +32,23 @@ class SkillListResponse(BaseModel):
     items: list[SkillSummary]
 
 
+class SkillSuggestionResponse(SkillSuggestion):
+    preview_markdown: str
+    diff_markdown: str = ""
+
+
+class SkillSuggestionListResponse(BaseModel):
+    items: list[SkillSuggestionResponse]
+
+
+class SkillSuggestionApproveRequest(BaseModel):
+    overwrite: bool = False
+
+
+class SkillSuggestionDeleteResponse(BaseModel):
+    deleted: bool
+
+
 class SkillToggleRequest(BaseModel):
     enabled: bool = Field(..., description="Whether the skill should be enabled")
 
@@ -39,6 +57,23 @@ def _loader() -> SkillsLoader:
     config = load_config()
     workspace = Path(config.agents.defaults.workspace).expanduser()
     return SkillsLoader(workspace, disabled_skills=list(config.skills.disabled))
+
+
+def _suggestion_store() -> SkillSuggestionStore:
+    config = load_config()
+    workspace = Path(config.agents.defaults.workspace).expanduser()
+    return SkillSuggestionStore(workspace)
+
+
+def _suggestion_response(
+    store: SkillSuggestionStore,
+    suggestion: SkillSuggestion,
+) -> SkillSuggestionResponse:
+    return SkillSuggestionResponse(
+        **suggestion.model_dump(),
+        preview_markdown=store.render_preview(suggestion),
+        diff_markdown=store.render_diff(suggestion),
+    )
 
 
 def _summaries(loader: SkillsLoader, disabled: set[str]) -> list[SkillSummary]:
@@ -75,6 +110,37 @@ async def list_skills() -> SkillListResponse:
     disabled = set(config.skills.disabled)
     loader = _loader()
     return SkillListResponse(items=_summaries(loader, disabled))
+
+
+@router.get("/suggestions", response_model=SkillSuggestionListResponse)
+async def list_skill_suggestions() -> SkillSuggestionListResponse:
+    store = _suggestion_store()
+    return SkillSuggestionListResponse(
+        items=[_suggestion_response(store, suggestion) for suggestion in store.list_pending()]
+    )
+
+
+@router.post("/suggestions/{suggestion_id}/approve", response_model=SkillSuggestionResponse)
+async def approve_skill_suggestion(
+    suggestion_id: str,
+    request: SkillSuggestionApproveRequest | None = None,
+) -> SkillSuggestionResponse:
+    store = _suggestion_store()
+    try:
+        approved = store.approve(
+            suggestion_id,
+            overwrite=bool(request.overwrite) if request else False,
+        )
+        return _suggestion_response(store, approved)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Skill suggestion not found") from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail="Skill already exists") from exc
+
+
+@router.delete("/suggestions/{suggestion_id}", response_model=SkillSuggestionDeleteResponse)
+async def reject_skill_suggestion(suggestion_id: str) -> SkillSuggestionDeleteResponse:
+    return SkillSuggestionDeleteResponse(deleted=_suggestion_store().reject(suggestion_id))
 
 
 @router.put("/{name}/enabled", response_model=SkillSummary)

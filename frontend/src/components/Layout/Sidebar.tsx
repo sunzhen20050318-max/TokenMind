@@ -650,7 +650,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="shell-sidebar__top">
         <div className="shell-sidebar__brand">
           <div className="shell-sidebar__brand-row">
-            <BrandMark alt="TokenMind 标志" size={collapsed ? 28 : 32} variant={collapsed ? 'icon' : 'wordmark'} />
+            <BrandMark
+              alt="TokenMind 标志"
+              className="shell-sidebar__brand-logo"
+              size={collapsed ? 28 : 32}
+              variant={collapsed ? 'icon' : 'sidebar-wordmark'}
+            />
           </div>
         </div>
 
@@ -819,7 +824,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             <div className="shell-sidebar__more" ref={moreMenuRef}>
               <button
-                className={`shell-sidebar__nav-item ${
+                className={`shell-sidebar__nav-item shell-sidebar__more-toggle ${
                   mainView === 'music' ||
                   mainView === 'video' ||
                   VOICE_VIEWS.includes(mainView)
@@ -830,10 +835,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => setMoreMenuOpen((value) => !value)}
                 aria-expanded={moreMenuOpen}
               >
-                <span className="shell-sidebar__icon">
-                  <SidebarIcon id="more" />
+                <span className="shell-sidebar__group-label">
+                  <span className="shell-sidebar__icon">
+                    <SidebarIcon id="more" />
+                  </span>
+                  <span>更多</span>
                 </span>
-                <span>更多</span>
                 <span className={`shell-sidebar__group-caret ${moreMenuOpen ? 'is-open' : ''}`}>▾</span>
               </button>
 
