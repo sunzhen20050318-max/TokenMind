@@ -183,7 +183,7 @@ export interface SkillSummary {
 
 export interface SkillSuggestion {
   id: string;
-  kind?: 'create' | 'update';
+  kind: 'create' | 'update';
   name: string;
   description: string;
   body: string;

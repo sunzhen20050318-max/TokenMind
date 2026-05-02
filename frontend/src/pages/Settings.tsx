@@ -1143,14 +1143,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSkillSuggestionBusy(suggestion.id);
     try {
       await api.approveSkillSuggestion(suggestion.id);
-      await loadSkills();
       setSelectedSkillSuggestion(null);
       setSuccess(`已确认技能建议：${suggestion.name}`);
     } catch (error) {
       setFailure(error, '确认技能建议失败');
-    } finally {
       setSkillSuggestionBusy(null);
+      return;
     }
+    setSkillSuggestionBusy(null);
+    void loadSkills();
   };
 
   const rejectSkillSuggestion = async (suggestion: SkillSuggestion) => {

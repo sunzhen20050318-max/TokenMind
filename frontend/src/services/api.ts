@@ -446,7 +446,7 @@ export const api = {
           : null;
       throw new Error(detail || `Failed to approve skill suggestion: ${res.statusText}`);
     }
-    return res.json();
+    return (await res.json()) as SkillSuggestion;
   },
 
   async rejectSkillSuggestion(id: string): Promise<{ deleted: boolean }> {
@@ -461,7 +461,7 @@ export const api = {
           : null;
       throw new Error(detail || `Failed to reject skill suggestion: ${res.statusText}`);
     }
-    return res.json();
+    return (await res.json()) as { deleted: boolean };
   },
 
   async listTtsVoices(): Promise<TtsVoiceListResponse> {
