@@ -898,28 +898,6 @@ class AgentLoop:
                 return
 
             skill_index = self.context.skills.build_skill_route_index() or "(no installed skills)"
-            prompt = (
-                "你是 TokenMind 的技能沉淀审查器。请只判断最近 15 个用户回合里，"
-                "是否出现了值得沉淀为可复用 Skill 的流程。\n\n"
-                "只有满足以下条件才 should_create=true：\n"
-                "- 是可重复使用的工作流、排错步骤、发布流程、集成步骤、工具/API 使用方法；\n"
-                "- 未来很可能再次遇到；\n"
-                "- 不只是普通事实、个人偏好、一次性回答、临时路径或当前会话状态；\n"
-                "- 不包含 API Key、token、密码、手机号、邮箱等隐私或密钥。\n\n"
-                "如果已有 skill 明显覆盖这个流程，请 should_create=false，不要制造重复 skill。\n\n"
-                "请只返回 JSON，不要 Markdown，不要解释。格式：\n"
-                "{\n"
-                '  "should_create": true,\n'
-                '  "name": "short-kebab-name",\n'
-                '  "description": "一句话描述",\n'
-                '  "triggers": ["触发场景1", "触发场景2"],\n'
-                '  "body": "写入 SKILL.md Procedure 的可复用步骤",\n'
-                '  "source_message": "为什么建议创建的简短说明"\n'
-                "}\n"
-                "如果不值得创建，返回：{\"should_create\": false}\n\n"
-                f"已有 Skill 索引：\n{skill_index}\n\n"
-                f"最近 15 个用户回合（截至第 {user_turn_count} 个用户回合）：\n{transcript}"
-            )
             prompt = self._build_skill_reflection_prompt(skill_index, transcript, user_turn_count)
             response = await self.provider.chat_with_retry(
                 messages=[
@@ -963,6 +941,8 @@ class AgentLoop:
             "release steps, integration steps, or tool/API usage methods likely to recur. Never save "
             "personal facts, one-off answers, temporary paths, session state, API keys, tokens, passwords, "
             "phone numbers, emails, cookies, or secrets.\n\n"
+            "Keep the body concise — typically under 3000 characters. Skills capture reusable "
+            "patterns and lessons, not exhaustive documentation.\n\n"
             "For create, return:\n"
             "{\n"
             '  "action": "create",\n'
@@ -1053,7 +1033,9 @@ class AgentLoop:
             "}\n\n"
             f"Current SKILL.md for {target}:\n{current_markdown}\n\n"
             f"Recent conversation evidence:\n{transcript}\n\n"
-            "The markdown must start with YAML frontmatter and keep the same name."
+            "The markdown must start with YAML frontmatter and keep the same name. "
+            "Keep the SKILL.md concise — typically under 4000 characters. Skills capture "
+            "reusable patterns and lessons, not exhaustive documentation."
         )
         response = await self.provider.chat_with_retry(
             messages=[
