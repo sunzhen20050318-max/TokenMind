@@ -140,6 +140,13 @@
   font-feature-settings: 'tnum';
 }
 
+.usage-page__chart {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 16px;
+}
+
 .usage-page__table {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -150,7 +157,10 @@
 .usage-page__table-head,
 .usage-page__row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.5fr) repeat(7, minmax(80px, 1fr));
+  /* 1 bucket column + N data columns; N = --usage-table-columns. */
+  grid-template-columns:
+    minmax(180px, 1.5fr)
+    repeat(var(--usage-table-columns, 7), minmax(80px, 1fr));
   gap: 12px;
   align-items: center;
   padding: 10px 16px;

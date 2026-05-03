@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { shouldRestoreLastSession } from './app/sessionRestoreState';
 import { AttachmentPreview } from './components/AttachmentPreview/AttachmentPreview';
 import { CrossSessionApprovalToast } from './components/CrossSessionToast/CrossSessionApprovalToast';
@@ -12,7 +12,11 @@ import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
 import { ProjectHome } from './pages/ProjectHome';
 import { SettingsPage } from './pages/Settings';
-import { UsagePage } from './pages/UsagePage';
+// UsagePage pulls in ECharts (~190kB gz). Lazy-load so the main bundle stays
+// slim for users who never open the usage view.
+const UsagePage = lazy(() =>
+  import('./pages/UsagePage').then((module) => ({ default: module.UsagePage })),
+);
 import { VideoPage } from './pages/Video';
 import { VoiceClonePage } from './pages/voice/VoiceCloneStudio';
 import { TtsPage } from './pages/voice/TtsStudio';
@@ -200,7 +204,9 @@ const App: React.FC = () => {
             ) : mainView === 'video' ? (
               <VideoPage capability={creativeCapabilities?.video} />
             ) : mainView === 'usage' ? (
-              <UsagePage />
+              <Suspense fallback={<div className="app-main__empty">加载中…</div>}>
+                <UsagePage />
+              </Suspense>
             ) : mainView === 'project-home' ? (
               <ProjectHome
                 onStartConversation={async (message) => {

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { EChart } from '../components/charts/EChart';
 import { api } from '../services/api';
 import type { UsageAggregateResponse, UsageGroupBy, UsageRow } from '../types/usage';
+import { buildUsageChartOption } from './usageChartOption';
 import './usage.css';
 
 const GROUP_OPTIONS: { value: UsageGroupBy; label: string }[] = [
@@ -76,6 +78,20 @@ export function UsagePage() {
 
   const summary = data?.summary;
   const summaryHitRate = summary ? cacheHitRate(summary) : 0;
+  // Most providers (OpenAI / DeepSeek / Qwen / GLM / MiMo …) never report
+  // cache_write or reasoning tokens. Drop those columns when the current
+  // range has no signal so the table stays readable.
+  const showCacheWrite = (summary?.cacheWriteTokens ?? 0) > 0;
+  const showReasoning = (summary?.reasoningTokens ?? 0) > 0;
+  const tableColumns = 5 + (showCacheWrite ? 1 : 0) + (showReasoning ? 1 : 0);
+
+  const chartOption = useMemo(
+    () =>
+      data
+        ? buildUsageChartOption(groupBy, data.items, { showCacheWrite })
+        : null,
+    [data, groupBy, showCacheWrite],
+  );
 
   return (
     <div className="usage-page">
@@ -143,9 +159,13 @@ export function UsagePage() {
           <SummaryCard label="总 token" value={summary.totalTokens} highlight />
           <SummaryCard label="输入(未命中)" value={summary.inputTokens} />
           <SummaryCard label="缓存命中" value={summary.cachedInputTokens} />
-          <SummaryCard label="缓存写入" value={summary.cacheWriteTokens} />
+          {showCacheWrite ? (
+            <SummaryCard label="缓存写入" value={summary.cacheWriteTokens} />
+          ) : null}
           <SummaryCard label="输出" value={summary.outputTokens} />
-          <SummaryCard label="推理(含于输出)" value={summary.reasoningTokens} muted />
+          {showReasoning ? (
+            <SummaryCard label="推理(含于输出)" value={summary.reasoningTokens} muted />
+          ) : null}
           <SummaryCard
             label="缓存命中率"
             text={`${(summaryHitRate * 100).toFixed(1)}%`}
@@ -154,14 +174,23 @@ export function UsagePage() {
         </section>
       ) : null}
 
-      <section className="usage-page__table">
+      {chartOption && data && data.items.length > 0 ? (
+        <section className="usage-page__chart">
+          <EChart option={chartOption} height={320} />
+        </section>
+      ) : null}
+
+      <section
+        className="usage-page__table"
+        style={{ '--usage-table-columns': tableColumns } as React.CSSProperties}
+      >
         <div className="usage-page__table-head">
           <span className="usage-page__col-bucket">{bucketLabel(groupBy)}</span>
           <span>输入</span>
           <span>缓存命中</span>
-          <span>缓存写入</span>
+          {showCacheWrite ? <span>缓存写入</span> : null}
           <span>输出</span>
-          <span>推理</span>
+          {showReasoning ? <span>推理</span> : null}
           <span>合计</span>
           <span>调用</span>
         </div>
@@ -174,11 +203,13 @@ export function UsagePage() {
               </span>
               <span>{formatTokens(row.inputTokens)}</span>
               <span>{formatTokens(row.cachedInputTokens)}</span>
-              <span>{formatTokens(row.cacheWriteTokens)}</span>
+              {showCacheWrite ? <span>{formatTokens(row.cacheWriteTokens)}</span> : null}
               <span>{formatTokens(row.outputTokens)}</span>
-              <span className="usage-page__cell-muted">
-                {row.reasoningTokens > 0 ? formatTokens(row.reasoningTokens) : '—'}
-              </span>
+              {showReasoning ? (
+                <span className="usage-page__cell-muted">
+                  {row.reasoningTokens > 0 ? formatTokens(row.reasoningTokens) : '—'}
+                </span>
+              ) : null}
               <span className="usage-page__cell-total">
                 <span
                   className="usage-page__bar"
