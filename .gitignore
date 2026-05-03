@@ -32,4 +32,8 @@ tokenmind/webui/
 .claude/
 tmp-*
 tmp_*
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
 
