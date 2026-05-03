@@ -152,6 +152,64 @@ function categoricalBarOption(
   };
 }
 
+function treemapOption(items: UsageRow[]): EChartsCoreOption {
+  // Color scale: deeper indigo = higher cache hit rate (more savings).
+  const palette = ['#3a4a8a', '#4d63a8', '#6a82c8', '#8aa1de', '#a8b8e8'];
+  const data = items.map((row, idx) => {
+    const billable = row.inputTokens + row.cachedInputTokens;
+    const hitRate = billable === 0 ? 0 : row.cachedInputTokens / billable;
+    return {
+      name: row.bucket,
+      value: row.totalTokens,
+      itemStyle: { color: palette[idx % palette.length] },
+      _hitRate: hitRate,
+    };
+  });
+  return {
+    ...baseOption(),
+    legend: { show: false },
+    tooltip: {
+      ...(baseOption().tooltip as object),
+      formatter: (params: { name: string; value: number; data: { _hitRate: number } }) =>
+        `<strong>${params.name}</strong><br/>` +
+        `总 token: ${params.value.toLocaleString()}<br/>` +
+        `缓存命中率: ${(params.data._hitRate * 100).toFixed(1)}%`,
+    },
+    series: [
+      {
+        type: 'treemap',
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        data,
+        label: {
+          show: true,
+          color: 'rgba(255, 255, 255, 0.95)',
+          fontSize: 12,
+          formatter: (params: { name: string; value: number }) => {
+            const tokens =
+              params.value < 1000
+                ? params.value.toString()
+                : params.value < 1_000_000
+                  ? `${(params.value / 1000).toFixed(1)}k`
+                  : `${(params.value / 1_000_000).toFixed(2)}M`;
+            return `{name|${params.name}}\n{val|${tokens}}`;
+          },
+          rich: {
+            name: { fontSize: 12, color: 'rgba(255, 255, 255, 0.95)', lineHeight: 18 },
+            val: { fontSize: 14, color: 'rgba(255, 255, 255, 0.7)', fontWeight: 600 },
+          },
+        },
+        itemStyle: {
+          borderColor: 'rgba(20, 22, 30, 0.95)',
+          borderWidth: 2,
+          gapWidth: 2,
+        },
+      },
+    ],
+  };
+}
+
 function pieOption(items: UsageRow[]): EChartsCoreOption {
   const data = items.map((row) => ({
     name: row.bucket,
@@ -193,6 +251,9 @@ export function buildUsageChartOption(
   }
   if (groupBy === 'provider') {
     return pieOption(items);
+  }
+  if (groupBy === 'model') {
+    return treemapOption(items);
   }
   return categoricalBarOption(items, options.showCacheWrite);
 }
