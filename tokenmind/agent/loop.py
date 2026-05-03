@@ -40,6 +40,7 @@ from tokenmind.knowledge import KnowledgeService
 from tokenmind.providers.base import LLMProvider
 from tokenmind.server.attachments import AttachmentStore
 from tokenmind.session.manager import Session, SessionManager
+from tokenmind.usage import UsageRecord, UsageRecorder
 
 if TYPE_CHECKING:
     from tokenmind.config.schema import (
@@ -191,6 +192,7 @@ class AgentLoop:
         # at injection time so reloads keep the breadcrumb.
         self._pending_guidance: dict[str, list[str]] = {}
         self.audit = AuditLogger(workspace)
+        self.usage_recorder = UsageRecorder(workspace / "usage.sqlite3")
         self.memory_consolidator = MemoryConsolidator(
             workspace=workspace,
             provider=provider,
@@ -225,6 +227,43 @@ class AgentLoop:
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+
+    def _record_usage(
+        self,
+        response: Any,
+        *,
+        session_key: str | None,
+        model: str | None = None,
+    ) -> None:
+        """Persist token usage from an LLM response. Best-effort: any failure
+        is logged and swallowed so usage tracking never blocks chat output."""
+        try:
+            usage = getattr(response, "usage", None) or {}
+            if not usage:
+                return
+            project_id: str | None = None
+            sid = session_key or ""
+            if sid:
+                try:
+                    session = self.sessions.get_or_create(sid)
+                    project_id = session.project_id
+                except Exception:
+                    project_id = None
+            self.usage_recorder.record(
+                UsageRecord(
+                    session_id=sid or "unknown",
+                    provider=self.provider.provider_name,
+                    model=model or self.model,
+                    input_tokens=int(usage.get("input_tokens", 0) or 0),
+                    cached_input_tokens=int(usage.get("cached_input_tokens", 0) or 0),
+                    cache_write_tokens=int(usage.get("cache_write_tokens", 0) or 0),
+                    output_tokens=int(usage.get("output_tokens", 0) or 0),
+                    reasoning_tokens=int(usage.get("reasoning_tokens", 0) or 0),
+                    project_id=project_id,
+                )
+            )
+        except Exception:
+            logger.exception("Failed to record token usage")
 
     def _sync_creative_tools(self) -> None:
         """Register or remove creative tools based on current config."""
@@ -585,6 +624,7 @@ class AgentLoop:
                 tools=tool_defs,
                 model=self.model,
             )
+            self._record_usage(response, session_key=msg.session_key if msg else None)
 
             if response.has_tool_calls:
                 if on_progress:
@@ -909,6 +949,7 @@ class AgentLoop:
                 max_tokens=1800,
                 temperature=0.1,
             )
+            self._record_usage(response, session_key=session_key)
             if response.finish_reason == "error":
                 logger.warning("Skill reflection failed for {}: {}", session_key, response.content)
                 return
@@ -1047,6 +1088,7 @@ class AgentLoop:
             max_tokens=3000,
             temperature=0.1,
         )
+        self._record_usage(response, session_key=session_key)
         if response.finish_reason == "error":
             logger.warning("Skill update reflection failed for {}: {}", target, response.content)
             return
@@ -1190,7 +1232,7 @@ class AgentLoop:
             return
 
         try:
-            title = await self._call_title_summarizer(first_message[:500])
+            title = await self._call_title_summarizer(first_message[:500], session_key=session_key)
         except Exception:
             logger.exception("Title gen: LLM call failed for {}", session_key)
             return
@@ -1225,7 +1267,9 @@ class AgentLoop:
         except Exception:
             logger.exception("Title gen: failed to publish update for {}", session_key)
 
-    async def _call_title_summarizer(self, first_message: str) -> str | None:
+    async def _call_title_summarizer(
+        self, first_message: str, *, session_key: str | None = None
+    ) -> str | None:
         """One-shot LLM call returning a short Chinese title (≤10 chars).
 
         Reasoning models (DeepSeek-R1, GLM-Z1, …) wrap their internal
@@ -1285,6 +1329,7 @@ class AgentLoop:
             logger.warning("Title summarizer timed out")
             return None
 
+        self._record_usage(response, session_key=session_key)
         raw = (getattr(response, "content", None) or "").strip()
         return self._extract_title_from_raw(raw)
 
