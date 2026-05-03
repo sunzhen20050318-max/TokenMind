@@ -55,6 +55,7 @@ import type {
   ToolsSettingsUpdate,
 } from '../types/config';
 import type { KnowledgeDetailResponse, KnowledgeDocument, KnowledgeOverviewResponse } from '../types/knowledge';
+import type { UsageAggregateResponse, UsageQuery } from '../types/usage';
 
 const API_BASE = '/api';
 
@@ -462,6 +463,21 @@ export const api = {
       throw new Error(detail || `Failed to reject skill suggestion: ${res.statusText}`);
     }
     return (await res.json()) as { deleted: boolean };
+  },
+
+  async getUsageAggregate(query: UsageQuery): Promise<UsageAggregateResponse> {
+    const params = new URLSearchParams({ groupBy: query.groupBy });
+    if (query.start) params.set('start', query.start);
+    if (query.end) params.set('end', query.end);
+    if (query.provider) params.set('provider', query.provider);
+    if (query.model) params.set('model', query.model);
+    if (query.sessionId) params.set('sessionId', query.sessionId);
+    if (query.limit) params.set('limit', String(query.limit));
+    const res = await fetch(`${API_BASE}/usage/aggregate?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load usage: ${res.statusText}`);
+    }
+    return (await res.json()) as UsageAggregateResponse;
   },
 
   async listTtsVoices(): Promise<TtsVoiceListResponse> {

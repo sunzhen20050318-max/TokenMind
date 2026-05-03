@@ -14,7 +14,8 @@ interface SessionRestoreStateOptions {
     | 'project-home'
     | 'project-chat'
     | 'settings'
-    | 'tasks';
+    | 'tasks'
+    | 'usage';
   activeProjectId: string | null;
 }
 

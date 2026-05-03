@@ -1,0 +1,218 @@
+.usage-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px 28px;
+  height: 100%;
+  overflow: auto;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.usage-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.usage-page__header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.usage-page__subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+}
+
+.usage-page__refresh {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.usage-page__refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.usage-page__refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.usage-page__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+}
+
+.usage-page__filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usage-page__filter-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.usage-page__segmented {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.usage-page__segment {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.usage-page__segment:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.usage-page__segment.is-active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.usage-page__error {
+  background: rgba(255, 90, 90, 0.12);
+  border: 1px solid rgba(255, 90, 90, 0.4);
+  color: rgba(255, 200, 200, 0.95);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.usage-page__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.usage-page__summary-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-page__summary-card.is-highlight {
+  background: rgba(120, 150, 255, 0.12);
+  border-color: rgba(120, 150, 255, 0.3);
+}
+
+.usage-page__summary-card.is-muted {
+  opacity: 0.65;
+}
+
+.usage-page__summary-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.usage-page__summary-value {
+  font-size: 20px;
+  font-weight: 600;
+  font-feature-settings: 'tnum';
+}
+
+.usage-page__table {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.usage-page__table-head,
+.usage-page__row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(7, minmax(80px, 1fr));
+  gap: 12px;
+  align-items: center;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-feature-settings: 'tnum';
+}
+
+.usage-page__table-head {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.usage-page__row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.usage-page__row:last-child {
+  border-bottom: none;
+}
+
+.usage-page__col-bucket {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usage-page__cell-muted {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.usage-page__cell-total {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.usage-page__bar {
+  position: absolute;
+  inset: -2px 0 -2px 0;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 150, 255, 0.18),
+    rgba(120, 150, 255, 0.05)
+  );
+  border-radius: 4px;
+  z-index: 0;
+}
+
+.usage-page__cell-total > span:last-child {
+  position: relative;
+  z-index: 1;
+  font-weight: 500;
+}
+
+.usage-page__empty {
+  padding: 32px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+}

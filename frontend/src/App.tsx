@@ -12,6 +12,7 @@ import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
 import { ProjectHome } from './pages/ProjectHome';
 import { SettingsPage } from './pages/Settings';
+import { UsagePage } from './pages/UsagePage';
 import { VideoPage } from './pages/Video';
 import { VoiceClonePage } from './pages/voice/VoiceCloneStudio';
 import { TtsPage } from './pages/voice/TtsStudio';
@@ -64,6 +65,7 @@ const App: React.FC = () => {
     | 'project-chat'
     | 'settings'
     | 'tasks'
+    | 'usage'
   >('chat');
   const enterTimerRef = useRef<number | null>(null);
   const appReady = gateDismissed || gateExiting;
@@ -197,6 +199,8 @@ const App: React.FC = () => {
               <VoiceDesignPage capability={creativeCapabilities?.voice_design} />
             ) : mainView === 'video' ? (
               <VideoPage capability={creativeCapabilities?.video} />
+            ) : mainView === 'usage' ? (
+              <UsagePage />
             ) : mainView === 'project-home' ? (
               <ProjectHome
                 onStartConversation={async (message) => {

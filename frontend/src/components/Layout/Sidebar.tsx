@@ -23,7 +23,8 @@ export type SidebarMainView =
   | 'project-home'
   | 'project-chat'
   | 'settings'
-  | 'tasks';
+  | 'tasks'
+  | 'usage';
 
 const VOICE_VIEWS: SidebarMainView[] = ['voice-clone', 'tts', 'voice-design'];
 
@@ -78,7 +79,8 @@ function SidebarIcon({
     | 'video'
     | 'project'
     | 'more'
-    | 'task';
+    | 'task'
+    | 'usage';
 }) {
   if (id === 'settings') {
     return (
@@ -191,6 +193,17 @@ function SidebarIcon({
         <circle cx="6" cy="12" r="1.6" />
         <circle cx="12" cy="12" r="1.6" />
         <circle cx="18" cy="12" r="1.6" />
+      </svg>
+    );
+  }
+
+  if (id === 'usage') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M4 19h16" />
+        <rect x="6" y="11" width="3" height="7" rx="0.6" />
+        <rect x="11" y="7" width="3" height="11" rx="0.6" />
+        <rect x="16" y="13" width="3" height="5" rx="0.6" />
       </svg>
     );
   }
@@ -827,6 +840,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={`shell-sidebar__nav-item shell-sidebar__more-toggle ${
                   mainView === 'music' ||
                   mainView === 'video' ||
+                  mainView === 'tasks' ||
+                  mainView === 'usage' ||
                   VOICE_VIEWS.includes(mainView)
                     ? 'is-active'
                     : ''
@@ -929,6 +944,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <SidebarIcon id="task" />
                     </span>
                     <span>定时任务</span>
+                  </button>
+                  <button
+                    className={`shell-sidebar__more-item ${mainView === 'usage' ? 'is-active' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectMainView('usage');
+                      setMoreMenuOpen(false);
+                    }}
+                  >
+                    <span className="shell-sidebar__icon">
+                      <SidebarIcon id="usage" />
+                    </span>
+                    <span>Token 用量</span>
                   </button>
                 </div>
               ) : null}
