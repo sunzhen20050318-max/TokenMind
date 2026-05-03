@@ -10,6 +10,7 @@ import httpx
 import json_repair
 
 from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from tokenmind.providers.usage import build_usage
 
 _AZURE_MSG_KEYS = frozenset({"role", "content", "tool_calls", "tool_call_id", "name"})
 
@@ -183,14 +184,26 @@ class AzureOpenAIProvider(LLMProvider):
                         )
                     )
 
-            usage = {}
+            usage: dict[str, int] = {}
             if response.get("usage"):
                 usage_data = response["usage"]
-                usage = {
-                    "prompt_tokens": usage_data.get("prompt_tokens", 0),
-                    "completion_tokens": usage_data.get("completion_tokens", 0),
-                    "total_tokens": usage_data.get("total_tokens", 0),
-                }
+                prompt_tokens = int(usage_data.get("prompt_tokens", 0) or 0)
+                cached = int(
+                    (usage_data.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0
+                )
+                cached = min(cached, prompt_tokens)
+                reasoning = int(
+                    (usage_data.get("completion_tokens_details") or {}).get(
+                        "reasoning_tokens", 0
+                    )
+                    or 0
+                )
+                usage = build_usage(
+                    input_tokens=prompt_tokens - cached,
+                    cached_input_tokens=cached,
+                    output_tokens=usage_data.get("completion_tokens", 0),
+                    reasoning_tokens=reasoning,
+                )
 
             reasoning_content = message.get("reasoning_content") or None
 

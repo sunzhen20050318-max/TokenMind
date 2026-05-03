@@ -11,6 +11,7 @@ import httpx
 import json_repair
 
 from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from tokenmind.providers.usage import build_usage
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
@@ -412,13 +413,12 @@ class AnthropicProvider(LLMProvider):
                 )
 
         usage_obj = response.get("usage") or {}
-        input_tokens = int(usage_obj.get("input_tokens", 0) or 0)
-        output_tokens = int(usage_obj.get("output_tokens", 0) or 0)
-        usage = {
-            "prompt_tokens": input_tokens,
-            "completion_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-        }
+        usage = build_usage(
+            input_tokens=usage_obj.get("input_tokens", 0),
+            cached_input_tokens=usage_obj.get("cache_read_input_tokens", 0),
+            cache_write_tokens=usage_obj.get("cache_creation_input_tokens", 0),
+            output_tokens=usage_obj.get("output_tokens", 0),
+        )
 
         stop_reason = response.get("stop_reason") or "end_turn"
         finish_reason = "tool_calls" if stop_reason == "tool_use" else "stop"

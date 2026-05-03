@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 
 from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from tokenmind.providers.registry import ProviderSpec
+from tokenmind.providers.usage import build_usage
 
 
 # Some "OpenAI-compatible" gateways (notably Xiaomi MiMo) advertise tool
@@ -115,8 +116,55 @@ def _read_extra(obj: Any, key: str) -> Any:
     return None
 
 
+def _normalize_openai_usage(usage_obj: Any) -> dict[str, int]:
+    """Convert an OpenAI-style usage object into the unified usage dict.
+
+    Handles three subtly different shapes:
+    - Vanilla OpenAI: prompt_tokens / completion_tokens with optional
+      `prompt_tokens_details.cached_tokens` and
+      `completion_tokens_details.reasoning_tokens`.
+    - DeepSeek: extra `prompt_cache_hit_tokens` field; cached count takes
+      precedence over OpenAI's nested form when present.
+    - Other gateways (Qwen, GLM, Moonshot, OpenRouter, SiliconFlow): may
+      omit detail subsets entirely; we degrade gracefully to zero.
+    """
+    prompt_tokens = int(getattr(usage_obj, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage_obj, "completion_tokens", 0) or 0)
+
+    cached = int(_read_extra(usage_obj, "prompt_cache_hit_tokens") or 0)
+    if not cached:
+        details = getattr(usage_obj, "prompt_tokens_details", None) or _read_extra(
+            usage_obj, "prompt_tokens_details"
+        )
+        if details is not None:
+            cached = int(getattr(details, "cached_tokens", 0) or 0)
+            if not cached and isinstance(details, dict):
+                cached = int(details.get("cached_tokens") or 0)
+
+    reasoning = 0
+    completion_details = getattr(usage_obj, "completion_tokens_details", None) or _read_extra(
+        usage_obj, "completion_tokens_details"
+    )
+    if completion_details is not None:
+        reasoning = int(getattr(completion_details, "reasoning_tokens", 0) or 0)
+        if not reasoning and isinstance(completion_details, dict):
+            reasoning = int(completion_details.get("reasoning_tokens") or 0)
+
+    cached = min(cached, prompt_tokens)
+    return build_usage(
+        input_tokens=prompt_tokens - cached,
+        cached_input_tokens=cached,
+        output_tokens=completion_tokens,
+        reasoning_tokens=reasoning,
+    )
+
+
 class OpenAICompatProvider(LLMProvider):
     """Provider for OpenAI-compatible APIs and gateways."""
+
+    @property
+    def provider_name(self) -> str:
+        return self.spec.name if self.spec else "openai_compat"
 
     def __init__(
         self,
@@ -352,13 +400,9 @@ class OpenAICompatProvider(LLMProvider):
                     finish_reason = "tool_calls"
 
         usage_obj = getattr(response, "usage", None)
-        usage = {}
+        usage: dict[str, int] = {}
         if usage_obj:
-            usage = {
-                "prompt_tokens": getattr(usage_obj, "prompt_tokens", 0),
-                "completion_tokens": getattr(usage_obj, "completion_tokens", 0),
-                "total_tokens": getattr(usage_obj, "total_tokens", 0),
-            }
+            usage = _normalize_openai_usage(usage_obj)
 
         return LLMResponse(
             content=content,

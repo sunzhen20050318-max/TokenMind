@@ -101,6 +101,14 @@ class LLMProvider(ABC):
         self.api_base = api_base
         self.generation: GenerationSettings = GenerationSettings()
 
+    @property
+    def provider_name(self) -> str:
+        """Stable identifier used in logs and usage records. Defaults to the
+        class name with the trailing ``Provider`` stripped and lowercased.
+        Subclasses should override when a more specific identity is available
+        (for example, OpenAI-compatible gateways that wrap several brands)."""
+        return type(self).__name__.removesuffix("Provider").lower()
+
     @staticmethod
     def _sanitize_empty_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Sanitize message content: fix empty blocks, strip internal _meta fields."""

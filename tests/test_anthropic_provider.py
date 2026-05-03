@@ -78,7 +78,11 @@ async def test_anthropic_chat_success_maps_response() -> None:
     assert isinstance(result, LLMResponse)
     assert result.content == "Hello from Claude"
     assert result.finish_reason == "tool_calls"
-    assert result.usage == {"prompt_tokens": 12, "completion_tokens": 18, "total_tokens": 30}
+    assert result.usage["prompt_tokens"] == 12
+    assert result.usage["completion_tokens"] == 18
+    assert result.usage["total_tokens"] == 30
+    assert result.usage["input_tokens"] == 12
+    assert result.usage["output_tokens"] == 18
     assert result.thinking_blocks == [{"type": "thinking", "thinking": "internal", "signature": "sig"}]
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].arguments == {"path": "todo.md"}
