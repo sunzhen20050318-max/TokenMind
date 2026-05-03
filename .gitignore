@@ -7,6 +7,8 @@ dist/
 build/
 dist-windows/
 build-windows/
+dist-macos/
+build-macos/
 dist-installer/
 *.egg-info/
 *.egg

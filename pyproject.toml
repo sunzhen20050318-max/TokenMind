@@ -68,6 +68,9 @@ dev = [
 windows = [
     "pyinstaller>=6.10,<7.0",
 ]
+macos = [
+    "pyinstaller>=6.10,<7.0",
+]
 
 [project.scripts]
 tokenmind = "tokenmind.cli.commands:app"
