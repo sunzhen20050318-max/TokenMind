@@ -65,3 +65,17 @@ def set_channel_manager(manager: Any) -> None:
 def get_channel_manager() -> Any:
     """Get the global external channel manager instance."""
     return _channel_manager
+
+
+_usage_recorder: Any = None
+
+
+def set_usage_recorder(recorder: Any) -> None:
+    """Set the global token usage recorder instance."""
+    global _usage_recorder
+    _usage_recorder = recorder
+
+
+def get_usage_recorder() -> Any:
+    """Get the global token usage recorder instance."""
+    return _usage_recorder

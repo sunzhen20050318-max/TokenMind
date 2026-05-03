@@ -35,6 +35,7 @@ from tokenmind.server.dependencies import (
     set_connection_manager,
     set_cron_service,
     set_inbound_queue,
+    set_usage_recorder,
 )
 from tokenmind.server.frontend import (
     register_frontend_routes,
@@ -54,6 +55,7 @@ from tokenmind.server.routes import (
     skills_router,
     status_router,
     storage_router,
+    usage_router,
 )
 from tokenmind.server.websocket.handler import websocket_handler
 from tokenmind.server.websocket.manager import ConnectionManager
@@ -1521,6 +1523,7 @@ def create_app(
     set_connection_manager(connection_manager)
     set_inbound_queue(bus.inbound)
     set_cron_service(getattr(agent_loop, "cron_service", None))
+    set_usage_recorder(getattr(agent_loop, "usage_recorder", None))
 
     # Create FastAPI app
     app = FastAPI(
@@ -1554,6 +1557,7 @@ def create_app(
     app.include_router(skills_router)
     app.include_router(status_router)
     app.include_router(storage_router)
+    app.include_router(usage_router)
 
     # WebSocket endpoint
     @app.websocket("/ws/chat")
