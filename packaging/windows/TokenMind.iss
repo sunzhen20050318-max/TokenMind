@@ -1,7 +1,7 @@
 #define MyAppName "TokenMind"
 #define MyAppPublisher "TokenMind"
 #ifndef MyAppVersion
-#define MyAppVersion "0.1.7"
+#define MyAppVersion "0.1.9"
 #endif
 
 #define ProjectRoot AddBackslash(SourcePath) + "..\.."
