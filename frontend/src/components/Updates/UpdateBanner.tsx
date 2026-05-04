@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-
 import {
   dismissUpdate,
   isUpdateAvailable,
@@ -16,14 +14,11 @@ interface UpdateBannerProps {
 }
 
 export function UpdateBanner({ info, onDismiss }: UpdateBannerProps) {
-  const visible = useMemo(() => {
-    if (!info) return false;
-    if (!isUpdateAvailable(info)) return false;
-    if (isUpdateDismissed(info.latest.version)) return false;
-    return true;
-  }, [info]);
-
-  if (!visible || !info) return null;
+  // Don't memoize: visibility depends on localStorage (dismissed-versions),
+  // which is invisible to React's prop diff. Cheap to recompute every render.
+  if (!info) return null;
+  if (!isUpdateAvailable(info)) return null;
+  if (isUpdateDismissed(info.latest.version)) return null;
 
   const targetUrl = pickDownloadUrl(info);
   const handleDownload = () => {
