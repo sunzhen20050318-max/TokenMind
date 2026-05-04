@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "latest": {
-    "version": "0.1.7",
+    "version": "0.1.8",
     "released_at": "2026-05-04",
-    "release_notes": "首个公开版本,包含完整的多模型/多渠道/创作工坊功能,以及 Token 用量追踪页面",
+    "release_notes": "新增 macOS 桌面端打包能力,以及消息中心(铃铛)与更新/公告推送系统",
     "downloads": {
       "macos": "https://gitee.com/sun124578963_0/TokenMind/releases",
       "windows": "https://gitee.com/sun124578963_0/TokenMind/releases"
@@ -18,6 +18,14 @@
       "message": "感谢下载使用 TokenMind!\n\n- 在「设置 → 模型供应商」配置你的 API Key\n- 在「Token 用量」追踪每次调用的成本\n- 有问题欢迎到 [Gitee 仓库](https://gitee.com/sun124578963_0/TokenMind/issues) 提 issue",
       "starts_at": "2026-05-01",
       "expires_at": "2026-08-01"
+    },
+    {
+      "id": "20260504-bell-test",
+      "title": "消息中心已上线",
+      "level": "info",
+      "message": "右上角铃铛图标是新加的**消息中心**,版本更新和重要公告都会从这里推送。点击 ⟳ 可立刻刷新拉取最新内容,15 天内未处理的会自动清除。",
+      "starts_at": "2026-05-04",
+      "expires_at": "2026-05-20"
     }
   ]
 }
