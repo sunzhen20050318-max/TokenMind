@@ -16,8 +16,11 @@ import type {
   VersionInfo,
 } from '../types/updates';
 
-const VERSIONS_URL =
-  'https://gitee.com/sun124578963_0/TokenMind/raw/main/versions.json';
+// Same-origin proxy. The TokenMind backend (`tokenmind/server/routes/updates.py`)
+// fetches the upstream versions.json on our behalf — going direct to Gitee
+// from the browser fails CORS because Gitee sets Access-Control-Allow-
+// Credentials: true without Access-Control-Allow-Origin.
+const VERSIONS_URL = '/api/updates/versions';
 
 const CACHE_KEY = 'tokenmind:updates:cache';
 const CACHE_TIME_KEY = 'tokenmind:updates:cached_at';
@@ -38,7 +41,10 @@ export async function fetchVersionInfo(
   }
 
   try {
-    const res = await fetch(VERSIONS_URL, { cache: 'no-cache' });
+    const url = options.forceRefresh
+      ? `${VERSIONS_URL}?force=true`
+      : VERSIONS_URL;
+    const res = await fetch(url, { cache: 'no-cache' });
     if (!res.ok) return readCachedInfo();
     const raw = (await res.json()) as VersionInfo;
     if (!raw || typeof raw !== 'object' || !raw.latest?.version) {

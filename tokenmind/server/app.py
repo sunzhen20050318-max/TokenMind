@@ -55,6 +55,7 @@ from tokenmind.server.routes import (
     skills_router,
     status_router,
     storage_router,
+    updates_router,
     usage_router,
 )
 from tokenmind.server.websocket.handler import websocket_handler
@@ -1557,6 +1558,7 @@ def create_app(
     app.include_router(skills_router)
     app.include_router(status_router)
     app.include_router(storage_router)
+    app.include_router(updates_router)
     app.include_router(usage_router)
 
     # WebSocket endpoint
