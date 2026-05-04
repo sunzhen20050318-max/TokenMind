@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { shouldRestoreLastSession } from './app/sessionRestoreState';
 import { AttachmentPreview } from './components/AttachmentPreview/AttachmentPreview';
 import { CrossSessionApprovalToast } from './components/CrossSessionToast/CrossSessionApprovalToast';
@@ -8,7 +8,6 @@ import { UpdateModal } from './components/Updates/UpdateModal';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
 import { createProjectConversation } from './components/Projects/projectEntryFlow';
-import { EntryGate } from './components/EntryGate/EntryGate';
 import { KnowledgePage } from './pages/Knowledge';
 import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
@@ -52,8 +51,6 @@ const App: React.FC = () => {
     queuePendingSessionStarter,
   } = useChatStore();
   const { sessions } = useSessions();
-  const [gateDismissed, setGateDismissed] = useState(false);
-  const [gateExiting, setGateExiting] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
@@ -75,20 +72,6 @@ const App: React.FC = () => {
     | 'tasks'
     | 'usage'
   >('chat');
-  const enterTimerRef = useRef<number | null>(null);
-  const appReady = gateDismissed || gateExiting;
-
-  const handleEnter = useCallback(() => {
-    if (gateDismissed || gateExiting) {
-      return;
-    }
-
-    setGateExiting(true);
-    enterTimerRef.current = window.setTimeout(() => {
-      setGateDismissed(true);
-      setGateExiting(false);
-    }, 720);
-  }, [gateDismissed, gateExiting]);
 
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [updatesRefreshing, setUpdatesRefreshing] = useState(false);
@@ -143,7 +126,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (
       !shouldRestoreLastSession({
-        appReady,
         currentSession,
         sessionCount: sessions.length,
         mainView,
@@ -156,25 +138,40 @@ const App: React.FC = () => {
     const rememberedSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
     const restoredSession = sessions.find((session) => session.session_id === rememberedSessionId);
     setCurrentSession(restoredSession?.session_id || sessions[0].session_id);
-  }, [appReady, currentSession, sessions, setCurrentSession, mainView, activeProjectId]);
+  }, [currentSession, sessions, setCurrentSession, mainView, activeProjectId]);
 
-  useEffect(
-    () => () => {
-      if (enterTimerRef.current) {
-        window.clearTimeout(enterTimerRef.current);
-      }
-    },
-    []
-  );
+  // First-time / fresh-start auto-onboarding: when no session is current and
+  // there's nothing to restore, mint a new session id so ChatWindow renders
+  // its welcome ("上午好,我能帮你做什么") screen instead of an empty
+  // placeholder. For brand-new users this fires immediately; for returning
+  // users we wait briefly so the restoration effect above wins.
+  useEffect(() => {
+    if (currentSession || mainView !== 'chat' || activeProjectId) return;
+    const remembered = window.localStorage.getItem(LAST_SESSION_KEY);
+    const mint = () =>
+      setCurrentSession(
+        `web:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      );
+    if (!remembered) {
+      mint();
+      return;
+    }
+    // Last-session id exists — give restoration up to 300ms to find it.
+    // Falls back to a fresh session if restoration can't (e.g., session was
+    // deleted, or sessions list returned empty).
+    const tid = window.setTimeout(() => {
+      const state = useChatStore.getState();
+      if (state.currentSession || state.activeProjectId) return;
+      mint();
+    }, 300);
+    return () => window.clearTimeout(tid);
+  }, [currentSession, mainView, activeProjectId, setCurrentSession]);
 
   return (
     <div className="app-root">
-      {!gateDismissed ? <EntryGate isExiting={gateExiting} onEnter={handleEnter} /> : null}
-
       <div
         className={[
           'app-shell',
-          gateDismissed ? 'app-shell--visible' : gateExiting ? 'app-shell--revealing' : 'app-shell--hidden',
           sidebarCollapsed ? 'app-shell--sidebar-collapsed' : '',
         ].join(' ')}
       >

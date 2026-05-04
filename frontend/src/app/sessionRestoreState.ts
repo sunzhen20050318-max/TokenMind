@@ -1,5 +1,4 @@
 interface SessionRestoreStateOptions {
-  appReady: boolean;
   currentSession: string | null;
   sessionCount: number;
   mainView:
@@ -20,7 +19,7 @@ interface SessionRestoreStateOptions {
 }
 
 export function shouldRestoreLastSession(options: SessionRestoreStateOptions): boolean {
-  if (!options.appReady || options.currentSession || options.sessionCount === 0) {
+  if (options.currentSession || options.sessionCount === 0) {
     return false;
   }
 
