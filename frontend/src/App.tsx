@@ -4,7 +4,7 @@ import { AttachmentPreview } from './components/AttachmentPreview/AttachmentPrev
 import { CrossSessionApprovalToast } from './components/CrossSessionToast/CrossSessionApprovalToast';
 import { Header } from './components/Layout/Header';
 import { AnnouncementToast } from './components/Updates/AnnouncementToast';
-import { UpdateBanner } from './components/Updates/UpdateBanner';
+import { UpdateModal } from './components/Updates/UpdateModal';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
 import { createProjectConversation } from './components/Projects/projectEntryFlow';
@@ -178,7 +178,6 @@ const App: React.FC = () => {
           sidebarCollapsed ? 'app-shell--sidebar-collapsed' : '',
         ].join(' ')}
       >
-        <UpdateBanner info={versionInfo} onDismiss={handleUpdatesDismissed} />
         <div className="app-main">
           <Sidebar
             collapsed={sidebarCollapsed}
@@ -289,6 +288,7 @@ const App: React.FC = () => {
       </div>
       <AttachmentPreview />
       <AnnouncementToast info={versionInfo} />
+      <UpdateModal info={versionInfo} onDismiss={handleUpdatesDismissed} />
       <CrossSessionApprovalToast
         onJumpToSession={(sessionId) => {
           setCurrentSession(sessionId);
