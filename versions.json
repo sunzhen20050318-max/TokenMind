@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "latest": {
+    "version": "0.1.7",
+    "released_at": "2026-05-04",
+    "release_notes": "首个公开版本,包含完整的多模型/多渠道/创作工坊功能,以及 Token 用量追踪页面",
+    "downloads": {
+      "macos": "https://gitee.com/sun124578963_0/TokenMind/releases",
+      "windows": "https://gitee.com/sun124578963_0/TokenMind/releases"
+    },
+    "min_supported_version": "0.1.0"
+  },
+  "announcements": [
+    {
+      "id": "20260504-welcome",
+      "title": "欢迎使用 TokenMind",
+      "level": "info",
+      "message": "感谢下载使用 TokenMind!\n\n- 在「设置 → 模型供应商」配置你的 API Key\n- 在「Token 用量」追踪每次调用的成本\n- 有问题欢迎到 [Gitee 仓库](https://gitee.com/sun124578963_0/TokenMind/issues) 提 issue",
+      "starts_at": "2026-05-01",
+      "expires_at": "2026-08-01"
+    }
+  ]
+}

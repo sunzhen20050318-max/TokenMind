@@ -3,6 +3,8 @@ import { shouldRestoreLastSession } from './app/sessionRestoreState';
 import { AttachmentPreview } from './components/AttachmentPreview/AttachmentPreview';
 import { CrossSessionApprovalToast } from './components/CrossSessionToast/CrossSessionApprovalToast';
 import { Header } from './components/Layout/Header';
+import { AnnouncementToast } from './components/Updates/AnnouncementToast';
+import { UpdateBanner } from './components/Updates/UpdateBanner';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
 import { createProjectConversation } from './components/Projects/projectEntryFlow';
@@ -22,6 +24,8 @@ import { VoiceClonePage } from './pages/voice/VoiceCloneStudio';
 import { TtsPage } from './pages/voice/TtsStudio';
 import { VoiceDesignPage } from './pages/voice/VoiceDesignStudio';
 import { api } from './services/api';
+import { fetchVersionInfo, POLL_INTERVAL_MS } from './services/updates';
+import type { VersionInfo } from './types/updates';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
 import { useSessionOrchestrator } from './hooks/useSessionOrchestrator';
@@ -86,6 +90,31 @@ const App: React.FC = () => {
     }, 720);
   }, [gateDismissed, gateExiting]);
 
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  // Poke a counter when the user dismisses banner/toast so the components
+  // re-evaluate which announcements are still active without us refetching.
+  const [, setUpdatesTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (forceRefresh: boolean) => {
+      const info = await fetchVersionInfo({ forceRefresh });
+      if (!cancelled) setVersionInfo(info);
+    };
+    void load(false);
+    const interval = window.setInterval(() => {
+      void load(true);
+    }, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const handleUpdatesDismissed = useCallback(() => {
+    setUpdatesTick((value) => value + 1);
+  }, []);
+
   useEffect(() => {
     void fetchModelProviders();
     void loadCreativeCapabilities();
@@ -140,6 +169,7 @@ const App: React.FC = () => {
           sidebarCollapsed ? 'app-shell--sidebar-collapsed' : '',
         ].join(' ')}
       >
+        <UpdateBanner info={versionInfo} onDismiss={handleUpdatesDismissed} />
         <div className="app-main">
           <Sidebar
             collapsed={sidebarCollapsed}
@@ -148,7 +178,7 @@ const App: React.FC = () => {
             onSelectMainView={setMainView}
           />
           <main className="app-main__content">
-            <Header />
+            <Header versionInfo={versionInfo} onUpdatesChange={handleUpdatesDismissed} />
             {mainView === 'settings' ? (
               <SettingsPage
                 onNavigateBack={() => setMainView('chat')}
@@ -244,6 +274,7 @@ const App: React.FC = () => {
         </div>
       </div>
       <AttachmentPreview />
+      <AnnouncementToast info={versionInfo} />
       <CrossSessionApprovalToast
         onJumpToSession={(sessionId) => {
           setCurrentSession(sessionId);

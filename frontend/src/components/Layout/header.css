@@ -33,3 +33,45 @@
 .shell-header__status-dot.is-offline {
   background: #7a7d86;
 }
+
+.shell-header__bell-wrapper {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.shell-header__bell {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.shell-header__bell:hover,
+.shell-header__bell.is-open {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.shell-header__bell-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  background: #ef5b5b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+  border: 2px solid #2a2a2e;
+}
