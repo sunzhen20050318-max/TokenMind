@@ -301,6 +301,7 @@ export function getBellItems(info: VersionInfo | null): BellItem[] {
         message: ann.message,
         level: ann.level ?? 'info',
         receivedAt: 0,
+        publishedAt: ann.starts_at ? Date.parse(ann.starts_at) : undefined,
         isRead: readSet.has(ann.id),
         link: ann.link,
       });
@@ -321,6 +322,9 @@ export function getBellItems(info: VersionInfo | null): BellItem[] {
       message: info.latest.release_notes ?? '点击查看更新内容并下载最新版本。',
       level: 'info',
       receivedAt: 0,
+      publishedAt: info.latest.released_at
+        ? Date.parse(info.latest.released_at)
+        : undefined,
       isRead: readSet.has(versionId),
       downloadUrl: pickDownloadUrl(info) ?? undefined,
     });
@@ -332,7 +336,14 @@ export function getBellItems(info: VersionInfo | null): BellItem[] {
   return candidates
     .map((item) => ({ ...item, receivedAt: receivedMap[item.id] ?? now }))
     .filter((item) => item.receivedAt >= cutoff)
-    .sort((a, b) => b.receivedAt - a.receivedAt);
+    .sort((a, b) => {
+      // Newly received items rise to the top.
+      if (b.receivedAt !== a.receivedAt) return b.receivedAt - a.receivedAt;
+      // Within the same batch (e.g. first fetch) prefer the most recently
+      // published. Items without an explicit publication date fall back to 0,
+      // putting them after dated items in the same batch.
+      return (b.publishedAt ?? 0) - (a.publishedAt ?? 0);
+    });
 }
 
 export function getUnreadBellCount(info: VersionInfo | null): number {

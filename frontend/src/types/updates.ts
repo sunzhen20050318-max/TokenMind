@@ -52,6 +52,10 @@ export interface BellItem {
   /** Timestamp ms when this client first observed the item. Drives sort
    * order and the 15-day TTL cleanup. */
   receivedAt: number;
+  /** Optional publication timestamp (ms). Used as a tiebreaker when several
+   * items share the same receivedAt — typically on the first fetch where
+   * everything in the JSON arrives simultaneously. */
+  publishedAt?: number;
   isRead: boolean;
   /** External link (announcements). */
   link?: string;
