@@ -44,7 +44,10 @@ async def get_versions(
         return _cache["payload"]
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_S) as client:
+        async with httpx.AsyncClient(
+            timeout=REQUEST_TIMEOUT_S,
+            follow_redirects=True,
+        ) as client:
             response = await client.get(
                 UPSTREAM_URL, headers={"Accept": "application/json"}
             )
