@@ -94,7 +94,7 @@ function Card({
           ×
         </button>
       </header>
-      <div className="announcement-toast__body">
+      <div className="announcement-toast__body" translate="no">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

@@ -140,7 +140,15 @@ function Item({
           {formatRelativeDate(item.receivedAt)}
         </span>
       </header>
-      <div className="announcement-panel__item-body">
+      {/* translate="no" prevents Chrome translation / Grammarly / similar
+          browser extensions from injecting child nodes into our markdown
+          tree, which collides with React reconciliation and crashes with
+          "Failed to execute insertBefore on Node". */}
+      <div
+        className="announcement-panel__item-body"
+        translate="no"
+        suppressHydrationWarning
+      >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

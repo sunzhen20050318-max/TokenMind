@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../../services/api';
 import { AnnouncementPanel } from '../Updates/AnnouncementPanel';
@@ -25,7 +25,16 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Bumped whenever the panel reports a read-state change. Without this the
+  // unreadCount useMemo would stay cached on [versionInfo] alone — read state
+  // lives in localStorage, not in versionInfo, so memoization wouldn't notice.
+  const [bellRefreshKey, setBellRefreshKey] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const handleBellChange = useCallback(() => {
+    setBellRefreshKey((k) => k + 1);
+    onUpdatesChange();
+  }, [onUpdatesChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const unreadCount = useMemo(
     () => getUnreadBellCount(versionInfo),
-    [versionInfo],
+    [versionInfo, bellRefreshKey],
   );
 
   const online = serverOnline === true;
@@ -108,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
         {panelOpen ? (
           <AnnouncementPanel
             info={versionInfo}
-            onChange={onUpdatesChange}
+            onChange={handleBellChange}
             onClose={() => setPanelOpen(false)}
             onRefresh={onRefreshUpdates}
             refreshing={updatesRefreshing}
