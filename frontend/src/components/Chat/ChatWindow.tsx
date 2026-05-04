@@ -271,7 +271,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     clearPendingSessionStarter,
     pendingApproval,
     pendingMessages,
-    sessionExecTrusted,
     setSessionPendingApproval,
     enqueuePendingMessage,
     removePendingMessage,
@@ -291,12 +290,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     stopSessionTask(sessionId);
   }, [sessionId]);
   const isConnected = isSessionConnected(sessionId);
-  const enableExecForSession = useCallback(() => {
-    setSessionExecTrust(sessionId, true);
-  }, [sessionId]);
-  const disableExecForSession = useCallback(() => {
-    setSessionExecTrust(sessionId, false);
-  }, [sessionId]);
   const approvePendingTool = useCallback(() => {
     if (!pendingApproval) return;
     respondToToolApproval(sessionId, pendingApproval.approval_id, true);
@@ -733,21 +726,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
   return (
     <div className={`chat-shell ${hasConversation ? 'chat-shell--active' : 'chat-shell--launch'}`}>
-      <div className="chat-shell__topbar">
-        <button
-          type="button"
-          className={`chat-shell__trust ${sessionExecTrusted ? 'is-trusted' : ''}`}
-          onClick={sessionExecTrusted ? disableExecForSession : enableExecForSession}
-          title={
-            sessionExecTrusted
-              ? '当前会话中的 exec 会自动允许，点击后恢复逐次确认。'
-              : '开启后，当前会话中的 exec 不再每次弹出确认。'
-          }
-        >
-          {sessionExecTrusted ? '当前会话 Exec 已允许' : '允许当前会话执行 Exec'}
-        </button>
-      </div>
-
       <div
         className={`chat-shell__surface ${isSurfaceDragActive ? 'is-drop-active' : ''}`}
         onDragEnter={handleSurfaceDragEnter}
