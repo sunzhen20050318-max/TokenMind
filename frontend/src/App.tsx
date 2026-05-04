@@ -91,29 +91,38 @@ const App: React.FC = () => {
   }, [gateDismissed, gateExiting]);
 
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  const [updatesRefreshing, setUpdatesRefreshing] = useState(false);
   // Poke a counter when the user dismisses banner/toast so the components
   // re-evaluate which announcements are still active without us refetching.
   const [, setUpdatesTick] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (forceRefresh: boolean) => {
+  const refreshVersionInfo = useCallback(async (forceRefresh: boolean) => {
+    setUpdatesRefreshing(true);
+    try {
       const info = await fetchVersionInfo({ forceRefresh });
-      if (!cancelled) setVersionInfo(info);
-    };
-    void load(false);
+      setVersionInfo(info);
+    } finally {
+      setUpdatesRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshVersionInfo(false);
     const interval = window.setInterval(() => {
-      void load(true);
+      void refreshVersionInfo(true);
     }, POLL_INTERVAL_MS);
     return () => {
-      cancelled = true;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [refreshVersionInfo]);
 
   const handleUpdatesDismissed = useCallback(() => {
     setUpdatesTick((value) => value + 1);
   }, []);
+
+  const handleManualRefresh = useCallback(() => {
+    void refreshVersionInfo(true);
+  }, [refreshVersionInfo]);
 
   useEffect(() => {
     void fetchModelProviders();
@@ -178,7 +187,12 @@ const App: React.FC = () => {
             onSelectMainView={setMainView}
           />
           <main className="app-main__content">
-            <Header versionInfo={versionInfo} onUpdatesChange={handleUpdatesDismissed} />
+            <Header
+              versionInfo={versionInfo}
+              onUpdatesChange={handleUpdatesDismissed}
+              onRefreshUpdates={handleManualRefresh}
+              updatesRefreshing={updatesRefreshing}
+            />
             {mainView === 'settings' ? (
               <SettingsPage
                 onNavigateBack={() => setMainView('chat')}

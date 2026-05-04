@@ -13,6 +13,8 @@ interface AnnouncementPanelProps {
   info: VersionInfo | null;
   onChange: () => void;
   onClose: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
 }
 
 const ICONS: Record<string, string> = {
@@ -28,6 +30,8 @@ export function AnnouncementPanel({
   info,
   onChange,
   onClose,
+  onRefresh,
+  refreshing,
 }: AnnouncementPanelProps) {
   const items = getBellItems(info);
   const unread = items.filter((item) => !item.isRead);
@@ -52,6 +56,16 @@ export function AnnouncementPanel({
           ) : null}
         </span>
         <div className="announcement-panel__head-actions">
+          <button
+            type="button"
+            className={`announcement-panel__refresh ${refreshing ? 'is-loading' : ''}`}
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label="刷新"
+            title="检查最新公告与版本"
+          >
+            <RefreshIcon />
+          </button>
           {unread.length > 0 ? (
             <button
               type="button"
@@ -181,6 +195,27 @@ function Item({
         )}
       </footer>
     </article>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+      <path d="M3 21v-5h5" />
+    </svg>
   );
 }
 

@@ -31,6 +31,43 @@
   gap: 6px;
 }
 
+.announcement-panel__refresh {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.announcement-panel__refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.announcement-panel__refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.announcement-panel__refresh.is-loading svg {
+  animation: announcement-panel-spin 0.9s linear infinite;
+}
+
+@keyframes announcement-panel-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .announcement-panel__mark-all {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.14);

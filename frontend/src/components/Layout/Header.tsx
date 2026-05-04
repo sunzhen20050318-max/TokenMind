@@ -13,11 +13,15 @@ const POLL_INTERVAL_MS = 15000;
 interface HeaderProps {
   versionInfo: VersionInfo | null;
   onUpdatesChange: () => void;
+  onRefreshUpdates: () => void;
+  updatesRefreshing: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   versionInfo,
   onUpdatesChange,
+  onRefreshUpdates,
+  updatesRefreshing,
 }) => {
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -106,6 +110,8 @@ export const Header: React.FC<HeaderProps> = ({
             info={versionInfo}
             onChange={onUpdatesChange}
             onClose={() => setPanelOpen(false)}
+            onRefresh={onRefreshUpdates}
+            refreshing={updatesRefreshing}
           />
         ) : null}
       </div>
