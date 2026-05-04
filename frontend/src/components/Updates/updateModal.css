@@ -14,13 +14,14 @@
   position: relative;
   width: min(480px, 92vw);
   max-height: 86vh;
-  overflow: auto;
-  background: linear-gradient(
-    180deg,
-    rgba(36, 44, 80, 0.95),
-    rgba(20, 22, 30, 0.98)
-  );
-  border: 1px solid rgba(120, 150, 255, 0.35);
+  /* The modal itself doesn't scroll. Only the notes area does — that keeps
+     the title and action buttons pinned no matter how long release notes
+     get. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, #1d1d21 0%, #16181c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   padding: 24px 24px 20px;
   color: rgba(255, 255, 255, 0.92);
@@ -81,6 +82,12 @@
   line-height: 1.6;
   color: rgba(255, 255, 255, 0.82);
   margin-bottom: 18px;
+  /* Allow this region to absorb the modal's vertical slack and scroll its
+     own overflow when release_notes is long. min-height: 0 is the
+     well-known fix for flex children that need overflow to work. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .update-modal__notes p {
@@ -98,7 +105,7 @@
 }
 
 .update-modal__notes a {
-  color: #8aa1de;
+  color: #4f8eff;
   text-decoration: none;
 }
 
@@ -154,15 +161,15 @@
 }
 
 .update-modal__primary {
-  background: rgba(120, 150, 255, 0.45);
-  border: 1px solid rgba(120, 150, 255, 0.65);
-  color: rgba(255, 255, 255, 0.98);
+  background: #4f8eff;
+  border: 1px solid #4f8eff;
+  color: #fff;
   font-weight: 500;
 }
 
 .update-modal__primary:hover {
-  background: rgba(120, 150, 255, 0.6);
-  border-color: rgba(120, 150, 255, 0.85);
+  background: #6ba2ff;
+  border-color: #6ba2ff;
 }
 
 @keyframes update-modal-backdrop-in {
