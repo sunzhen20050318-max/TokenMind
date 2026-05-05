@@ -32,10 +32,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "{#AppDist}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppIcon}"; DestDir: "{app}"; DestName: "tokenmind.ico"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\TokenMind"; Filename: "{app}\TokenMind.exe"; IconFilename: "{#AppIcon}"
-Name: "{autodesktop}\TokenMind"; Filename: "{app}\TokenMind.exe"; IconFilename: "{#AppIcon}"; Tasks: desktopicon
+Name: "{autoprograms}\TokenMind"; Filename: "{app}\TokenMind.exe"; IconFilename: "{app}\tokenmind.ico"
+Name: "{autodesktop}\TokenMind"; Filename: "{app}\TokenMind.exe"; IconFilename: "{app}\tokenmind.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\TokenMind.exe"; Description: "Launch TokenMind"; Flags: nowait postinstall skipifsilent

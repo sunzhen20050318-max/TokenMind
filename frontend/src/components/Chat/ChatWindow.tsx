@@ -326,6 +326,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setDraftMessage('');
     setPendingFiles([]);
     setUploadProgress(null);
+    setInputFocusSignal((signal) => signal + 1);
   }, [sessionId]);
 
   useEffect(() => {
