@@ -11,6 +11,14 @@
   },
   "announcements": [
     {
+      "id": "20260505-windows-icon-fix",
+      "title": "Windows 用户:升级 0.1.10 时桌面图标修复指引",
+      "level": "warning",
+      "message": "如果你之前安装的 0.1.9 桌面快捷方式显示为白色普通文件图标,升级 0.1.10 时请按以下步骤操作:\n\n1. **先右键删除**桌面上原来白色的 TokenMind 快捷方式\n2. 双击运行 `TokenMindSetup-0.1.10.exe`\n3. 安装到「选择附加任务」那一步,**记得勾选「创建桌面快捷方式」**(此项默认未勾,因升级模式行为)\n4. 装完桌面应显示蓝色 TokenMind 图标\n\nMac 用户请忽略本通告。",
+      "starts_at": "2026-05-05",
+      "expires_at": "2026-07-05"
+    },
+    {
       "id": "20260504-welcome",
       "title": "欢迎使用 TokenMind",
       "level": "info",
