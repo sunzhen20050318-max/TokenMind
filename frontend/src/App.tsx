@@ -28,16 +28,48 @@ import type { VersionInfo } from './types/updates';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
 import { useSessionOrchestrator } from './hooks/useSessionOrchestrator';
+import { APP_VERSION } from './version';
 import './app.css';
 
 const LAST_SESSION_KEY = 'tokenmind:last-session';
 const SIDEBAR_COLLAPSED_KEY = 'tokenmind:sidebar-collapsed';
+// One-shot guard so the version-mismatch reload below can't loop. Cleared
+// when the tab closes (sessionStorage scope is intentional — a stale cache
+// re-appearing in a future tab session deserves another reload).
+const VERSION_RELOAD_GUARD_KEY = 'tokenmind:version-reload-done';
 
 const App: React.FC = () => {
   // Mount the WebSocket orchestrator at the app root so the chat WS lifecycle
   // is independent of the ChatWindow component (which gets unmounted whenever
   // the user navigates to settings, asset library, music studio, etc.).
   useSessionOrchestrator();
+
+  // Reconcile a stale browser cache after an in-place upgrade. The bundled
+  // APP_VERSION is a compile-time constant — if it doesn't match what the
+  // backend reports (the actual installed package version), this tab is
+  // running JS from a previous install. One hard reload + a sessionStorage
+  // guard against loops fixes it; the no-cache headers on index.html make
+  // sure the reload picks up the fresh bundle.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (sessionStorage.getItem(VERSION_RELOAD_GUARD_KEY)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await api.getStatus();
+        if (cancelled || !status?.version) return;
+        if (status.version !== APP_VERSION) {
+          sessionStorage.setItem(VERSION_RELOAD_GUARD_KEY, '1');
+          window.location.reload();
+        }
+      } catch {
+        // Network blip — re-check on next reload.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const {
     currentSession,

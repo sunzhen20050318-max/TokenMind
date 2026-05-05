@@ -8,6 +8,27 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 
+# Index HTML must always revalidate. After an in-place upgrade (0.1.x → 0.1.y)
+# the on-disk index.html now references new content-hashed bundles, but the
+# browser would happily keep serving the old cached HTML for hours under
+# heuristic caching — leading to "I installed the new version but it still
+# says 0.1.9". Forcing revalidation lets ETag-based 304s stay efficient
+# while guaranteeing the upgrade is picked up on the very next page load.
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+# Vite emits content-hashed filenames under /assets/ (e.g.
+# `assets/index-DpMZhPXy.js`). A new release means a new hash means a new
+# URL — caching them forever is safe and avoids an unnecessary round-trip
+# on every page load.
+_IMMUTABLE_HEADERS = {
+    "Cache-Control": "public, max-age=31536000, immutable",
+}
+
+
 def resolve_frontend_dist_dir() -> Path | None:
     """Return the best available frontend build directory."""
     source_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -42,7 +63,7 @@ def register_frontend_routes(app: FastAPI, frontend_dir: Path) -> None:
 
     @app.get("/", include_in_schema=False)
     async def frontend_index() -> FileResponse:
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers=_NO_CACHE_HEADERS)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def frontend_entry(full_path: str) -> FileResponse:
@@ -54,12 +75,20 @@ def register_frontend_routes(app: FastAPI, frontend_dir: Path) -> None:
 
         asset = _asset_for_path(normalized)
         if asset is not None:
-            return FileResponse(asset)
+            # Hashed bundles under /assets/ are safe to cache forever; everything
+            # else (favicon, robots.txt, etc.) shares the no-cache policy with
+            # index.html so a stale copy can't survive an upgrade.
+            headers = (
+                _IMMUTABLE_HEADERS
+                if normalized.startswith("assets/")
+                else _NO_CACHE_HEADERS
+            )
+            return FileResponse(asset, headers=headers)
 
         if Path(normalized).suffix:
             raise HTTPException(status_code=404, detail="Not Found")
 
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers=_NO_CACHE_HEADERS)
 
 
 def register_missing_frontend_routes(app: FastAPI) -> None:
