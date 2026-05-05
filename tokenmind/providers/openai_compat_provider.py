@@ -26,18 +26,41 @@ from tokenmind.providers.usage import build_usage
 #   </function>
 #   </tool_call>
 #
-# The patterns below recover those calls so the agent loop can still execute
-# them. Compiled once at import; no runtime cost on the (typical) standard path.
-_XML_TOOL_CALL_RE = re.compile(
-    r"<tool_call>\s*(?P<body>.*?)\s*</tool_call>",
+# Across MiMo regions/tiers the tag names and attribute syntax vary
+# (``<tool_use>``/``<function_call>`` wrappers; ``<function name="x">``
+# instead of ``<function=x>``; sometimes the wrapper is dropped entirely
+# and only ``<function...>`` survives; truncated responses may omit the
+# closing ``</tool_call>``). The patterns below cover all observed
+# variants — compiled once at import so the standard structured-tool_calls
+# path stays free of runtime cost.
+_XML_TOOL_CALL_OPEN_RE = re.compile(
+    r"<(?:tool_call|tool_use|function_call|tool)(?:\s[^>]*)?>",
+    re.IGNORECASE,
+)
+_XML_TOOL_CALL_BLOCK_RE = re.compile(
+    r"<(?P<tag>tool_call|tool_use|function_call|tool)(?:\s[^>]*)?>"
+    r"\s*(?P<body>.*?)\s*"
+    r"(?:</(?P=tag)>|\Z)",
     re.DOTALL | re.IGNORECASE,
 )
+# Two function-name syntaxes seen in the wild:
+#   <function=name>...</function>
+#   <function name="name">...</function>
 _XML_FUNCTION_RE = re.compile(
-    r"<function\s*=\s*(?P<name>[A-Za-z0-9_.\-]+)\s*>\s*(?P<args>.*?)\s*</function>",
+    r"<function"
+    r"(?:\s*=\s*(?P<name_eq>[A-Za-z0-9_.\-]+)"
+    r"|\s+name\s*=\s*[\"'](?P<name_attr>[A-Za-z0-9_.\-]+)[\"'])"
+    r"\s*>\s*(?P<args>.*?)\s*(?:</function>|\Z)",
     re.DOTALL | re.IGNORECASE,
 )
+# Parameter name syntaxes:
+#   <parameter=key>value</parameter>
+#   <parameter name="key">value</parameter>
 _XML_PARAMETER_RE = re.compile(
-    r"<parameter\s*=\s*(?P<key>[A-Za-z0-9_.\-]+)\s*>\s*(?P<value>.*?)\s*</parameter>",
+    r"<parameter"
+    r"(?:\s*=\s*(?P<key_eq>[A-Za-z0-9_.\-]+)"
+    r"|\s+name\s*=\s*[\"'](?P<key_attr>[A-Za-z0-9_.\-]+)[\"'])"
+    r"\s*>\s*(?P<value>.*?)\s*(?:</parameter>|\Z)",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -67,36 +90,87 @@ def _coerce_param_value(raw: str) -> Any:
     return text
 
 
+def _looks_like_xml_tool_call(content: str) -> bool:
+    """Cheap pre-check: does ``content`` carry any of the known wrapper or
+    function-call tag prefixes? Anything truthy here means we should try
+    the full parse before returning."""
+    if not content:
+        return False
+    lowered = content.lower()
+    return (
+        "<tool_call" in lowered
+        or "<tool_use" in lowered
+        or "<function_call" in lowered
+        or "<function=" in lowered
+        or "<function " in lowered
+    )
+
+
+def _parse_function_call(fn_match: "re.Match[str]") -> ToolCallRequest:
+    name = (fn_match.group("name_eq") or fn_match.group("name_attr") or "").strip()
+    arg_text = fn_match.group("args") or ""
+    arguments: dict[str, Any] = {}
+    for param_match in _XML_PARAMETER_RE.finditer(arg_text):
+        key = (param_match.group("key_eq") or param_match.group("key_attr") or "").strip()
+        if not key:
+            continue
+        arguments[key] = _coerce_param_value(param_match.group("value") or "")
+    return ToolCallRequest(
+        id=f"call_{uuid.uuid4().hex[:12]}",
+        name=name,
+        arguments=arguments,
+    )
+
+
 def _extract_xml_tool_calls(content: str) -> tuple[list[ToolCallRequest], str]:
     """Pull XML-style tool calls out of ``content``.
 
     Returns the parsed :class:`ToolCallRequest` list and the residual text
-    with all matched ``<tool_call>`` blocks stripped. Empty list when
-    nothing matches — caller can treat as "no fallback needed".
+    with all matched tool-call blocks stripped. Empty list when nothing
+    matches — caller can treat as "no fallback needed".
+
+    Strategy:
+    1. Prefer wrapped form (``<tool_call>...</tool_call>`` and aliases).
+    2. Fall back to bare ``<function=...>...</function>`` blocks for
+       gateways that drop the wrapper.
+    3. Tolerate a missing closing tag (truncated MiMo response) so the
+       user-facing chat doesn't leak raw XML in that edge case either.
     """
-    if not content or "<tool_call" not in content.lower():
+    if not _looks_like_xml_tool_call(content):
         return [], content
 
     parsed: list[ToolCallRequest] = []
     cleaned = content
+    matched_wrapper = False
 
-    for tool_call_match in _XML_TOOL_CALL_RE.finditer(content):
-        body = tool_call_match.group("body")
+    for wrapper_match in _XML_TOOL_CALL_BLOCK_RE.finditer(content):
+        matched_wrapper = True
+        body = wrapper_match.group("body") or ""
         for fn_match in _XML_FUNCTION_RE.finditer(body):
-            name = fn_match.group("name").strip()
-            arg_text = fn_match.group("args")
-            arguments: dict[str, Any] = {}
-            for param_match in _XML_PARAMETER_RE.finditer(arg_text):
-                key = param_match.group("key").strip()
-                arguments[key] = _coerce_param_value(param_match.group("value"))
-            parsed.append(
-                ToolCallRequest(
-                    id=f"call_{uuid.uuid4().hex[:12]}",
-                    name=name,
-                    arguments=arguments,
-                )
-            )
-        cleaned = cleaned.replace(tool_call_match.group(0), "", 1)
+            call = _parse_function_call(fn_match)
+            if call.name:
+                parsed.append(call)
+        cleaned = cleaned.replace(wrapper_match.group(0), "", 1)
+
+    if not matched_wrapper:
+        # No wrapper tag — try bare <function=...>...</function> blocks.
+        for fn_match in _XML_FUNCTION_RE.finditer(content):
+            call = _parse_function_call(fn_match)
+            if call.name:
+                parsed.append(call)
+                cleaned = cleaned.replace(fn_match.group(0), "", 1)
+
+    if not parsed and _looks_like_xml_tool_call(content):
+        # Markers were present but parsing failed — log a diagnostic so
+        # operators chasing a "tool args got dumped into chat" report can
+        # see exactly what shape the gateway produced. Truncate to keep
+        # logs sane on huge responses.
+        preview = content[:500].replace("\n", "\\n")
+        logger.warning(
+            "XML tool-call markers detected but no calls extracted "
+            "(likely a new gateway dialect). Preview: {}",
+            preview,
+        )
 
     return parsed, cleaned.strip()
 

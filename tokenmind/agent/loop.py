@@ -191,6 +191,10 @@ class AgentLoop:
         # interrupting the current tool. Persisted onto the session JSONL
         # at injection time so reloads keep the breadcrumb.
         self._pending_guidance: dict[str, list[str]] = {}
+        # Session keys whose title-summarizer is currently in flight. Used
+        # to dedupe quick-fire user messages without permanently marking
+        # the session "auto_titled" before the LLM call actually succeeds.
+        self._title_in_flight: set[str] = set()
         self.audit = AuditLogger(workspace)
         self.usage_recorder = UsageRecorder(workspace / "usage.sqlite3")
         self.memory_consolidator = MemoryConsolidator(
@@ -1220,32 +1224,41 @@ class AgentLoop:
         if len(first_message) < 3:
             return
 
+        # Dedupe quick-fire messages with an in-memory flag, but DO NOT
+        # persist auto_titled=True yet — a transient LLM failure here
+        # would otherwise permanently block retries on the next message.
         try:
-            # Mark up-front so a quick second message doesn't double-fire.
             session = self.sessions.get_or_create(session_key)
             if session.metadata.get("auto_titled"):
                 return
-            session.metadata["auto_titled"] = True
-            self.sessions.save(session)
+            if session_key in self._title_in_flight:
+                return
+            self._title_in_flight.add(session_key)
         except Exception:
-            logger.exception("Title gen: failed to mark session {}", session_key)
+            logger.exception("Title gen: failed to inspect session {}", session_key)
             return
 
         try:
-            title = await self._call_title_summarizer(first_message[:500], session_key=session_key)
-        except Exception:
-            logger.exception("Title gen: LLM call failed for {}", session_key)
-            return
-        if not title:
-            return
+            try:
+                title = await self._call_title_summarizer(
+                    first_message[:500], session_key=session_key
+                )
+            except Exception:
+                logger.exception("Title gen: LLM call failed for {}", session_key)
+                return
+            if not title:
+                return
 
-        try:
-            latest = self.sessions.get_or_create(session_key)
-            latest.set_title(title)
-            self.sessions.save(latest)
-        except Exception:
-            logger.exception("Title gen: failed to persist {} for {}", title, session_key)
-            return
+            try:
+                latest = self.sessions.get_or_create(session_key)
+                latest.set_title(title)
+                latest.metadata["auto_titled"] = True
+                self.sessions.save(latest)
+            except Exception:
+                logger.exception("Title gen: failed to persist {} for {}", title, session_key)
+                return
+        finally:
+            self._title_in_flight.discard(session_key)
 
         # Reuse the inbound message's channel + chat_id so the outbound
         # routes to the same WebSocket the frontend opened. Splitting

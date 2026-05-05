@@ -115,3 +115,61 @@ def test_each_call_gets_unique_id() -> None:
     calls, _ = _extract_xml_tool_calls(raw)
     assert calls[0].id != calls[1].id
     assert all(c.id.startswith("call_") for c in calls)
+
+
+def test_extracts_with_tool_use_wrapper() -> None:
+    """MiMo region variant: ``<tool_use>`` instead of ``<tool_call>``."""
+    raw = (
+        "<tool_use>\n"
+        "<function=generate_image>\n"
+        "<parameter=prompt>fox</parameter>\n"
+        "</function>\n"
+        "</tool_use>"
+    )
+    calls, residual = _extract_xml_tool_calls(raw)
+    assert len(calls) == 1 and calls[0].name == "generate_image"
+    assert calls[0].arguments == {"prompt": "fox"}
+    assert "<tool_use>" not in residual
+
+
+def test_extracts_with_attribute_syntax() -> None:
+    """Some gateways emit ``<function name="x">`` / ``<parameter name="k">``."""
+    raw = (
+        '<tool_call>\n'
+        '<function name="run_query">\n'
+        '<parameter name="sql">SELECT 1</parameter>\n'
+        '<parameter name="limit">10</parameter>\n'
+        '</function>\n'
+        '</tool_call>'
+    )
+    calls, _ = _extract_xml_tool_calls(raw)
+    assert len(calls) == 1
+    assert calls[0].name == "run_query"
+    assert calls[0].arguments == {"sql": "SELECT 1", "limit": 10}
+
+
+def test_extracts_bare_function_without_wrapper() -> None:
+    """Wrapper dropped — bare ``<function=...>...</function>`` survives."""
+    raw = (
+        "好的，我来调用工具。\n"
+        "<function=web_search>\n"
+        "<parameter=query>python regex</parameter>\n"
+        "</function>"
+    )
+    calls, residual = _extract_xml_tool_calls(raw)
+    assert len(calls) == 1 and calls[0].name == "web_search"
+    assert calls[0].arguments == {"query": "python regex"}
+    assert "<function=" not in residual
+
+
+def test_extracts_with_missing_closing_tag() -> None:
+    """Truncated MiMo response: closing ``</tool_call>`` lost — still extract."""
+    raw = (
+        "<tool_call>\n"
+        "<function=read_file>\n"
+        "<parameter=path>/tmp/x</parameter>\n"
+        "</function>"
+    )
+    calls, _ = _extract_xml_tool_calls(raw)
+    assert len(calls) == 1 and calls[0].name == "read_file"
+    assert calls[0].arguments == {"path": "/tmp/x"}
