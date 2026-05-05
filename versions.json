@@ -1,12 +1,11 @@
 {
   "schema_version": 1,
   "latest": {
-    "version": "0.1.9",
-    "released_at": "2026-05-04",
-    "release_notes": "新增消息中心(右上角铃铛)用于接收版本更新与公告;移除入场动画,启动更顺滑;首次打开直接进入对话页面;以及一些细节体验修复。",
+    "version": "0.1.10",
+    "released_at": "2026-05-05",
+    "release_notes": "修复使用 MiMo 模型时工具调用参数被泄露到聊天且工具不实际执行的问题;修复切换/新建会话后输入框偶发点击无响应的问题;修复 Windows 安装包桌面快捷方式显示为白色通用文件图标的问题;会话标题生成失败后允许下条消息重试。",
     "downloads": {
-      "macos": "https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMind-0.1.9-x64.dmg",
-      "windows": "https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMindSetup-0.1.9.exe"
+      "windows": "https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMindSetup-0.1.10.exe"
     },
     "min_supported_version": "0.1.0"
   },
