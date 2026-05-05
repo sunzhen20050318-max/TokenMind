@@ -14,7 +14,7 @@ from PyInstaller.utils.hooks import collect_submodules
 project_root = Path(SPECPATH).parents[1]
 frontend_dist = project_root / "frontend" / "dist"
 app_icon = project_root / "packaging" / "macos" / "tokenmind.icns"
-version = "0.1.10"
+version = "0.1.11"
 
 if not (frontend_dist / "index.html").is_file():
     raise SystemExit(

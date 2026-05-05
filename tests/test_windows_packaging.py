@@ -36,7 +36,11 @@ def test_windows_installer_script_wraps_onedir_build() -> None:
 
     assert "#define AppIcon" in iss
     assert "SetupIconFile={#AppIcon}" in iss
-    assert "IconFilename: \"{#AppIcon}\"" in iss
+    # Shortcut IconFilename must reference the runtime install dir, not the
+    # build-machine absolute path baked in via {#AppIcon}. The .ico itself
+    # is staged into {app} via [Files] for that to resolve at runtime.
+    assert 'IconFilename: "{app}\\tokenmind.ico"' in iss
+    assert 'DestDir: "{app}"; DestName: "tokenmind.ico"' in iss
     assert "OutputBaseFilename=TokenMindSetup-{#MyAppVersion}" in iss
     assert 'Source: "{#AppDist}\\*"' in iss
     assert "recursesubdirs" in iss

@@ -399,13 +399,6 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
               返回总览
             </button>
           ) : null}
-          <button
-            type="button"
-            className="knowledge-page__button"
-            onClick={() => setShowCreate(true)}
-          >
-            + 新建知识库
-          </button>
         </div>
       </header>
 
