@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
   "latest": {
-    "version": "0.1.10",
+    "version": "0.1.11",
     "released_at": "2026-05-05",
-    "release_notes": "修复使用 MiMo 模型时工具调用参数被泄露到聊天且工具不实际执行的问题;修复切换/新建会话后输入框偶发点击无响应的问题;修复 Windows 安装包桌面快捷方式显示为白色通用文件图标的问题;会话标题生成失败后允许下条消息重试。",
+    "release_notes": "修复升级安装包后浏览器仍显示旧版本的问题(index.html 加 no-cache,hashed bundle 加 immutable,客户端启动校验版本不一致时自动 reload 一次);移除知识库页面右上角多余的「新建知识库」按钮(列表上方已有同名入口)。",
     "downloads": {
-      "windows": "https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMindSetup-0.1.10.exe"
+      "windows": "https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMindSetup-0.1.11.exe"
     },
     "min_supported_version": "0.1.0"
   },
   "announcements": [
     {
       "id": "20260505-windows-icon-fix",
-      "title": "Windows 用户:升级 0.1.10 时桌面图标修复指引",
+      "title": "Windows 用户:升级 0.1.11 时桌面图标修复指引",
       "level": "warning",
-      "message": "如果你之前安装的 0.1.9 桌面快捷方式显示为白色普通文件图标,升级 0.1.10 时请按以下步骤操作:\n\n1. **先右键删除**桌面上原来白色的 TokenMind 快捷方式\n2. 双击运行 `TokenMindSetup-0.1.10.exe`\n3. 安装到「选择附加任务」那一步,**记得勾选「创建桌面快捷方式」**(此项默认未勾,因升级模式行为)\n4. 装完桌面应显示蓝色 TokenMind 图标\n\nMac 用户请忽略本通告。",
+      "message": "如果你之前安装的 0.1.9 桌面快捷方式显示为白色普通文件图标,升级 0.1.11 时请按以下步骤操作:\n\n1. **先右键删除**桌面上原来白色的 TokenMind 快捷方式\n2. 双击运行 `TokenMindSetup-0.1.11.exe`\n3. 安装到「选择附加任务」那一步,**记得勾选「创建桌面快捷方式」**(此项默认未勾,因升级模式行为)\n4. 装完桌面应显示蓝色 TokenMind 图标\n\nMac 用户请忽略本通告。",
       "starts_at": "2026-05-05",
       "expires_at": "2026-07-05"
     },
