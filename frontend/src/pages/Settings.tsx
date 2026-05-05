@@ -828,7 +828,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [toolsCategory, setToolsCategory] = useState<
     'search' | 'exec' | 'audit' | 'uploads' | 'knowledge' | null
   >(null);
-  const [toolsKnowledgeAdvancedOpen, setToolsKnowledgeAdvancedOpen] = useState(false);
+  const [editingKnowledgeModelKind, setEditingKnowledgeModelKind] = useState<
+    'embedding' | 'rerank' | null
+  >(null);
   const [channelCatalog, setChannelCatalog] = useState<ChannelCatalogEntry[] | null>(null);
   const [channelLoading, setChannelLoading] = useState(false);
   const [channelEditorName, setChannelEditorName] = useState<ChannelName | null>(null);
@@ -1568,6 +1570,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const handleSaveKnowledgeModels = async () => {
+    if (!toolsDraft) return;
+    setSavingSection('knowledge-models');
+    setNotice(null);
+    try {
+      // Partial update: only the embedding/rerank model fields. The backend
+      // looks at model_fields_set so chunking, vector_backend, top_k stay
+      // untouched.
+      const response = await api.updateToolsConfig({
+        knowledge: {
+          embedding_model: toolsDraft.knowledge.embedding_model,
+          ...(toolsDraft.knowledge.embedding_api_key.trim()
+            ? { embedding_api_key: toolsDraft.knowledge.embedding_api_key.trim() }
+            : {}),
+          embedding_api_base: toolsDraft.knowledge.embedding_api_base || '',
+          rerank_model: toolsDraft.knowledge.rerank_model,
+          ...(toolsDraft.knowledge.rerank_api_key.trim()
+            ? { rerank_api_key: toolsDraft.knowledge.rerank_api_key.trim() }
+            : {}),
+          rerank_api_base: toolsDraft.knowledge.rerank_api_base || '',
+          rerank_top_n: toolsDraft.knowledge.rerank_top_n,
+        },
+      });
+      setToolsDraft((current) =>
+        current
+          ? {
+              ...current,
+              knowledge: {
+                ...current.knowledge,
+                ...response.tools.knowledge,
+                // Don't pull persisted secrets back into the draft — keep
+                // the input field empty so the placeholder reads cleanly.
+                embedding_api_key: '',
+                rerank_api_key: '',
+              },
+            }
+          : current,
+      );
+      setSuccess('知识库模型配置已保存');
+    } catch (error) {
+      setFailure(error, '保存知识库模型失败');
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
   const handleSaveRuntime = async () => {
     if (!runtimeDraft) {
       return;
@@ -2209,8 +2257,245 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
       </div>
+
+      {toolsDraft ? (
+        <div className="settings-panel">
+          <div className="settings-panel-header">
+            <h3>知识库模型</h3>
+            <p>用于把上传的文档向量化(Embedding)以及对召回结果重排(Rerank,可选)。</p>
+          </div>
+          <div className="settings-provider-grid">
+            {(['embedding', 'rerank'] as const).map((kind) => {
+              const isEmbedding = kind === 'embedding';
+              const model = isEmbedding
+                ? toolsDraft.knowledge.embedding_model
+                : toolsDraft.knowledge.rerank_model;
+              const endpoint = isEmbedding
+                ? toolsDraft.knowledge.embedding_api_base
+                : toolsDraft.knowledge.rerank_api_base;
+              const configured = Boolean(model.trim());
+              const editing = editingKnowledgeModelKind === kind;
+
+              return (
+                <div
+                  key={kind}
+                  className={`settings-provider-card ${configured ? 'active' : ''} ${
+                    editing ? 'is-selected' : ''
+                  }`}
+                >
+                  <div className="settings-provider-head">
+                    <div>
+                      <div className="settings-provider-name">
+                        {isEmbedding ? 'Embedding' : 'Rerank'}
+                      </div>
+                      <div className="settings-badges">
+                        <span className="settings-badge">
+                          {configured ? '已配置' : '未配置'}
+                        </span>
+                        {!isEmbedding ? (
+                          <span className="settings-badge">可选</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="settings-provider-desc">
+                    <div>模型:{model || '未设置'}</div>
+                    <div>{endpoint || '默认 endpoint'}</div>
+                  </div>
+                  <div className="settings-provider-actions">
+                    <button
+                      className="settings-button-secondary"
+                      onClick={() => setEditingKnowledgeModelKind(kind)}
+                      type="button"
+                    >
+                      编辑配置
+                    </button>
+                    <button
+                      className="settings-button"
+                      disabled
+                      type="button"
+                    >
+                      {configured ? '已启用' : '启用'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+      ) : null}
     </div>
   );
+
+  const renderKnowledgeModelEditor = () => {
+    if (!editingKnowledgeModelKind || !toolsDraft) return null;
+    const isEmbedding = editingKnowledgeModelKind === 'embedding';
+    const close = () => setEditingKnowledgeModelKind(null);
+    return (
+      <>
+        <div className="settings-provider-editor-backdrop" onClick={close} />
+        <aside className="settings-provider-editor">
+          <div className="settings-provider-editor-head">
+            <div>
+              <h3>{isEmbedding ? 'Embedding 模型' : 'Rerank 模型'}</h3>
+              <p>
+                {isEmbedding
+                  ? '把上传的文档切成片段后用这个模型转成向量,留空则只走关键词检索。'
+                  : '对召回的候选片段做二次排序,提升命中质量。留空则关闭 rerank。'}
+              </p>
+            </div>
+            <button
+              aria-label="关闭"
+              className="settings-close"
+              onClick={close}
+              type="button"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+          <div className="settings-provider-editor-body">
+            <div className="settings-panel">
+              <div className="settings-grid one">
+                <Field
+                  label="模型"
+                  copy={
+                    isEmbedding
+                      ? '推荐 text-embedding-3-small / bge-large-zh 等。'
+                      : '推荐 bge-reranker-v2-m3 / cohere rerank 等。'
+                  }
+                >
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setToolsDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              knowledge: {
+                                ...current.knowledge,
+                                ...(isEmbedding
+                                  ? { embedding_model: event.target.value }
+                                  : { rerank_model: event.target.value }),
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder={isEmbedding ? 'text-embedding-3-small' : 'bge-reranker-v2-m3'}
+                    type="text"
+                    value={
+                      isEmbedding
+                        ? toolsDraft.knowledge.embedding_model
+                        : toolsDraft.knowledge.rerank_model
+                    }
+                  />
+                </Field>
+                <Field label="API Key">
+                  <input
+                    autoComplete="off"
+                    className="settings-input"
+                    onChange={(event) =>
+                      setToolsDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              knowledge: {
+                                ...current.knowledge,
+                                ...(isEmbedding
+                                  ? { embedding_api_key: event.target.value }
+                                  : { rerank_api_key: event.target.value }),
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder="sk-..."
+                    type="password"
+                    value={
+                      isEmbedding
+                        ? toolsDraft.knowledge.embedding_api_key
+                        : toolsDraft.knowledge.rerank_api_key
+                    }
+                  />
+                </Field>
+                <Field label="Base URL(可选)" copy="兼容 OpenAI 协议的网关地址。">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setToolsDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              knowledge: {
+                                ...current.knowledge,
+                                ...(isEmbedding
+                                  ? { embedding_api_base: event.target.value || null }
+                                  : { rerank_api_base: event.target.value || null }),
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder="https://api.openai.com/v1"
+                    type="text"
+                    value={
+                      (isEmbedding
+                        ? toolsDraft.knowledge.embedding_api_base
+                        : toolsDraft.knowledge.rerank_api_base) ?? ''
+                    }
+                  />
+                </Field>
+                {!isEmbedding ? (
+                  <Field label="重排条数" copy="对召回的前 N 个候选做 rerank。">
+                    <input
+                      className="settings-input"
+                      min={1}
+                      onChange={(event) =>
+                        setToolsDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                knowledge: {
+                                  ...current.knowledge,
+                                  rerank_top_n: Number(event.target.value) || 1,
+                                },
+                              }
+                            : current,
+                        )
+                      }
+                      type="number"
+                      value={toolsDraft.knowledge.rerank_top_n}
+                    />
+                  </Field>
+                ) : null}
+              </div>
+              <div className="settings-actions">
+                <button
+                  className="settings-button-secondary"
+                  onClick={close}
+                  type="button"
+                >
+                  取消
+                </button>
+                <button
+                  className="settings-button"
+                  disabled={savingSection === 'knowledge-models'}
+                  onClick={async () => {
+                    await handleSaveKnowledgeModels();
+                    close();
+                  }}
+                  type="button"
+                >
+                  {savingSection === 'knowledge-models' ? '保存中…' : '保存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </>
+    );
+  };
 
   const renderCreativeEditor = () => {
     if (!editingCreativeId) {
@@ -2551,13 +2836,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       exec: { title: '命令执行', copy: '设置 exec 工具的超时和环境 PATH。' },
       audit: { title: '审批与审计', copy: '高风险命令是否需要确认，是否记录审计日志。' },
       uploads: { title: '上传与存储', copy: '单文件上限、总配额和过期清理策略。' },
-      knowledge: { title: '知识库检索', copy: '向量后端、Embedding 与可选 Rerank。' },
+      knowledge: { title: '知识库检索', copy: '向量后端、切块策略与召回数量。' },
     };
     const meta = titles[toolsCategory];
 
     const closeEditor = () => {
       setToolsCategory(null);
-      setToolsKnowledgeAdvancedOpen(false);
     };
     const saveAndClose = async () => {
       await handleSaveTools();
@@ -2973,169 +3257,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </Field>
             </div>
 
-            <Field label="Embedding 模型" copy="留空时只用关键词检索。">
-              <input
-                className="settings-input"
-                onChange={(event) =>
-                  setToolsDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          knowledge: { ...current.knowledge, embedding_model: event.target.value },
-                        }
-                      : current,
-                  )
-                }
-                placeholder="text-embedding-3-small"
-                type="text"
-                value={toolsDraft.knowledge.embedding_model}
-              />
-            </Field>
-
-            <div className="settings-mcp-editor__grid">
-              <Field label="Embedding API Key">
-                <input
-                  autoComplete="off"
-                  className="settings-input"
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            knowledge: {
-                              ...current.knowledge,
-                              embedding_api_key: event.target.value,
-                            },
-                          }
-                        : current,
-                    )
-                  }
-                  placeholder={toolsDraft.knowledge.embedding_model ? 'sk-...' : '未启用 embedding 时可留空'}
-                  type="password"
-                  value={toolsDraft.knowledge.embedding_api_key}
-                />
-              </Field>
-              <Field label="Embedding Base URL（可选）">
-                <input
-                  className="settings-input"
-                  onChange={(event) =>
-                    setToolsDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            knowledge: {
-                              ...current.knowledge,
-                              embedding_api_base: event.target.value || null,
-                            },
-                          }
-                        : current,
-                    )
-                  }
-                  placeholder="https://api.openai.com/v1"
-                  type="text"
-                  value={toolsDraft.knowledge.embedding_api_base ?? ''}
-                />
-              </Field>
-            </div>
-
-            <button
-              className="settings-mcp-advanced-toggle"
-              onClick={() => setToolsKnowledgeAdvancedOpen((value) => !value)}
-              type="button"
-            >
-              {toolsKnowledgeAdvancedOpen ? '▾ 收起 Rerank 重排设置' : '▸ Rerank 重排（可选高级）'}
-            </button>
-
-            {toolsKnowledgeAdvancedOpen ? (
-              <div className="settings-mcp-advanced">
-                <Field label="Rerank 模型" copy="留空则关闭 rerank。">
-                  <input
-                    className="settings-input"
-                    onChange={(event) =>
-                      setToolsDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              knowledge: {
-                                ...current.knowledge,
-                                rerank_model: event.target.value,
-                              },
-                            }
-                          : current,
-                      )
-                    }
-                    type="text"
-                    value={toolsDraft.knowledge.rerank_model}
-                  />
-                </Field>
-                <div className="settings-mcp-editor__grid">
-                  <Field label="Rerank API Key">
-                    <input
-                      autoComplete="off"
-                      className="settings-input"
-                      onChange={(event) =>
-                        setToolsDraft((current) =>
-                          current
-                            ? {
-                                ...current,
-                                knowledge: {
-                                  ...current.knowledge,
-                                  rerank_api_key: event.target.value,
-                                },
-                              }
-                            : current,
-                        )
-                      }
-                      placeholder={toolsDraft.knowledge.rerank_model ? 'sk-...' : '未启用 rerank 时可留空'}
-                      type="password"
-                      value={toolsDraft.knowledge.rerank_api_key}
-                    />
-                  </Field>
-                  <Field label="Rerank Base URL（可选）">
-                    <input
-                      className="settings-input"
-                      onChange={(event) =>
-                        setToolsDraft((current) =>
-                          current
-                            ? {
-                                ...current,
-                                knowledge: {
-                                  ...current.knowledge,
-                                  rerank_api_base: event.target.value || null,
-                                },
-                              }
-                            : current,
-                        )
-                      }
-                      placeholder="https://api.openai.com/v1"
-                      type="text"
-                      value={toolsDraft.knowledge.rerank_api_base ?? ''}
-                    />
-                  </Field>
-                  <Field label="Rerank 重排条数">
-                    <input
-                      className="settings-input"
-                      min={1}
-                      onChange={(event) =>
-                        setToolsDraft((current) =>
-                          current
-                            ? {
-                                ...current,
-                                knowledge: {
-                                  ...current.knowledge,
-                                  rerank_top_n: Number(event.target.value) || 1,
-                                },
-                              }
-                            : current,
-                        )
-                      }
-                      type="number"
-                      value={toolsDraft.knowledge.rerank_top_n}
-                    />
-                  </Field>
-                </div>
-              </div>
-            ) : null}
+            <p className="settings-mcp-editor__hint">
+              Embedding 与 Rerank 模型已搬到「设置 → 模型 → 知识库模型」统一管理。
+            </p>
           </>
         ) : null}
 
@@ -3202,7 +3326,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         id: 'knowledge',
         icon: '📚',
         title: '知识库检索',
-        desc: '向量后端、Embedding 与可选 Rerank 重排。',
+        desc: '向量后端、切块策略与召回数量。',
         summary: `${toolsDraft.knowledge.vector_backend} · Top-${toolsDraft.knowledge.top_k}${
           toolsDraft.knowledge.embedding_model ? ` · ${toolsDraft.knowledge.embedding_model}` : ''
         }`,
@@ -3246,7 +3370,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className={`settings-mcp-card settings-tools-card ${toolsCategory === card.id ? 'is-active' : ''}`}
               key={card.id}
               onClick={() => {
-                setToolsKnowledgeAdvancedOpen(false);
                 setToolsCategory(card.id);
               }}
               type="button"
@@ -5734,6 +5857,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {renderCreativeEditor()}
         {renderProviderEditor()}
+        {renderKnowledgeModelEditor()}
       </div>
     </div>
   );

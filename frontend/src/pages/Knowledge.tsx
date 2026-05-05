@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
-import type { KnowledgeSettings } from '../types/config';
+import { CreateKnowledgeBaseModal } from '../components/Knowledge/CreateKnowledgeBaseModal';
 import type { KnowledgeBase, KnowledgeDetailResponse } from '../types/knowledge';
 import type { UploadProgress } from '../types';
 import './knowledge.css';
@@ -28,14 +28,6 @@ function formatFileSize(bytes: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function normalizeKnowledgeSettings(settings: KnowledgeSettings): KnowledgeSettings {
-  return {
-    ...settings,
-    embedding_api_key: settings.embedding_api_key ?? '',
-    rerank_api_key: settings.rerank_api_key ?? '',
-  };
 }
 
 function describeProcessingStage(stage?: string): string {
@@ -98,16 +90,9 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(false);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
   const [updatingBaseId, setUpdatingBaseId] = useState<string | null>(null);
   const [renamingBaseId, setRenamingBaseId] = useState<string | null>(null);
   const [deletingBaseId, setDeletingBaseId] = useState<string | null>(null);
-  const [secretTouched, setSecretTouched] = useState({ embedding: false, rerank: false });
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -146,25 +131,10 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
     return payload;
   }, []);
 
-  const loadKnowledgeSettings = useCallback(async () => {
-    try {
-      setSettingsLoading(true);
-      const config = await api.getConfig();
-      setSettings(normalizeKnowledgeSettings(config.tools.knowledge));
-      setSecretTouched({ embedding: false, rerank: false });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '加载知识库检索配置失败');
-    } finally {
-      setSettingsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    if (!isActive) {
-      return;
-    }
-    void Promise.all([loadOverview(), loadKnowledgeSettings()]);
-  }, [isActive, loadKnowledgeSettings, loadOverview]);
+    if (!isActive) return;
+    void loadOverview();
+  }, [isActive, loadOverview]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -188,21 +158,9 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
     };
   }, [items]);
 
-  const handleCreate = async () => {
-    const name = newName.trim();
-    if (!name) {
-      return;
-    }
-    try {
-      setError(null);
-      await api.createKnowledgeBase({ name, description: newDescription.trim() });
-      setShowCreate(false);
-      setNewName('');
-      setNewDescription('');
-      await loadOverview();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '创建知识库失败');
-    }
+  const handleCreated = async () => {
+    setError(null);
+    await loadOverview();
   };
 
   const handleRenameKnowledgeBase = async (knowledgeBaseId: string, currentName: string) => {
@@ -422,230 +380,6 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
     }
   };
 
-  const updateSettingsField = <K extends keyof KnowledgeSettings>(
-    key: K,
-    value: KnowledgeSettings[K]
-  ) => {
-    setSettings((current) => (current ? { ...current, [key]: value } : current));
-  };
-
-  const handleSaveSettings = async () => {
-    if (!settings) {
-      return;
-    }
-    try {
-      setSavingSettings(true);
-      setSettingsNotice(null);
-      const knowledgeUpdate: Record<string, string | number | null> = {
-        vector_backend: settings.vector_backend,
-        chunk_size: settings.chunk_size,
-        chunk_overlap: settings.chunk_overlap,
-        top_k: settings.top_k,
-        embedding_model: settings.embedding_model,
-        embedding_api_base: settings.embedding_api_base,
-        rerank_model: settings.rerank_model,
-        rerank_api_base: settings.rerank_api_base,
-        rerank_top_n: settings.rerank_top_n,
-      };
-
-      if (secretTouched.embedding) {
-        knowledgeUpdate.embedding_api_key = settings.embedding_api_key.trim();
-      }
-
-      if (secretTouched.rerank) {
-        knowledgeUpdate.rerank_api_key = settings.rerank_api_key.trim();
-      }
-
-      const result = await api.updateToolsConfig({
-        knowledge: knowledgeUpdate,
-      });
-      setSettings(normalizeKnowledgeSettings(result.tools.knowledge));
-      setSecretTouched({ embedding: false, rerank: false });
-      setSettingsNotice('检索设置已保存');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '保存检索设置失败');
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
-  const renderSettingsPanel = () => {
-    if (settingsLoading || !settings) {
-      return (
-        <aside className="knowledge-panel knowledge-panel--side">
-          <div className="knowledge-panel__head">
-            <div>
-              <h3>检索设置</h3>
-              <p>正在读取知识库检索配置。</p>
-            </div>
-          </div>
-          <div className="knowledge-page__empty is-inline">请稍候，正在加载配置。</div>
-        </aside>
-      );
-    }
-
-    return (
-      <aside className="knowledge-panel knowledge-panel--side">
-        <div className="knowledge-panel__head">
-          <div>
-            <h3>检索设置</h3>
-            <p>这里控制所有知识库的切块、Embedding 和可选 Rerank 行为。</p>
-          </div>
-        </div>
-
-        <div className="knowledge-settings">
-          <label className="knowledge-settings__field">
-            <span>向量后端</span>
-            <select
-              value={settings.vector_backend}
-              onChange={(event) => updateSettingsField('vector_backend', event.target.value)}
-            >
-              <option value="qdrant">Qdrant</option>
-              <option value="sqlite">SQLite（关键词兜底）</option>
-            </select>
-          </label>
-
-          <div className="knowledge-settings__grid">
-            <label className="knowledge-settings__field">
-              <span>Top-K</span>
-              <input
-                type="number"
-                min={1}
-                value={settings.top_k}
-                onChange={(event) => updateSettingsField('top_k', Number(event.target.value) || 1)}
-              />
-            </label>
-            <label className="knowledge-settings__field">
-              <span>分块长度</span>
-              <input
-                type="number"
-                min={100}
-                value={settings.chunk_size}
-                onChange={(event) =>
-                  updateSettingsField('chunk_size', Number(event.target.value) || 100)
-                }
-              />
-            </label>
-            <label className="knowledge-settings__field">
-              <span>分块重叠</span>
-              <input
-                type="number"
-                min={0}
-                value={settings.chunk_overlap}
-                onChange={(event) =>
-                  updateSettingsField('chunk_overlap', Number(event.target.value) || 0)
-                }
-              />
-            </label>
-          </div>
-
-          <div className="knowledge-settings__group">
-            <div className="knowledge-settings__group-head">
-              <strong>Embedding</strong>
-              <span>留空时仅走关键词召回。</span>
-            </div>
-            <label className="knowledge-settings__field">
-              <span>模型</span>
-              <input
-                type="text"
-                placeholder="例如：text-embedding-3-small"
-                value={settings.embedding_model}
-                onChange={(event) => updateSettingsField('embedding_model', event.target.value)}
-              />
-            </label>
-            <label className="knowledge-settings__field">
-              <span>Base URL</span>
-              <input
-                type="text"
-                placeholder="https://api.openai.com/v1"
-                value={settings.embedding_api_base ?? ''}
-                onChange={(event) =>
-                  updateSettingsField('embedding_api_base', event.target.value || null)
-                }
-              />
-            </label>
-            <label className="knowledge-settings__field">
-              <span>API Key</span>
-              <input
-                type="password"
-                autoComplete="off"
-                placeholder="按需填写"
-                value={settings.embedding_api_key}
-                onChange={(event) => {
-                  setSecretTouched((current) => ({ ...current, embedding: true }));
-                  updateSettingsField('embedding_api_key', event.target.value);
-                }}
-              />
-            </label>
-          </div>
-
-          <div className="knowledge-settings__group">
-            <div className="knowledge-settings__group-head">
-              <strong>Rerank</strong>
-              <span>可选增强，适合资料较多时提高命中质量。</span>
-            </div>
-            <label className="knowledge-settings__field">
-              <span>模型</span>
-              <input
-                type="text"
-                placeholder="留空则关闭 rerank"
-                value={settings.rerank_model}
-                onChange={(event) => updateSettingsField('rerank_model', event.target.value)}
-              />
-            </label>
-            <label className="knowledge-settings__field">
-              <span>Base URL</span>
-              <input
-                type="text"
-                placeholder="https://api.openai.com/v1"
-                value={settings.rerank_api_base ?? ''}
-                onChange={(event) =>
-                  updateSettingsField('rerank_api_base', event.target.value || null)
-                }
-              />
-            </label>
-            <label className="knowledge-settings__field">
-              <span>API Key</span>
-              <input
-                type="password"
-                autoComplete="off"
-                placeholder="按需填写"
-                value={settings.rerank_api_key}
-                onChange={(event) => {
-                  setSecretTouched((current) => ({ ...current, rerank: true }));
-                  updateSettingsField('rerank_api_key', event.target.value);
-                }}
-              />
-            </label>
-            <label className="knowledge-settings__field">
-              <span>重排条数</span>
-              <input
-                type="number"
-                min={1}
-                value={settings.rerank_top_n}
-                onChange={(event) =>
-                  updateSettingsField('rerank_top_n', Number(event.target.value) || 1)
-                }
-              />
-            </label>
-          </div>
-
-          <div className="knowledge-settings__actions">
-            {settingsNotice ? <span className="knowledge-settings__notice">{settingsNotice}</span> : <span />}
-            <button
-              type="button"
-              className="knowledge-page__button"
-              onClick={() => void handleSaveSettings()}
-              disabled={savingSettings}
-            >
-              {savingSettings ? '保存中…' : '保存检索设置'}
-            </button>
-          </div>
-        </div>
-      </aside>
-    );
-  };
-
   return (
     <section className="knowledge-page">
       <header className="knowledge-page__header">
@@ -668,9 +402,9 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
           <button
             type="button"
             className="knowledge-page__button"
-            onClick={() => setShowCreate((state) => !state)}
+            onClick={() => setShowCreate(true)}
           >
-            {showCreate ? '收起创建' : '新建知识库'}
+            + 新建知识库
           </button>
         </div>
       </header>
@@ -698,42 +432,6 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
             </article>
           </section>
 
-          {showCreate ? (
-            <section className="knowledge-page__create">
-              <div className="knowledge-page__create-fields">
-                <label>
-                  <span>名称</span>
-                  <input
-                    type="text"
-                    value={newName}
-                    onChange={(event) => setNewName(event.target.value)}
-                    placeholder="例如：产品资料、合同模板、项目规范"
-                  />
-                </label>
-                <label>
-                  <span>简介</span>
-                  <textarea
-                    value={newDescription}
-                    onChange={(event) => setNewDescription(event.target.value)}
-                    placeholder="一句话说明这个知识库主要收什么资料。"
-                    rows={3}
-                  />
-                </label>
-              </div>
-              <div className="knowledge-page__create-actions">
-                <button
-                  type="button"
-                  className="knowledge-page__button knowledge-page__button--ghost"
-                  onClick={() => setShowCreate(false)}
-                >
-                  取消
-                </button>
-                <button type="button" className="knowledge-page__button" onClick={handleCreate}>
-                  创建知识库
-                </button>
-              </div>
-            </section>
-          ) : null}
 
           <div className="knowledge-page__workspace">
             <section className="knowledge-page__section">
@@ -742,6 +440,13 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                   <h2>全部知识库</h2>
                   <p>每个知识库都以卡片展示。启用后才能在聊天输入框下通过“链接知识库”按钮选择它。</p>
                 </div>
+                <button
+                  type="button"
+                  className="knowledge-page__button"
+                  onClick={() => setShowCreate(true)}
+                >
+                  + 新建知识库
+                </button>
               </div>
 
               {loading ? (
@@ -800,8 +505,6 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                 </div>
               )}
             </section>
-
-            <div className="knowledge-page__sidebar">{renderSettingsPanel()}</div>
           </div>
         </>
       ) : (
@@ -969,14 +672,19 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                       {detail.knowledge_base.enabled ? '停用当前知识库' : '启用当前知识库'}
                     </button>
                   </aside>
-
-                  {renderSettingsPanel()}
                 </div>
               </div>
             </>
           ) : null}
         </section>
       )}
+
+      {showCreate ? (
+        <CreateKnowledgeBaseModal
+          onClose={() => setShowCreate(false)}
+          onCreated={handleCreated}
+        />
+      ) : null}
     </section>
   );
 };
