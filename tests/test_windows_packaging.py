@@ -27,6 +27,7 @@ def test_pyinstaller_spec_bundles_frontend_and_runtime_assets() -> None:
     assert "\"tokenmind/webui\"" in spec
     assert "\"tokenmind/templates\"" in spec
     assert "\"tokenmind/skills\"" in spec
+    assert "copy_metadata(\"tokenmind-ai\")" in spec
     assert "collect_submodules(\"tokenmind.channels\")" in spec
     assert "name=\"TokenMind\"" in spec
 
