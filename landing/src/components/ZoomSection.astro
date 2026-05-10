@@ -1,0 +1,282 @@
+---
+import { STRINGS, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = STRINGS;
+/*
+  Product showcase. ONE continuous scroll timeline drives the whole
+  choreography. The inner container uses `position: sticky` (browser
+  native) instead of ScrollTrigger pin — this removes the two stutter
+  points at pin engagement and pin release, since native sticky has no
+  "switch frame" the way a pin does.
+
+  Choreography (driven by a single scrub-true timeline):
+    - 0%–33%   chatui zooms in 0.58 → 1.0 (section scrolling into view)
+    - 33%      sticky engages naturally (section's top hits viewport top)
+    - 33%–65%  chatui shrinks AND translates upward off-screen
+    - 45%–80%  panel A enters from the LEFT, lands upper-half, stays
+    - 65%–100% panel B enters from the RIGHT, lands lower-half, stays
+    - 100%     sticky disengages naturally (section bottom at viewport
+               bottom), panels then scroll up with the rest of the page
+
+  Section height = 300vh: 100vh of scroll for entry zoom + 200vh of
+  scroll inside the sticky range for exit + reveal.
+*/
+---
+
+<section
+  data-zoom-section
+  class="relative"
+  style="height: 300vh;"
+  aria-label="TokenMind 产品预览"
+>
+  <div
+    data-product-pin
+    class="sticky top-0 flex h-[100vh] items-start justify-center overflow-hidden px-6 pt-[14vh]"
+    style="will-change: transform; transform: translateZ(0); backface-visibility: hidden;"
+  >
+    <!-- ChatUI frame, lives in normal flex flow so justify-center handles
+         horizontal centering. Origin-top means scaling shrinks downward
+         from the top edge, vacating the lower portion of the viewport. -->
+    <div
+      data-zoom-frame
+      class="relative z-10 aspect-[16/10] w-[1200px] max-h-[78vh] max-w-[92vw] origin-top overflow-hidden border border-[color:var(--color-line-strong)] bg-[color:var(--color-surface)] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.18)]"
+      style="border-radius: 24px; will-change: transform; transform: translateZ(0); backface-visibility: hidden;"
+    >
+      <div data-mock-content class="flex h-full font-sans">
+        <aside
+          class="flex w-[22%] flex-col gap-2 border-r border-[color:var(--color-line-soft)] bg-[color:var(--color-ink-50)] p-4"
+        >
+          <div class="mb-3 flex items-center gap-2">
+            <div class="h-6 w-6 rounded-md bg-[color:var(--color-fg)]"></div>
+            <div
+              class="h-3 w-20 rounded-full bg-[color:var(--color-line-strong)]"
+            ></div>
+          </div>
+          <div
+            class="h-9 rounded-lg bg-[color:var(--color-fg)]/10 ring-1 ring-[color:var(--color-line-strong)]/40"
+          ></div>
+          <div class="h-9 rounded-lg bg-[color:var(--color-line-soft)]"></div>
+          <div class="h-9 rounded-lg bg-[color:var(--color-line-soft)]"></div>
+          <div class="h-9 rounded-lg bg-[color:var(--color-line-soft)]"></div>
+          <div class="h-9 rounded-lg bg-[color:var(--color-line-soft)]"></div>
+          <div class="mt-auto flex items-center gap-2 pt-4">
+            <div
+              class="h-7 w-7 rounded-full bg-[color:var(--color-line-strong)]/40"
+            ></div>
+            <div
+              class="h-3 w-16 rounded-full bg-[color:var(--color-line-strong)]/40"
+            ></div>
+          </div>
+        </aside>
+
+        <main class="flex flex-1 flex-col">
+          <div
+            class="flex items-center gap-1.5 border-b border-[color:var(--color-line-soft)] px-5 py-3"
+          >
+            <div class="h-2.5 w-2.5 rounded-full bg-[#ff605c]"></div>
+            <div class="h-2.5 w-2.5 rounded-full bg-[#ffbd44]"></div>
+            <div class="h-2.5 w-2.5 rounded-full bg-[#00ca4e]"></div>
+            <div class="ml-4 flex items-center gap-2">
+              <div
+                class="h-3 w-24 rounded-full bg-[color:var(--color-line-strong)]/40"
+              ></div>
+            </div>
+          </div>
+
+          <div class="flex-1 space-y-6 overflow-hidden px-10 py-8">
+            <div class="flex justify-end">
+              <div
+                class="max-w-[60%] rounded-2xl bg-[color:var(--color-fg)] px-4 py-2.5 text-sm text-[color:var(--color-surface)]"
+              >
+                Help me draft a Q2 release plan based on these notes.
+              </div>
+            </div>
+
+            <div class="flex">
+              <div class="flex w-full max-w-[78%] gap-3">
+                <div
+                  class="mt-1 h-7 w-7 shrink-0 rounded-md bg-[color:var(--color-fg)]"
+                ></div>
+                <div class="flex flex-1 flex-col gap-2">
+                  <div
+                    class="h-3 w-3/4 rounded-full bg-[color:var(--color-line-strong)]/55"
+                  ></div>
+                  <div
+                    class="h-3 w-full rounded-full bg-[color:var(--color-line-strong)]/55"
+                  ></div>
+                  <div
+                    class="h-3 w-11/12 rounded-full bg-[color:var(--color-line-strong)]/55"
+                  ></div>
+                  <div
+                    class="h-3 w-2/3 rounded-full bg-[color:var(--color-line-strong)]/55"
+                  ></div>
+
+                  <div
+                    class="mt-2 flex items-center gap-3 rounded-xl border border-[color:var(--color-line-soft)] bg-[color:var(--color-ink-50)] px-3 py-2"
+                  >
+                    <div
+                      class="h-5 w-5 rounded-md bg-[color:var(--color-fg)]/70"
+                    ></div>
+                    <div class="flex flex-1 flex-col gap-1.5">
+                      <div
+                        class="h-2.5 w-32 rounded-full bg-[color:var(--color-line-strong)]/60"
+                      ></div>
+                      <div
+                        class="h-2 w-48 rounded-full bg-[color:var(--color-line-strong)]/35"
+                      ></div>
+                    </div>
+                    <div class="h-2 w-2 rounded-full bg-[#00ca4e]"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="border-t border-[color:var(--color-line-soft)] p-4">
+            <div
+              class="flex h-12 items-center gap-3 rounded-xl bg-[color:var(--color-ink-50)] px-4"
+            >
+              <div
+                class="h-3 w-40 rounded-full bg-[color:var(--color-line-strong)]/40"
+              ></div>
+              <div class="ml-auto flex items-center gap-2">
+                <div
+                  class="h-7 w-7 rounded-full bg-[color:var(--color-line-strong)]/35"
+                ></div>
+                <div class="h-7 w-7 rounded-full bg-[color:var(--color-fg)]"></div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!--
+      Feature panels. Stacked vertically in the pinned viewport — A in the
+      upper half (top:[10vh]), B in the lower half (top:[54vh]) — so once
+      both have animated in they form a 1+1 column of feature cards. Each
+      panel spans up to ~88vw so it reads as "nearly screen-wide". Initial
+      xPercent ±120 puts them off-stage; the GSAP timeline slides them in
+      from the left and right respectively.
+
+      Panels render above the frame (z-20 > z-10 on frame) so they layer
+      cleanly over the chatui as it exits upward.
+    -->
+
+    <!-- Manifesto cards. These are NOT capability/feature cards (those
+         live in <Tools/> below). They state the project's posture in two
+         beats: privacy / openness. Typography-led, minimal decoration —
+         a single oversized accent glyph (quote / ⌘) does the visual
+         work, leaving the headline to carry the emotion. Cream/ivory
+         body separates them from the white surface of every other
+         section. -->
+
+    <!-- Manifesto cards. Pure monochrome (white surface, near-black text,
+         grey watermark) to stay on-brand with the rest of the site. The
+         visual interest comes from a SINGLE oversized accent character
+         set in the display serif, anchored to one edge — no tinted
+         backgrounds, no coloured blobs. -->
+
+    <!-- Manifesto A — The stance --------------------------------------- -->
+    <aside
+      data-feature-left
+      class="pointer-events-none absolute inset-x-0 top-[10vh] z-20 mx-auto h-[38vh] max-w-[1300px] px-[max(24px,3vw)]"
+      style="will-change: transform, opacity; transform: translateZ(0); backface-visibility: hidden;"
+    >
+      <article
+        class="relative flex h-full items-center overflow-hidden rounded-2xl border border-[color:var(--color-line-strong)]/80 bg-[color:var(--color-surface)] shadow-[0_30px_60px_-25px_rgba(10,10,10,0.25),0_0_0_1px_rgba(10,10,10,0.04)]"
+      >
+        <!-- Oversized typographic watermark, anchored to the right edge
+             and clipped. Keeps the cards monochrome — accent glyph is
+             black at very low opacity so it reads as texture, not colour. -->
+        <span
+          class="pointer-events-none absolute -right-2 top-1/2 -translate-y-1/2 select-none font-[family-name:var(--font-display)] text-[clamp(16rem,32vw,28rem)] font-medium leading-none text-[color:var(--color-fg)]/[0.05]"
+          aria-hidden="true"
+          style="line-height: 0.7;"
+        >
+          {t.feature.a.accent}
+        </span>
+
+        <div
+          class="relative flex w-full max-w-[68%] flex-col gap-5 px-10 py-10 md:px-16"
+        >
+          <div
+            class="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--color-muted)]"
+          >
+            <span
+              class="h-px w-6 bg-[color:var(--color-line-strong)]"
+            ></span>
+            {t.feature.a.eyebrow[lang]}
+          </div>
+          <h3
+            class="wordmark-display text-[clamp(1.8rem,3.4vw,3.4rem)] leading-[1.04] text-[color:var(--color-fg)]"
+          >
+            {t.feature.a.title[lang]}
+          </h3>
+          <p
+            class="max-w-xl text-[clamp(0.95rem,1.05vw,1.1rem)] leading-relaxed text-[color:var(--color-muted)]"
+          >
+            {t.feature.a.body[lang]}
+          </p>
+        </div>
+      </article>
+    </aside>
+
+    <!-- Manifesto B — Open --------------------------------------------- -->
+    <aside
+      data-feature-right
+      class="pointer-events-none absolute inset-x-0 top-[54vh] z-20 mx-auto h-[38vh] max-w-[1300px] px-[max(24px,3vw)]"
+      style="will-change: transform, opacity; transform: translateZ(0); backface-visibility: hidden;"
+    >
+      <article
+        class="relative flex h-full items-center justify-end overflow-hidden rounded-2xl border border-[color:var(--color-line-strong)]/80 bg-[color:var(--color-ink-50)] shadow-[0_30px_60px_-25px_rgba(10,10,10,0.25),0_0_0_1px_rgba(10,10,10,0.04)]"
+      >
+        <!-- Watermark anchored to LEFT for visual counterbalance with
+             card A. Slightly lighter background (ink-50) to differentiate
+             without breaking the monochrome palette. -->
+        <span
+          class="pointer-events-none absolute -left-4 top-1/2 -translate-y-1/2 select-none font-[family-name:var(--font-display)] text-[clamp(14rem,28vw,24rem)] font-light leading-none text-[color:var(--color-fg)]/[0.07]"
+          aria-hidden="true"
+        >
+          {t.feature.b.accent}
+        </span>
+
+        <div
+          class="relative flex w-full max-w-[68%] flex-col items-end gap-5 px-10 py-10 text-right md:px-16"
+        >
+          <div
+            class="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--color-muted)]"
+          >
+            {t.feature.b.eyebrow[lang]}
+            <span
+              class="h-px w-6 bg-[color:var(--color-line-strong)]"
+            ></span>
+          </div>
+          <h3
+            class="wordmark-display text-[clamp(1.8rem,3.4vw,3.4rem)] leading-[1.04] text-[color:var(--color-fg)]"
+          >
+            {t.feature.b.title[lang]}
+          </h3>
+          <p
+            class="max-w-xl text-[clamp(0.95rem,1.05vw,1.1rem)] leading-relaxed text-[color:var(--color-muted)]"
+          >
+            {t.feature.b.body[lang]}
+          </p>
+        </div>
+      </article>
+    </aside>
+  </div>
+</section>
+
+<script>
+  import { initZoomSection } from '../lib/zoomSection';
+
+  requestAnimationFrame(() => {
+    initZoomSection();
+  });
+</script>

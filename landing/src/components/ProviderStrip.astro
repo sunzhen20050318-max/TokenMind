@@ -1,0 +1,99 @@
+---
+import { STRINGS, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = STRINGS;
+
+// Wordmark-style strip rendered as an INFINITE horizontal marquee. We
+// duplicate the list into the same track so the CSS `translateX(-50%)`
+// keyframe loops seamlessly (no visible jump). Pauses on hover so users
+// can read individual names if they want to.
+const providers = [
+  'Anthropic',
+  'OpenAI',
+  'DeepSeek',
+  'Qwen',
+  'GLM',
+  'Gemini',
+  'Moonshot',
+  'MiniMax',
+  'Ollama',
+  'OpenRouter',
+  'SiliconFlow',
+];
+---
+
+<section
+  class="relative overflow-hidden border-y border-[color:var(--color-line-soft)] bg-[color:var(--color-surface)] px-0 py-12 sm:py-16"
+  aria-label={t.providerStrip.eyebrow[lang]}
+>
+  <div class="mx-auto flex max-w-6xl flex-col items-center gap-8 sm:gap-10">
+    <p
+      class="px-6 text-center text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--color-subtle)]"
+    >
+      {t.providerStrip.eyebrow[lang]}
+    </p>
+  </div>
+
+  <!--
+    Marquee. The track holds the list TWICE in sequence. Animation moves
+    the track from translateX(0) to translateX(-50%) — at the moment of
+    teleport, the second copy occupies exactly the on-screen position the
+    first copy started from, so the loop is invisible.
+
+    Edge fades on left/right (mask-image) hide the join cleanly.
+  -->
+  <div
+    class="provider-marquee relative mt-8 w-full overflow-hidden"
+    style="mask-image: linear-gradient(to right, transparent 0, black 8%, black 92%, transparent 100%); -webkit-mask-image: linear-gradient(to right, transparent 0, black 8%, black 92%, transparent 100%);"
+  >
+    <ul class="provider-marquee__track flex w-max items-center gap-x-14 sm:gap-x-20">
+      {
+        [...providers, ...providers].map((p, idx) => (
+          <li
+            class="wordmark-display shrink-0 text-[clamp(1.2rem,1.8vw,1.7rem)] text-[color:var(--color-fg)]/55 transition-colors duration-200 hover:text-[color:var(--color-fg)]"
+            aria-hidden={idx >= providers.length}
+          >
+            {p}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  /*
+    Single keyframe pair drives both desktop and reduced-motion variants.
+    Uses translate3d to land on a GPU compositor layer.
+  */
+  .provider-marquee__track {
+    animation: provider-scroll 40s linear infinite;
+    will-change: transform;
+  }
+
+  .provider-marquee:hover .provider-marquee__track {
+    animation-play-state: paused;
+  }
+
+  @keyframes provider-scroll {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      /* -50% works because the track holds two identical copies of the
+         list — at -50% the second copy lines up with the start. */
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .provider-marquee__track {
+      animation: none;
+    }
+  }
+</style>

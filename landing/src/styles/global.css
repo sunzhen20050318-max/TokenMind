@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+/* Light theme: white-ish canvas with black accents. We keep the ink-N
+ * scale (0 = lightest, 900 = darkest) and add semantic aliases so any
+ * future theme swap only edits this block. */
+@theme {
+  --color-ink-0: #ffffff;
+  --color-ink-50: #f5f5f7;
+  --color-ink-100: #e4e4e7;
+  --color-ink-300: #a1a1aa;
+  --color-ink-500: #52525b;
+  --color-ink-700: #27272a;
+  --color-ink-900: #0a0a0a;
+
+  /* Semantic aliases. Components reference these so flipping the theme
+   * is a one-block edit. */
+  --color-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-fg: #0a0a0a;
+  --color-muted: #52525b;
+  --color-subtle: #a1a1aa;
+
+  --color-line-soft: rgba(10, 10, 10, 0.06);
+  --color-line-strong: rgba(10, 10, 10, 0.16);
+
+  --font-sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-display: "Source Serif 4", "Source Serif Pro", Georgia,
+    "Times New Roman", serif;
+}
+
+/* Wordmark treatment: a transitional serif (Source Serif 4 — closest free
+ * stand-in for Anthropic's Tiempos / similar editorial display serifs)
+ * on top of the Geist sans body. The contrast between the two voices is
+ * what makes the wordmark feel "branded" rather than utility text. */
+.wordmark-display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-style: normal;
+  font-variation-settings: "opsz" 60;
+  letter-spacing: -0.018em;
+}
+
+/* Base reset that survives Tailwind v4's preflight. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  /* Lenis takes over the wheel, but native scroll-behavior should be
+   * disabled so anchor jumps don't fight the smooth-scroll lib. */
+  scroll-behavior: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* Lenis adds .lenis class to <html> and uses these to wire up RAF-driven
+ * scroll. Required boilerplate — see https://github.com/darkroomengineering/lenis. */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+
+/* Hide scrollbar by default but keep accessibility — content stays scrollable
+ * via Lenis or keyboard navigation. */
+::-webkit-scrollbar {
+  width: 0;
+  background: transparent;
+}
+
+/* Selection color: subtle dark veil rather than browser-default blue, in
+ * keeping with the monochrome palette. */
+::selection {
+  background: rgba(10, 10, 10, 0.16);
+  color: var(--color-fg);
+}
+
+/* Reusable utilities. Tailwind covers most of what we need but a couple of
+ * combo selectors are clearer expressed once and reused. */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .grid-lines {
+    background-image: linear-gradient(
+        to right,
+        var(--color-line-soft) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, var(--color-line-soft) 1px, transparent 1px);
+    background-size: 80px 80px;
+  }
+}
+
+/*
+ * Progressive enhancement for entrance animations.
+ *
+ * Without JS: every animatable element is visible at its final state.
+ * With JS: an inline <script is:inline> in <head> adds .js to <html>
+ * before first paint, and these rules pre-hide the elements so GSAP can
+ * animate them in. If GSAP never loads (network error, ad blocker), the
+ * elements simply stay hidden — that's a worse failure mode than always
+ * showing them, but it's preferable to the previous version where a
+ * single missing import meant a blank black page.
+ *
+ * The .js gate ensures users with JS disabled get a fully rendered page.
+ */
+html.js [data-hero-mark] {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+html.js [data-hero-wordmark] {
+  /* Container stays in place; per-char spans inside fade in (typewriter).
+   * We hide the container until the script splits the text, so users don't
+   * see the full word flash before it gets sliced into chars. */
+  opacity: 0;
+}
+
+html.js [data-hero-headline] {
+  /* Container hidden until the headline split runs; per-word spans then
+   * stagger in via GSAP. */
+  opacity: 0;
+}
+
+html.js [data-hero-tagline] {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+html.js [data-hero-cta] {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+html.js [data-hero-scroll-cue] {
+  opacity: 0;
+}
+
+/* Typewriter caret. Blinks at 1.1s cadence and is faded out by GSAP once the
+ * wordmark finishes typing, so it doesn't keep blinking forever. */
+.hero-caret {
+  display: inline-block;
+  margin-left: 0.06em;
+  color: var(--color-fg);
+  animation: hero-caret-blink 1.1s steps(2, jump-none) infinite;
+  /* Preserve baseline alignment with the surrounding chars. */
+  vertical-align: baseline;
+}
+
+@keyframes hero-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}

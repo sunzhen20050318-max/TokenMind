@@ -1,0 +1,105 @@
+---
+import { STRINGS, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = STRINGS;
+
+// Each tool gets a tiny inline SVG glyph. Glyphs are intentionally
+// abstract (geometric forms, not platform/brand marks) so they read as
+// "capability category" rather than as third-party product logos.
+const glyphs: Record<string, string> = {
+  shell:
+    '<path d="M4 5l4 4-4 4M11 13h7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  filesystem:
+    '<path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h3l1.4 1.5h6.6A1.5 1.5 0 0 1 19 8v8.5A1.5 1.5 0 0 1 17.5 18h-11A1.5 1.5 0 0 1 5 16.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  web:
+    '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 12h14M12 5c2.5 2.6 2.5 11.4 0 14M12 5c-2.5 2.6-2.5 11.4 0 14" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+  mcp:
+    '<path d="M5 8.5h14M5 12h14M5 15.5h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="8.5" r="1.1" fill="currentColor"/><circle cx="14" cy="12" r="1.1" fill="currentColor"/><circle cx="10" cy="15.5" r="1.1" fill="currentColor"/>',
+  knowledge:
+    '<path d="M6 5h9a3 3 0 0 1 3 3v11l-3-1.5-3 1.5-3-1.5-3 1.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9 9h6M9 12h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  memory:
+    '<rect x="5" y="6" width="14" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 10h6M9 13h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 9v2M3 13v2M21 9v2M21 13v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  cron:
+    '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 8v4l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  creative:
+    '<path d="M12 5l1.8 4.2L18 11l-4.2 1.8L12 17l-1.8-4.2L6 11l4.2-1.8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+};
+
+// Items in the order we want them displayed; we map name (zh) → key.
+const order = [
+  'shell',
+  'filesystem',
+  'web',
+  'mcp',
+  'knowledge',
+  'memory',
+  'cron',
+  'creative',
+];
+---
+
+<section
+  id="features"
+  class="relative px-6 py-28 sm:py-32 lg:py-40"
+  aria-label={t.tools.title[lang]}
+>
+  <div class="mx-auto max-w-6xl">
+    <header data-reveal class="mb-14 max-w-2xl sm:mb-16">
+      <div
+        class="mb-3 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--color-muted)]"
+      >
+        <span class="h-px w-6 bg-[color:var(--color-line-strong)]"></span>
+        {t.tools.eyebrow[lang]}
+      </div>
+      <h2
+        class="wordmark-display mb-4 text-[clamp(2rem,4vw,3.4rem)] leading-[1.05] text-[color:var(--color-fg)]"
+      >
+        {t.tools.title[lang]}
+      </h2>
+      <p
+        class="text-base leading-relaxed text-[color:var(--color-muted)] sm:text-lg"
+      >
+        {t.tools.body[lang]}
+      </p>
+    </header>
+
+    <ul
+      data-reveal-stagger
+      class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-[color:var(--color-line-strong)]/70 bg-[color:var(--color-line-strong)]/30 sm:grid-cols-2 lg:grid-cols-4"
+    >
+      {
+        t.tools.items.map((item, idx) => (
+          <li class="group bg-[color:var(--color-surface)] transition-colors duration-200 hover:bg-[color:var(--color-ink-50)]">
+            <div class="flex h-full flex-col gap-4 p-6 sm:p-7">
+              <span
+                class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[color:var(--color-fg)] text-[color:var(--color-surface)] transition-transform duration-200 group-hover:scale-105"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  class="h-[18px] w-[18px]"
+                  aria-hidden="true"
+                  set:html={glyphs[order[idx]]}
+                />
+              </span>
+              <h3
+                class="text-[15px] font-semibold tracking-tight text-[color:var(--color-fg)]"
+              >
+                {item.name[lang]}
+              </h3>
+              <p
+                class="text-[13px] leading-relaxed text-[color:var(--color-muted)]"
+              >
+                {item.desc[lang]}
+              </p>
+            </div>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

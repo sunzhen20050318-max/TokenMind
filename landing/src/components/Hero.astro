@@ -1,0 +1,123 @@
+---
+import { INSTALLERS } from '../lib/downloads';
+import { STRINGS, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = STRINGS;
+---
+
+<!--
+  Hero. Light canvas, monochrome typography, two download CTAs.
+  Brand cluster (mark + "TokenMind") is the focal point — supersized so it
+  reads as the page wordmark. Headline below is a one-line subtitle.
+  Content sits in the upper third (justify-start + responsive top padding)
+  so users land "looking down" the page instead of dead-center.
+-->
+<section
+  class="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-6 pt-24"
+>
+  <!-- Subtle grid backdrop, almost invisible — adds depth without color. -->
+  <div
+    class="pointer-events-none absolute inset-0 grid-lines opacity-[0.55] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
+    aria-hidden="true"
+  ></div>
+
+  <div class="relative flex flex-col items-center gap-7 sm:gap-8">
+    <!-- Brand cluster: oversized mark + wordmark sit together as the page's
+         primary visual. The wordmark is split into per-character spans on
+         load and typewriter-revealed. -->
+    <div class="flex items-center gap-4 sm:gap-5">
+      <img
+        data-hero-mark
+        src="/tokenmind-mark-black.svg"
+        alt=""
+        width="96"
+        height="96"
+        class="h-14 w-auto sm:h-20 md:h-24 lg:h-28"
+        draggable="false"
+      />
+      <span
+        data-hero-wordmark
+        class="wordmark-display text-5xl text-[color:var(--color-fg)] sm:text-7xl md:text-8xl lg:text-[8.5rem]"
+      >
+        TokenMind
+      </span>
+    </div>
+
+    <!-- Subtitle. One line on desktop, wraps on mobile. Word-level reveal
+         lives in heroAnimations.ts. -->
+    <h1
+      data-hero-headline
+      class="max-w-3xl text-balance text-center text-xl font-medium leading-[1.25] tracking-tight text-[color:var(--color-fg)] sm:text-2xl md:text-3xl"
+    >
+      {t.hero.headline[lang]}
+    </h1>
+
+    <p
+      data-hero-tagline
+      class="max-w-xl text-center text-sm text-[color:var(--color-muted)] sm:text-base"
+    >
+      {t.hero.tagline[lang]}
+    </p>
+
+    <!-- Two CTAs: macOS + Windows. Direct download links, no intermediary
+         page. -->
+    <div class="mt-2 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
+      {
+        INSTALLERS.macos ? (
+          <a
+            data-hero-cta
+            href={INSTALLERS.macos}
+            download
+            class="group inline-flex items-center gap-2 rounded-full bg-[color:var(--color-fg)] px-6 py-2.5 text-sm font-medium text-[color:var(--color-surface)] transition-colors duration-200 hover:bg-[color:var(--color-ink-700)]"
+          >
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+              <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12-1.103.42-2.24 1.114-2.99.793-.88 2.135-1.575 3.05-1.66Zm4.565 17.39c-.745 1.71-1.107 2.45-2.066 3.97-1.339 2.07-3.245 4.65-5.578 4.66-2.13.02-2.677-1.4-5.567-1.4-2.89.01-3.49 1.42-5.62 1.4-2.336-.04-4.135-2.36-5.476-4.43C-1.65 17.84-1.91 12.86 1.6 9.83c1.94-1.71 4.32-2.59 6.46-2.59 1.86 0 3.04.99 4.6.99 1.55 0 2.49-.99 4.65-.99 1.65 0 3.41.9 4.66 2.46-4.1 2.25-3.43 8.13.96 8.12Z" />
+            </svg>
+            {t.hero.macos[lang]}
+          </a>
+        ) : null
+      }
+      {
+        INSTALLERS.windows ? (
+          <a
+            data-hero-cta
+            href={INSTALLERS.windows}
+            download
+            class="group inline-flex items-center gap-2 rounded-full border border-[color:var(--color-line-strong)] bg-transparent px-6 py-2.5 text-sm font-medium text-[color:var(--color-fg)] transition-colors duration-200 hover:bg-[color:var(--color-ink-50)]"
+          >
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+              <path d="M0 3.5 9.75 2v9.5H0Zm0 17V11.5h9.75V22ZM10.75 11.5H24V22l-13.25-1.5Zm0-9.5L24 0v11h-13.25Z" />
+            </svg>
+            {t.hero.windows[lang]}
+          </a>
+        ) : null
+      }
+    </div>
+  </div>
+
+  <!-- Scroll cue, sits absolute bottom-center; opacity is animated last in
+       the entrance timeline so it's the final element to settle. -->
+  <div
+    data-hero-scroll-cue
+    class="absolute bottom-10 left-1/2 -translate-x-1/2 text-xs uppercase tracking-[0.32em] text-[color:var(--color-subtle)]"
+    aria-hidden="true"
+  >
+    {t.hero.scroll[lang]}
+  </div>
+</section>
+
+<script>
+  // Run the entrance choreography on the next paint so transformed initial
+  // styles are committed first; otherwise GSAP can race CSS and produce a
+  // single-frame flash of un-transformed content.
+  import { playHeroIntro } from '../lib/heroAnimations';
+
+  requestAnimationFrame(() => {
+    playHeroIntro();
+  });
+</script>

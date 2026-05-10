@@ -1,0 +1,57 @@
+---
+import { STRINGS, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = STRINGS;
+---
+
+<section
+  class="relative px-6 py-28 sm:py-32 lg:py-40"
+  aria-label={t.useCases.title[lang]}
+>
+  <div class="mx-auto max-w-6xl">
+    <header data-reveal class="mb-14 max-w-2xl sm:mb-16">
+      <div
+        class="mb-3 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--color-muted)]"
+      >
+        <span class="h-px w-6 bg-[color:var(--color-line-strong)]"></span>
+        {t.useCases.eyebrow[lang]}
+      </div>
+      <h2
+        class="wordmark-display text-[clamp(2rem,4vw,3.4rem)] leading-[1.05] text-[color:var(--color-fg)]"
+      >
+        {t.useCases.title[lang]}
+      </h2>
+    </header>
+
+    <div data-reveal-stagger class="grid grid-cols-1 gap-6 md:grid-cols-3">
+      {
+        t.useCases.items.map((item) => (
+          <article
+            class="flex flex-col gap-4 rounded-2xl border border-[color:var(--color-line-strong)]/70 bg-[color:var(--color-surface)] p-7 transition-colors duration-200 hover:bg-[color:var(--color-ink-50)]"
+          >
+            <span
+              class="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--color-muted)]"
+            >
+              {item.kicker[lang]}
+            </span>
+            <h3
+              class="wordmark-display text-[clamp(1.3rem,1.8vw,1.7rem)] leading-[1.15] text-[color:var(--color-fg)]"
+            >
+              {item.title[lang]}
+            </h3>
+            <p
+              class="text-sm leading-relaxed text-[color:var(--color-muted)]"
+            >
+              {item.body[lang]}
+            </p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>

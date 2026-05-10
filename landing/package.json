@@ -1,0 +1,24 @@
+{
+  "name": "tokenmind-landing",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TokenMind landing site — Astro + Tailwind + GSAP + Lenis. Built independently from the desktop app and deployed to Aliyun OSS.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "astro": "^5.0.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "gsap": "^3.12.5",
+    "lenis": "^1.1.20"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.7.0"
+  }
+}

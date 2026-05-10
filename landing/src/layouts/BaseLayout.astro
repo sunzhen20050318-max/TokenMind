@@ -1,0 +1,92 @@
+---
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import { STRINGS, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang?: Lang;
+  title?: string;
+  description?: string;
+}
+
+const { lang = 'zh', title, description } = Astro.props;
+
+const resolvedTitle = title ?? STRINGS.meta.title[lang];
+const resolvedDescription = description ?? STRINGS.meta.description[lang];
+const htmlLang = lang === 'zh' ? 'zh-CN' : 'en';
+---
+
+<!doctype html>
+<html lang={htmlLang}>
+  <head>
+    <!--
+      Progressive enhancement gate. Adding `.js` to <html> before first paint
+      flips the html.js [data-hero-*] rules in global.css from "no-op" to
+      "hide initial state", so GSAP can animate them in.
+    -->
+    <script is:inline>
+      document.documentElement.classList.add('js');
+    </script>
+
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{resolvedTitle}</title>
+    <meta name="description" content={resolvedDescription} />
+
+    <!-- Open Graph + Twitter card meta — fill in absolute URLs once the
+         production domain is filed. -->
+    <meta property="og:title" content={resolvedTitle} />
+    <meta property="og:description" content={resolvedDescription} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Search engine sees both routes as alternates of each other. -->
+    <link rel="alternate" hreflang="zh-CN" href="/" />
+    <link rel="alternate" hreflang="en" href="/en/" />
+    <link rel="alternate" hreflang="x-default" href="/" />
+
+    <link rel="icon" type="image/svg+xml" href="/tokenmind-mark.svg" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300..900&family=Geist+Mono:wght@400..700&family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <canvas
+      data-cursor-canvas
+      class="pointer-events-none fixed inset-0 z-0"
+      aria-hidden="true"
+    ></canvas>
+
+    <div class="relative z-10">
+      <Nav lang={lang} />
+      <slot />
+    </div>
+
+    <script>
+      import('../lib/smoothScroll').then(({ initSmoothScroll }) => {
+        initSmoothScroll();
+      });
+
+      import('../lib/cursorParticles').then(({ initCursorParticles }) => {
+        const canvas = document.querySelector<HTMLCanvasElement>(
+          '[data-cursor-canvas]',
+        );
+        if (canvas) initCursorParticles(canvas);
+      });
+
+      // Section entrance reveals — bind on next frame so all DOM is laid
+      // out and ScrollTrigger sees correct trigger positions.
+      import('../lib/sectionReveal').then(({ initSectionReveals }) => {
+        requestAnimationFrame(() => initSectionReveals());
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,185 @@
+---
+import { LINKS } from '../lib/links';
+import { STRINGS, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = STRINGS;
+
+// Footer is brand-led, modeled after Antigravity-style: a short tagline
+// at the top-left, two flat lists of plain links (no column headers, no
+// translated category names), then a HUGE wordmark across the page, and
+// a thin meta strip at the very bottom. Link labels stay English in
+// both routes — they're product-facing nouns that read the same in
+// either, and skipping translation keeps the footer visually anchored
+// to the brand.
+const VERSION = '0.1.11';
+
+// Resolve link labels to URLs. Order matters; lookup is by label string.
+const linkHref = (label: string): string => {
+  switch (label) {
+    case 'Download':
+      return '#download';
+    case 'Docs':
+      return `${LINKS.github}/blob/main/README.md`;
+    case 'GitHub':
+      return LINKS.github;
+    case 'Gitee':
+      return LINKS.gitee;
+    case 'License':
+    case 'MIT License':
+      return `${LINKS.github}/blob/main/LICENSE`;
+    case 'Changelog':
+      return `${LINKS.github}/releases`;
+    case 'Contact':
+      return `mailto:${LINKS.email}`;
+    case 'Privacy':
+      return `${LINKS.github}/blob/main/SECURITY.md`;
+    default:
+      return '#';
+  }
+};
+const isExternal = (href: string) =>
+  href.startsWith('http') && !href.startsWith(`${LINKS.github}/blob/main/README`);
+---
+
+<footer
+  class="relative overflow-hidden border-t border-[color:var(--color-line-soft)] bg-[color:var(--color-surface)]"
+>
+  <!-- Top region: tagline (left) + two flat link columns (right). -->
+  <div class="mx-auto max-w-7xl px-6 pt-20 pb-12 sm:px-10 sm:pt-24 sm:pb-14">
+    <div class="grid grid-cols-1 gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
+      <p
+        class="max-w-md text-[clamp(1.4rem,2.2vw,2rem)] font-semibold leading-[1.15] tracking-tight text-[color:var(--color-fg)]"
+      >
+        {t.footer.tagline[lang]}
+      </p>
+
+      <ul class="flex flex-col gap-3 text-[15px]">
+        {
+          t.footer.primaryLinks.map((label) => {
+            const href = linkHref(label);
+            return (
+              <li>
+                <a
+                  href={href}
+                  target={isExternal(href) ? '_blank' : undefined}
+                  rel={
+                    isExternal(href) ? 'noopener noreferrer' : undefined
+                  }
+                  class="text-[color:var(--color-fg)] transition-colors duration-150 hover:text-[color:var(--color-muted)]"
+                >
+                  {label}
+                </a>
+              </li>
+            );
+          })
+        }
+      </ul>
+
+      <ul class="flex flex-col gap-3 text-[15px]">
+        {
+          t.footer.secondaryLinks.map((label) => {
+            const href = linkHref(label);
+            return (
+              <li>
+                <a
+                  href={href}
+                  target={isExternal(href) ? '_blank' : undefined}
+                  rel={
+                    isExternal(href) ? 'noopener noreferrer' : undefined
+                  }
+                  class="text-[color:var(--color-fg)] transition-colors duration-150 hover:text-[color:var(--color-muted)]"
+                >
+                  {label}
+                </a>
+              </li>
+            );
+          })
+        }
+      </ul>
+    </div>
+  </div>
+
+  <!--
+    HUGE brand wordmark across the page width. Uses the display serif at
+    a viewport-relative size so it scales fluidly. line-height is tight
+    so descenders don't push the meta strip down. The wordmark is purely
+    decorative (aria-hidden) — the brand link is in the meta strip.
+  -->
+  <div
+    class="pointer-events-none select-none px-6 pt-4 pb-6 sm:px-10"
+    aria-hidden="true"
+  >
+    <div
+      class="wordmark-display text-[color:var(--color-fg)]"
+      style="font-size: clamp(5rem, 22vw, 22rem); line-height: 0.9; letter-spacing: -0.04em;"
+    >
+      TokenMind
+    </div>
+  </div>
+
+  <!-- Meta strip: small brand mark on the left, version + bullet-separated
+       legal links on the right. -->
+  <div class="border-t border-[color:var(--color-line-soft)]">
+    <div
+      class="mx-auto flex max-w-7xl flex-col items-start gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-10 sm:py-6"
+    >
+      <a
+        href={lang === 'zh' ? '/' : '/en/'}
+        class="flex items-center gap-2 text-[color:var(--color-fg)] transition-opacity duration-150 hover:opacity-70"
+        aria-label={t.nav.homeLabel[lang]}
+      >
+        <img
+          src="/tokenmind-mark-black.svg"
+          alt=""
+          width="20"
+          height="20"
+          class="h-4 w-auto"
+          draggable="false"
+        />
+        <span class="text-[13px] font-medium tracking-tight">TokenMind</span>
+        <span
+          class="ml-2 font-mono text-[11px] text-[color:var(--color-subtle)]"
+        >
+          v{VERSION}
+        </span>
+      </a>
+
+      <ul
+        class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-[color:var(--color-muted)]"
+      >
+        {
+          t.footer.metaLinks.map((label, i) => {
+            const href = linkHref(label);
+            return (
+              <li class="flex items-center gap-x-4">
+                {i > 0 ? (
+                  <span
+                    class="text-[color:var(--color-line-strong)]"
+                    aria-hidden="true"
+                  >
+                    ·
+                  </span>
+                ) : null}
+                <a
+                  href={href}
+                  target={isExternal(href) ? '_blank' : undefined}
+                  rel={
+                    isExternal(href) ? 'noopener noreferrer' : undefined
+                  }
+                  class="transition-colors duration-150 hover:text-[color:var(--color-fg)]"
+                >
+                  {label}
+                </a>
+              </li>
+            );
+          })
+        }
+      </ul>
+    </div>
+  </div>
+</footer>
