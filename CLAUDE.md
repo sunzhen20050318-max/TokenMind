@@ -18,6 +18,10 @@ tokenmind web --port 18888 # start FastAPI + Web UI
 tokenmind agent            # headless CLI agent mode (interactive REPL)
 tokenmind gateway          # run channel gateway (telegram/email/feishu/etc.)
 tokenmind status           # diagnostics for config + providers + channels
+tokenmind channels status  # list configured channels and their state
+tokenmind channels login   # interactive login for a channel
+tokenmind plugins list     # list installed/discovered plugins
+tokenmind provider login   # interactive OAuth/API-key setup for a provider
 
 # Backend checks
 pytest                     # all tests (asyncio_mode=auto, no shared conftest)
@@ -61,7 +65,7 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 ### Providers (`tokenmind/providers/`)
 
 - `ProviderSpec` (frozen dataclass in `registry.py`) defines the supported provider presets with routing metadata: `backend` (openai_compat / anthropic), `is_gateway`, `is_local`, `detect_by_key_prefix`
-- Concrete clients: `anthropic_provider.py`, `openai_compat_provider.py` (used by OpenAI, DeepSeek, Qwen, GLM, Moonshot, MiniMax, OpenRouter, SiliconFlow, Ollama, etc.), `azure_openai_provider.py`, `openai_codex_provider.py`, `custom_provider.py`, plus `transcription.py` for ASR
+- Concrete clients: `anthropic_provider.py`, `openai_compat_provider.py` (used by OpenAI, DeepSeek, DashScope (Qwen), Zhipu (GLM), Moonshot, MiniMax, MiMo, Gemini, OpenRouter, SiliconFlow, Ollama, etc.), `custom_provider.py`, plus `transcription.py` for ASR. `azure_openai_provider.py` and `openai_codex_provider.py` exist as optional clients but are not registered in `registry.py` — reach them via the `custom` preset
 - Provider selection: `Config._match_provider(model)` in `config/schema.py` resolves by explicit `agents.defaults.provider`, then by model prefix (`<provider>/<model>`), then by registry keyword/key-prefix detection
 - `LLMProvider` (abstract base in `base.py`): `chat()` and `chat_with_retry()` with exponential backoff
 - `LLMResponse` returns: `content`, `tool_calls`, `finish_reason`, `usage`, `reasoning_content`, `thinking_blocks`
@@ -71,7 +75,7 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 
 - `ToolRegistry`: register/unregister/execute tools, `get_definitions()` returns OpenAI-format schemas
 - `Tool` (abstract base in `base.py`): override `name`, `description`, `parameters`, `execute()`
-- Built-in tools: `exec` (`shell.py`), `read_file`/`write_file`/`edit_file`/`list_dir` (`filesystem.py`), `web_search`/`web_fetch` (`web.py`), `message` (`message.py`), `deliver_attachment` (`deliver_attachment.py`), `spawn` (subagent — `spawn.py`), `cron` (`cron.py`), `generate_image` (`generate_image.py`)
+- Built-in tools: `exec` (`shell.py`), `read_file`/`write_file`/`edit_file`/`list_dir` (`filesystem.py`), `web_search`/`web_fetch` (`web.py`), `message` (`message.py`), `deliver_attachment` (`deliver_attachment.py`), `spawn` (subagent — `spawn.py`), `cron` (`cron.py`), `generate_image` (`generate_image.py`), `skill_suggestion` (`skill_suggestion.py`)
 - MCP tools (`tools/mcp.py`): auto-registered as `mcp_<server>_<tool>`, supports stdio/SSE/streamable HTTP transports
 
 ### Creative Services (`tokenmind/creative/`)
@@ -125,7 +129,7 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 
 ### Server (`tokenmind/server/`)
 
-- `app.py` wires the FastAPI app and includes routers from `tokenmind/server/routes/` (one module per surface): `assets`, `chat`, `config`, `creative`, `cron`, `knowledge`, `memory`, `projects`, `sessions`, `skills`, `status`, `storage`
+- `app.py` wires the FastAPI app and includes routers from `tokenmind/server/routes/` (one module per surface): `assets`, `chat`, `config`, `creative`, `cron`, `knowledge`, `memory`, `projects`, `sessions`, `skills`, `status`, `storage`, `updates`, `usage`
 - WebSocket lives in `tokenmind/server/websocket/` (`manager.py` connection registry, `handler.py` protocol); endpoint is `/ws/{session_key}`
 - `tokenmind/server/channel/web.py` (`WebChannel`) bridges WebSocket ↔ MessageBus
 - `tokenmind/server/dependencies.py` wires shared singletons (config, bus, agent loop, stores) for FastAPI `Depends()`
@@ -151,9 +155,9 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 All Pydantic models with camelCase/snake_case alias support (`Base.model_config` uses `to_camel` alias generator + `populate_by_name=True`). Key sections:
 
 - `AgentDefaults`: model (default `anthropic/claude-opus-4-5`), provider ("auto"), workspace, max_tokens, context_window_tokens, reasoning_effort
-- `ProvidersConfig`: per-provider api_key, api_base, extra_headers, default_model (one field per registered provider preset; e.g. `ollama`, `anthropic`, `openai`, `qwen`, `glm`, `deepseek`, `moonshot`, `minimax`, `siliconflow`, `openrouter`, `azure_openai`, `custom`)
+- `ProvidersConfig`: per-provider api_key, api_base, extra_headers, default_model (one field per registered provider preset: `custom`, `anthropic`, `openai`, `openrouter`, `deepseek`, `zhipu`, `dashscope`, `ollama`, `gemini`, `moonshot`, `minimax`, `mimo`, `siliconflow`)
 - `ToolsConfig`: exec (confirm_high_risk, approval_timeout_s), uploads (max_file_mb, retention_days), knowledge (vector_backend, chunk_size), mcp_servers
-- `CreativeConfig`: per-capability provider/model for image, music, tts, voice_clone, voice_design
+- `CreativeConfig`: per-capability provider/model for image, music, music_cover, tts, voice_clone, voice_design, video
 - `HeartbeatConfig`: enables and tunes the background heartbeat agent
 - `MCPServerConfig`: type (auto-detected), command/args/env (stdio), url/headers (HTTP), tool_timeout, enabled_tools
 
@@ -162,7 +166,7 @@ Config file lives at `~/.tokenmind/config.json` by default; override with `token
 ## Testing
 
 - Framework: pytest with `asyncio_mode = "auto"`
-- ~81 test files in `tests/` covering providers, channels, tools, knowledge, sessions, config, projects, attachments, and features
+- ~90+ test files in `tests/` covering providers, channels, tools, knowledge, sessions, config, projects, attachments, and features
 - Frontend tests in `frontend/tests/` (pure logic tests, no DOM runner)
 - Tests import mocks/fixtures independently (no shared conftest.py)
 
