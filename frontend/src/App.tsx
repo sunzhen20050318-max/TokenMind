@@ -25,6 +25,7 @@ import { VoiceDesignPage } from './pages/voice/VoiceDesignStudio';
 import { api } from './services/api';
 import { fetchVersionInfo, POLL_INTERVAL_MS } from './services/updates';
 import type { VersionInfo } from './types/updates';
+import { StaleClientBanner } from './components/Updates/StaleClientBanner';
 import { useChatStore } from './stores/chatStore';
 import { useSessions } from './hooks/useSessions';
 import { useSessionOrchestrator } from './hooks/useSessionOrchestrator';
@@ -70,6 +71,44 @@ const App: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  // Long-lived sessions (tab never closed) miss the mount-time check above
+  // because it only fires once. Poll /api/status every 5 minutes; if the
+  // server has been upgraded under us, surface a non-intrusive banner —
+  // explicitly NOT auto-reload, because that would wipe whatever the user
+  // is in the middle of typing/uploading/streaming.
+  const [staleServerVersion, setStaleServerVersion] = useState<string | null>(null);
+  const [staleBannerDismissed, setStaleBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    const checkServerVersion = async () => {
+      try {
+        const status = await api.getStatus();
+        if (cancelled || !status?.version) return;
+        if (status.version !== APP_VERSION) {
+          setStaleServerVersion(status.version);
+        }
+      } catch {
+        // Ignore — periodic check, no need to surface transient failures.
+      }
+    };
+    // First periodic check 30s after load (mount-time check has already run);
+    // then every 5 minutes thereafter.
+    const initialTid = window.setTimeout(() => void checkServerVersion(), 30_000);
+    const intervalTid = window.setInterval(
+      () => void checkServerVersion(),
+      5 * 60 * 1000,
+    );
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialTid);
+      window.clearInterval(intervalTid);
+    };
+  }, []);
+
+  const showStaleBanner = staleServerVersion !== null && !staleBannerDismissed;
 
   const {
     currentSession,
@@ -207,6 +246,13 @@ const App: React.FC = () => {
           sidebarCollapsed ? 'app-shell--sidebar-collapsed' : '',
         ].join(' ')}
       >
+        {showStaleBanner && staleServerVersion ? (
+          <StaleClientBanner
+            serverVersion={staleServerVersion}
+            onRefresh={() => window.location.reload()}
+            onDismiss={() => setStaleBannerDismissed(true)}
+          />
+        ) : null}
         <div className="app-main">
           <Sidebar
             collapsed={sidebarCollapsed}

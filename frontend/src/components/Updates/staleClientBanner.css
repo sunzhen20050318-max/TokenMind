@@ -1,0 +1,71 @@
+.stale-client-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: linear-gradient(
+    180deg,
+    rgba(240, 164, 55, 0.18) 0%,
+    rgba(240, 164, 55, 0.08) 100%
+  );
+  border-bottom: 1px solid rgba(240, 164, 55, 0.4);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  /* Sit at the very top of the app shell — flex column above .app-main. */
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.stale-client-banner__icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.stale-client-banner__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.stale-client-banner__text strong {
+  font-weight: 600;
+  color: #ffd385;
+}
+
+.stale-client-banner__primary {
+  background: rgba(240, 164, 55, 0.22);
+  border: 1px solid rgba(240, 164, 55, 0.55);
+  color: #ffd385;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.stale-client-banner__primary:hover {
+  background: rgba(240, 164, 55, 0.32);
+  border-color: rgba(240, 164, 55, 0.75);
+}
+
+.stale-client-banner__close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 18px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.stale-client-banner__close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+}

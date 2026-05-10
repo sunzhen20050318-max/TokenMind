@@ -79,13 +79,29 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def build_launch_url(port: int, *, launched_at: int | None = None) -> str:
+    """Compose the URL the desktop launcher hands to webbrowser.open.
+
+    The ``launch_at`` query parameter is intentional cache-busting: most
+    browsers reuse an existing tab when ``webbrowser.open`` is called with
+    a URL that's already open, which means an upgraded .app would land on
+    the previous launch's stale-cached page. Making the URL unique per
+    launch forces a fresh tab and a fresh document load — the only
+    reliable way to break out of a sticky browser cache after upgrading
+    over an older release that lacked our no-cache headers.
+    """
+    ts = int(launched_at if launched_at is not None else time.time())
+    return f"http://localhost:{port}/?launch_at={ts}"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Start TokenMind and open the local Web UI."""
     args = parse_args(argv)
     port = find_available_port(args.port)
-    url = f"http://localhost:{port}"
+    base_url = f"http://localhost:{port}"
+    launch_url = build_launch_url(port)
 
-    print(f"Starting TokenMind desktop on {url}")
+    print(f"Starting TokenMind desktop on {base_url}")
     print("Keep this window open while using TokenMind. Close it to stop the local service.")
 
     server_thread = threading.Thread(
@@ -101,13 +117,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     server_thread.start()
 
     if wait_for_port(port):
-        print(f"TokenMind is ready: {url}")
+        print(f"TokenMind is ready: {base_url}")
         if not args.no_browser:
-            webbrowser.open(url)
+            # new=2 asks the browser to open a new tab rather than reuse an
+            # existing one. Combined with the per-launch query param above,
+            # this gives the upgraded build a clean rendering surface.
+            webbrowser.open(launch_url, new=2)
     else:
         print(
             f"TokenMind did not become ready within {DEFAULT_READY_TIMEOUT_S:.0f}s. "
-            f"Try opening {url} or check the logs above.",
+            f"Try opening {base_url} or check the logs above.",
             file=sys.stderr,
         )
 
