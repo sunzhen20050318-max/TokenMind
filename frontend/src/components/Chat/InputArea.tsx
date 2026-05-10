@@ -582,24 +582,25 @@ export const InputArea: React.FC<InputAreaProps> = ({
           </div>
 
           <div className="composer__footer-right">
-            {composerMode === 'active' ? (
-              <div className="composer__controls">
-                <InlineSelect
-                  value={activeModelId || ''}
-                  placeholder={modelPlaceholder}
-                  options={modelSelectOptions}
-                  onSelect={(next) => onSelectModel?.(next)}
-                  disabled={modelStatus === 'loading' || modelSelectOptions.length === 0}
-                />
-                <span className="composer__controls-divider" />
-                <InlineSelect
-                  value={activeReasoning || ''}
-                  placeholder={reasoningPlaceholder}
-                  options={reasoningSelectOptions}
-                  onSelect={(next) => onSelectReasoning?.(next)}
-                />
-              </div>
-            ) : null}
+            {/* Model + reasoning selectors render in both launch and active
+                modes — hiding them on the welcome page surprised users who
+                wanted to pick the model BEFORE typing the first message. */}
+            <div className="composer__controls">
+              <InlineSelect
+                value={activeModelId || ''}
+                placeholder={modelPlaceholder}
+                options={modelSelectOptions}
+                onSelect={(next) => onSelectModel?.(next)}
+                disabled={modelStatus === 'loading' || modelSelectOptions.length === 0}
+              />
+              <span className="composer__controls-divider" />
+              <InlineSelect
+                value={activeReasoning || ''}
+                placeholder={reasoningPlaceholder}
+                options={reasoningSelectOptions}
+                onSelect={(next) => onSelectReasoning?.(next)}
+              />
+            </div>
 
             {isStreaming ? (
               <button
