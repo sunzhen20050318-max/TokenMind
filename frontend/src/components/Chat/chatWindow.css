@@ -196,6 +196,35 @@
   transform: translateX(-50%);
 }
 
+.chat-composer-dock__reconnecting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.chat-composer-dock__reconnecting-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f0a437;
+  animation: chat-composer-reconnect-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes chat-composer-reconnect-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 .chat-launch__chips {
   display: flex;
   flex-wrap: wrap;

@@ -175,6 +175,20 @@ export function useSessionOrchestrator(): void {
     };
   }, []);
 
+  // Push wsPool open/close transitions into the chatStore so any component
+  // that wants to react to connection state can subscribe to the store.
+  // Polling `wsPool.isConnected(...)` synchronously in render leaves the UI
+  // stuck — the WebSocket can transition without React being told.
+  useEffect(() => {
+    const setSessionConnected = useChatStore.getState().setSessionConnected;
+    const unsubscribe = wsPool.onConnectionChange((sessionId, connected) => {
+      setSessionConnected(sessionId, connected);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Drive the pool: ensure the current session is connected; keep alive any
   // background session with running work; idle-evict the rest after a delay.
   useEffect(() => {
@@ -309,6 +323,21 @@ export function isSessionExecTrusted(sessionId: string): boolean {
   return readTrustedSessions().includes(sessionId);
 }
 
+/**
+ * Synchronous, non-reactive check. Reads the current WebSocket readyState.
+ * Use only in event handlers / imperative paths — do not call from render
+ * (the value won't update when the socket transitions). For render code
+ * use {@link useSessionConnected} instead.
+ */
 export function isSessionConnected(sessionId: string): boolean {
   return wsPool.isConnected(sessionId);
+}
+
+/**
+ * Reactive hook returning whether the given session's WebSocket is OPEN.
+ * Subscribes to chatStore.connectedSessions, which the orchestrator keeps
+ * in sync with wsPool's open/close events.
+ */
+export function useSessionConnected(sessionId: string): boolean {
+  return useChatStore((state) => state.connectedSessions.has(sessionId));
 }

@@ -95,6 +95,10 @@ interface ChatState {
   projectSessions: Session[];
   isLoading: boolean;
   isConnected: boolean;
+  /** Per-session WebSocket connection state. Updated reactively by the
+   * orchestrator so components can subscribe — `isConnected` above is the
+   * legacy single-session flag still kept for compatibility. */
+  connectedSessions: Set<string>;
   error: string | null;
   activeTool: string | null;
   currentTurnId: string | null; // The turnId for the current conversation turn
@@ -126,6 +130,7 @@ interface ChatState {
   leaveProject: () => void;
   setLoading: (loading: boolean) => void;
   setConnected: (connected: boolean) => void;
+  setSessionConnected: (sessionId: string, connected: boolean) => void;
   setError: (error: string | null) => void;
   setActiveTool: (tool: string | null) => void;
   addToolCall: (tool: string, toolId?: string) => string;
@@ -209,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   projectSessions: [],
   isLoading: false,
   isConnected: false,
+  connectedSessions: new Set<string>(),
   error: null,
   activeTool: null,
   toolCalls: [],
@@ -462,6 +468,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConnected: (isConnected) => {
     set({ isConnected });
+  },
+
+  setSessionConnected: (sessionId, connected) => {
+    set((state) => {
+      const has = state.connectedSessions.has(sessionId);
+      if (has === connected) return state;
+      const next = new Set(state.connectedSessions);
+      if (connected) next.add(sessionId);
+      else next.delete(sessionId);
+      return { connectedSessions: next };
+    });
   },
 
   setError: (error) => {

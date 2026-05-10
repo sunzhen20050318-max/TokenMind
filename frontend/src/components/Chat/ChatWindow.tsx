@@ -8,7 +8,7 @@ import { ToolChain } from './ToolIndicator';
 import { ToolApprovalModal } from './ToolApprovalModal';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
 import {
-  isSessionConnected,
+  useSessionConnected,
   isSessionExecTrusted,
   respondToToolApproval,
   sendMessage as sendChatMessage,
@@ -289,7 +289,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const stopMessage = useCallback(() => {
     stopSessionTask(sessionId);
   }, [sessionId]);
-  const isConnected = isSessionConnected(sessionId);
+  const isConnected = useSessionConnected(sessionId);
   const approvePendingTool = useCallback(() => {
     if (!pendingApproval) return;
     respondToToolApproval(sessionId, pendingApproval.approval_id, true);
@@ -775,10 +775,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         </div>
 
         <div className={`chat-composer-dock ${hasConversation ? 'is-active' : 'is-launch'}`}>
+          {!isConnected ? (
+            <div className="chat-composer-dock__reconnecting" role="status">
+              <span className="chat-composer-dock__reconnecting-dot" aria-hidden />
+              连接中…消息会在连接恢复后发送
+            </div>
+          ) : null}
           <InputArea
             onSend={handleSend}
             onStop={stopMessage}
-            disabled={!isConnected}
+            connectionDown={!isConnected}
             isStreaming={isLoading}
             isUploading={isUploading}
             uploadProgress={uploadProgress}

@@ -13,6 +13,7 @@ import type { Attachment, WSMessageType } from '../types';
  */
 
 type PoolHandler = (sessionId: string, msg: WSMessageType) => void;
+type ConnectionListener = (sessionId: string, connected: boolean) => void;
 
 interface PooledConnection {
   ws: WebSocket | null;
@@ -25,12 +26,34 @@ interface PooledConnection {
   ready: Promise<void>;
 }
 
-const MAX_RECONNECT_ATTEMPTS = 5;
+// Reconnect strategy: infinite retries with exponential backoff capped at
+// 30s. Wifi switches and laptop wake-from-sleep often produce more than 5
+// blips, and a permanently-dead pool entry leaves the UI stuck — so we
+// never give up unless the consumer explicitly disconnects.
 const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30_000;
+
+export function backoffDelay(attempt: number): number {
+  const exp = Math.min(Math.max(attempt - 1, 0), 10); // clamp before pow blows up
+  return Math.min(RECONNECT_BASE_DELAY_MS * 2 ** exp, RECONNECT_MAX_DELAY_MS);
+}
 
 class WebSocketPool {
   private connections: Map<string, PooledConnection> = new Map();
   private handlers: Set<PoolHandler> = new Set();
+  private connectionListeners: Set<ConnectionListener> = new Set();
+
+  /** Notify subscribers when a session's WebSocket transitions between
+   * connected (OPEN) and disconnected (any non-OPEN) state. */
+  private fireConnectionChange(sessionId: string, connected: boolean): void {
+    this.connectionListeners.forEach((handler) => {
+      try {
+        handler(sessionId, connected);
+      } catch (err) {
+        console.error('[wsPool] connection listener threw', err);
+      }
+    });
+  }
 
   /**
    * Open (or reuse) a WebSocket for the given session. Returns a promise that
@@ -72,6 +95,7 @@ class WebSocketPool {
 
     ws.onopen = () => {
       conn.reconnectAttempts = 0;
+      this.fireConnectionChange(sessionId, true);
       resolveReady?.();
       resolveReady = null;
       rejectReady = null;
@@ -102,10 +126,10 @@ class WebSocketPool {
     ws.onclose = () => {
       // Drop the live socket reference; reconnect logic may replace it.
       conn.ws = null;
+      this.fireConnectionChange(sessionId, false);
       if (conn.closed) return;
-      if (conn.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
       conn.reconnectAttempts += 1;
-      const delay = RECONNECT_BASE_DELAY_MS * conn.reconnectAttempts;
+      const delay = backoffDelay(conn.reconnectAttempts);
       conn.reconnectTimer = window.setTimeout(() => {
         conn.reconnectTimer = null;
         if (conn.closed) return;
@@ -126,6 +150,7 @@ class WebSocketPool {
 
     ws.onopen = () => {
       conn.reconnectAttempts = 0;
+      this.fireConnectionChange(conn.sessionId, true);
     };
 
     ws.onmessage = (event) => {
@@ -149,10 +174,10 @@ class WebSocketPool {
 
     ws.onclose = () => {
       conn.ws = null;
+      this.fireConnectionChange(conn.sessionId, false);
       if (conn.closed) return;
-      if (conn.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
       conn.reconnectAttempts += 1;
-      const delay = RECONNECT_BASE_DELAY_MS * conn.reconnectAttempts;
+      const delay = backoffDelay(conn.reconnectAttempts);
       conn.reconnectTimer = window.setTimeout(() => {
         conn.reconnectTimer = null;
         if (conn.closed) return;
@@ -179,6 +204,7 @@ class WebSocketPool {
       conn.ws = null;
     }
     this.connections.delete(sessionId);
+    this.fireConnectionChange(sessionId, false);
   }
 
   /** Close and forget every session — used on logout/global teardown. */
@@ -242,6 +268,17 @@ class WebSocketPool {
     this.handlers.add(handler);
     return () => {
       this.handlers.delete(handler);
+    };
+  }
+
+  /** Subscribe to OPEN/CLOSE transitions for any session. The handler is
+   * called with `(sessionId, connected)` whenever a session's underlying
+   * socket transitions; subscribers should make their own state reactive
+   * (e.g., push into a zustand store) instead of polling `isConnected`. */
+  onConnectionChange(handler: ConnectionListener): () => void {
+    this.connectionListeners.add(handler);
+    return () => {
+      this.connectionListeners.delete(handler);
     };
   }
 

@@ -30,7 +30,12 @@ export interface ComposerKnowledgeOption {
 interface InputAreaProps {
   onSend: (message: string) => void | Promise<void>;
   onStop?: () => void;
+  /** Generic disable hatch (e.g. parent wants the entire composer dark). */
   disabled?: boolean;
+  /** WebSocket is not OPEN. Lets the user keep typing/dropping files but
+   * prevents send (the message would be lost). The reconnect banner is
+   * rendered by the parent above the composer. */
+  connectionDown?: boolean;
   isStreaming?: boolean;
   isUploading?: boolean;
   value: string;
@@ -176,6 +181,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
   onSend,
   onStop,
   disabled,
+  connectionDown,
   isStreaming,
   isUploading,
   value,
@@ -211,7 +217,14 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const knowledgeRef = useRef<HTMLDivElement>(null);
   const dragDepthRef = useRef(0);
-  const canSubmit = (!!value.trim() || attachments.length > 0) && !disabled && !isUploading;
+  // Connection-down keeps the textarea fully usable (so the user isn't
+  // trapped while we silently reconnect) but blocks send — sending would
+  // drop the message because the WS isn't OPEN.
+  const canSubmit =
+    (!!value.trim() || attachments.length > 0) &&
+    !disabled &&
+    !connectionDown &&
+    !isUploading;
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const effectiveDragActive = isDragActive || externalDragActive;
