@@ -1,4 +1,21 @@
 ---
+/**
+ * Final download CTA. Pure black canvas with a uniform white particle
+ * field that fills the section background.
+ *
+ * Layout: section-level eyebrow + headline anchor the TOP-LEFT. The
+ * download area below splits into TWO COLUMNS — Windows on the left
+ * (left-aligned within its column), macOS on the right (right-aligned
+ * within its column). Each column has a small platform label and a
+ * single download button.
+ *
+ * Interaction: as the cursor enters the LEFT half of the section, the
+ * particles assemble into a large `{` `}` pair that wraps the Windows
+ * column. The RIGHT half does the same for macOS. Either side can be
+ * active at a time; crossing the centre deadband swaps the formation
+ * with a smooth spring transition. Both the geometry and physics live
+ * in `lib/installParticles.ts`.
+ */
 import { INSTALLERS } from '../lib/downloads';
 import { STRINGS, type Lang } from '../i18n/strings';
 
@@ -9,445 +26,151 @@ interface Props {
 const { lang } = Astro.props;
 const t = STRINGS;
 
-// Each step shows two equal rows — one for macOS, one for Windows. The
-// platform glyph + label sit on the left of each row so the two paths
-// read at a glance as parallel, never as "macOS plus a Windows
-// afterthought".
+// Apple logo, fits within viewBox 0–24 (the previous path had negative
+// coordinates and ran past y=24, so the glyph was clipped).
 const macosGlyph =
-  '<path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12-1.103.42-2.24 1.114-2.99.793-.88 2.135-1.575 3.05-1.66Zm4.565 17.39c-.745 1.71-1.107 2.45-2.066 3.97-1.339 2.07-3.245 4.65-5.578 4.66-2.13.02-2.677-1.4-5.567-1.4-2.89.01-3.49 1.42-5.62 1.4-2.336-.04-4.135-2.36-5.476-4.43C-1.65 17.84-1.91 12.86 1.6 9.83c1.94-1.71 4.32-2.59 6.46-2.59 1.86 0 3.04.99 4.6.99 1.55 0 2.49-.99 4.65-.99 1.65 0 3.41.9 4.66 2.46-4.1 2.25-3.43 8.13.96 8.12Z" fill="currentColor"/>';
+  '<path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09Zm-5.03-16.05c.14-2.21 1.94-4.04 4.06-4.23.27 2.39-1.77 4.34-4.06 4.23Z" fill="currentColor"/>';
+// Classic Windows "flag" logo (Windows 8+ style) — four parallelogram
+// tiles with a slight perspective tilt: the top edges of the upper
+// tiles slope up to the right and the bottom edges of the lower tiles
+// slope down to the right, producing the rippling-flag look that the
+// flat 4-square version was missing.
 const windowsGlyph =
-  '<path d="M0 3.5 9.75 2v9.5H0Zm0 17V11.5h9.75V22ZM10.75 11.5H24V22l-13.25-1.5Zm0-9.5L24 0v11h-13.25Z" fill="currentColor"/>';
+  '<path d="M2.5 5.2 11 4v8.2H2.5zM2.5 12.8h8.5V21l-8.5-1.2zM11.75 3.85 21.5 2.4v9.8H11.75zM11.75 12.8H21.5v9.8l-9.75-1.45z" fill="currentColor"/>';
 ---
 
 <section
   id="install"
-  class="relative overflow-hidden bg-[color:var(--color-fg)] px-6 py-28 text-[color:var(--color-surface)] sm:py-32 lg:py-40"
+  data-install-section
+  class="install-section relative overflow-hidden bg-[color:var(--color-fg)] px-6 pb-32 pt-10 text-[color:var(--color-surface)] sm:px-10 sm:pb-40 sm:pt-12 lg:px-16 lg:pb-44 lg:pt-16 xl:px-24 2xl:px-32"
   aria-label={t.install.title[lang]}
 >
-  <!-- subtle dot grid backdrop -->
-  <div
-    class="pointer-events-none absolute inset-0 opacity-30"
-    style="background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 28px 28px;"
+  <!-- Particle field. Section-scoped canvas behind everything else. -->
+  <canvas
+    data-install-canvas
+    class="pointer-events-none absolute inset-0 h-full w-full"
     aria-hidden="true"
-  ></div>
+  ></canvas>
 
-  <div class="relative mx-auto max-w-6xl">
-    <header data-reveal class="mb-14 max-w-2xl sm:mb-16">
-      <div
-        class="mb-3 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/55"
-      >
-        <span class="h-px w-6 bg-white/30"></span>
-        {t.install.eyebrow[lang]}
-      </div>
-      <h2
-        class="wordmark-display mb-4 text-[clamp(2rem,4vw,3.4rem)] leading-[1.05]"
-      >
-        {t.install.title[lang]}
-      </h2>
-      <p class="text-base leading-relaxed text-white/70 sm:text-lg">
-        {t.install.body[lang]}
-      </p>
-    </header>
-
-    <ol
-      data-reveal-stagger
-      class="grid grid-cols-1 gap-5 md:grid-cols-3"
+  <!-- Header pinned to the section's TOP-LEFT corner. Lives outside the
+       centered container so its left edge sits at the section's padding,
+       not at the centered container's left edge. -->
+  <header class="relative max-w-2xl">
+    <div
+      class="mb-4 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.32em] text-white/55"
     >
-      {/* Step 1 — Download. Has working download buttons for BOTH OSes. */}
-      <li
-        class="group relative flex flex-col gap-5 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm transition-colors duration-200 hover:bg-white/[0.06]"
-      >
-        <div
-          class="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/55"
-        >
-          {t.install.steps[0].kicker[lang]}
-        </div>
+      <span class="h-px w-6 bg-white/30"></span>
+      {t.install.eyebrow[lang]}
+    </div>
+    <h2
+      class="wordmark-display text-[clamp(2.2rem,5vw,4rem)] leading-[1.02] tracking-tight"
+    >
+      {t.install.title[lang]}
+    </h2>
+  </header>
 
-        <!-- Illustration: stylised installer "package" with download arrow. -->
-        <div class="install-illus flex h-28 items-center justify-center">
-          <svg
-            viewBox="0 0 120 100"
-            class="h-full w-auto text-white/85"
-            aria-hidden="true"
-          >
-            <path
-              d="M20 38 60 22l40 16v40L60 94 20 78z"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M20 38l40 16 40-16M60 54v40"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-            <g class="install-illus__arrow">
-              <path
-                d="M60 4v18M52 14l8 8 8-8"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </g>
-          </svg>
-        </div>
-
-        <h3 class="text-[15px] font-semibold tracking-tight">
-          {t.install.steps[0].title[lang]}
-        </h3>
-
-        <!-- Two download buttons stacked, with platform-specific subtitle -->
-        <div class="flex flex-col gap-3">
-          {
-            INSTALLERS.macos ? (
-              <div class="flex flex-col gap-1.5">
-                <a
-                  href={INSTALLERS.macos}
-                  download
-                  class="group/btn inline-flex items-center justify-between gap-3 rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2.5 text-[13px] font-medium text-white transition-colors duration-150 hover:border-white/40 hover:bg-white/[0.12]"
-                >
-                  <span class="inline-flex items-center gap-2">
-                    <svg
-                      viewBox="0 0 24 24"
-                      class="h-4 w-4"
-                      aria-hidden="true"
-                      set:html={macosGlyph}
-                    />
-                    {t.install.steps[0].macosLabel[lang]}
-                  </span>
-                  <span class="text-white/40 transition-transform duration-150 group-hover/btn:translate-x-0.5">
-                    ↓
-                  </span>
-                </a>
-                <p class="px-1 text-[11px] leading-relaxed text-white/45">
-                  {t.install.steps[0].macos[lang]}
-                </p>
-              </div>
-            ) : null
-          }
-          {
-            INSTALLERS.windows ? (
-              <div class="flex flex-col gap-1.5">
-                <a
-                  href={INSTALLERS.windows}
-                  download
-                  class="group/btn inline-flex items-center justify-between gap-3 rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2.5 text-[13px] font-medium text-white transition-colors duration-150 hover:border-white/40 hover:bg-white/[0.12]"
-                >
-                  <span class="inline-flex items-center gap-2">
-                    <svg
-                      viewBox="0 0 24 24"
-                      class="h-4 w-4"
-                      aria-hidden="true"
-                      set:html={windowsGlyph}
-                    />
-                    {t.install.steps[0].windowsLabel[lang]}
-                  </span>
-                  <span class="text-white/40 transition-transform duration-150 group-hover/btn:translate-x-0.5">
-                    ↓
-                  </span>
-                </a>
-                <p class="px-1 text-[11px] leading-relaxed text-white/45">
-                  {t.install.steps[0].windows[lang]}
-                </p>
-              </div>
-            ) : null
-          }
-        </div>
-
-        <p class="text-[12px] leading-relaxed text-white/55">
-          {t.install.steps[0].note[lang]}
-        </p>
-      </li>
-
-      {/* Step 2 — Install. Two equal rows: macOS + Windows. */}
-      <li
-        class="group relative flex flex-col gap-5 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm transition-colors duration-200 hover:bg-white/[0.06]"
-      >
-        <div
-          class="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/55"
-        >
-          {t.install.steps[1].kicker[lang]}
-        </div>
-
-        <!-- Illustration: cursor / drag motion that's OS-agnostic — a
-             package + arrow → folder/box; works for both Drag-to-Apps
-             and Run-installer mental models. -->
-        <div class="install-illus flex h-28 items-center justify-center">
-          <svg
-            viewBox="0 0 160 100"
-            class="h-full w-auto text-white/85"
-            aria-hidden="true"
-          >
-            <g class="install-illus__drag">
-              <rect
-                x="14"
-                y="32"
-                width="36"
-                height="36"
-                rx="8"
-                fill="rgba(255,255,255,0.12)"
-                stroke="currentColor"
-                stroke-width="1.5"
-              />
-              <text
-                x="32"
-                y="56"
-                text-anchor="middle"
-                fill="currentColor"
-                font-family="serif"
-                font-size="20"
-                font-weight="500"
-              >
-                T
-              </text>
-            </g>
-            <path
-              d="M64 50h36M92 44l8 6-8 6"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-dasharray="3 3"
-            />
-            <path
-              d="M110 38h14l4 4h18a2 2 0 0 1 2 2v22a2 2 0 0 1-2 2h-36a2 2 0 0 1-2-2V40a2 2 0 0 1 2-2z"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </div>
-
-        <h3 class="text-[15px] font-semibold tracking-tight">
-          {t.install.steps[1].title[lang]}
-        </h3>
-
-        <div class="flex flex-col gap-2.5">
-          <div
-            class="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2.5"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="mt-0.5 h-4 w-4 shrink-0 text-white/80"
-              aria-hidden="true"
-              set:html={macosGlyph}
-            />
-            <span class="text-[12px] leading-relaxed text-white/75">
-              {t.install.steps[1].macos[lang]}
-            </span>
-          </div>
-          <div
-            class="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2.5"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="mt-0.5 h-4 w-4 shrink-0 text-white/80"
-              aria-hidden="true"
-              set:html={windowsGlyph}
-            />
-            <span class="text-[12px] leading-relaxed text-white/75">
-              {t.install.steps[1].windows[lang]}
-            </span>
-          </div>
-        </div>
-
-        <p class="text-[12px] leading-relaxed text-white/55">
-          {t.install.steps[1].note[lang]}
-        </p>
-      </li>
-
-      {/* Step 3 — Launch. Two equal rows again. */}
-      <li
-        class="group relative flex flex-col gap-5 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm transition-colors duration-200 hover:bg-white/[0.06]"
-      >
-        <div
-          class="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/55"
-        >
-          {t.install.steps[2].kicker[lang]}
-        </div>
-
-        <div class="install-illus flex h-28 items-center justify-center">
-          <svg
-            viewBox="0 0 160 100"
-            class="h-full w-auto text-white/85"
-            aria-hidden="true"
-          >
-            <rect
-              x="14"
-              y="32"
-              width="36"
-              height="36"
-              rx="8"
-              fill="rgba(255,255,255,0.12)"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <text
-              x="32"
-              y="56"
-              text-anchor="middle"
-              fill="currentColor"
-              font-family="serif"
-              font-size="20"
-              font-weight="500"
+  <div class="relative mx-auto mt-24 max-w-6xl sm:mt-32 lg:mt-40 xl:max-w-[1400px] 2xl:max-w-[1600px]">
+    <!-- Two-column download grid. Each column hosts a centred card; the
+         brace formation wraps the active card. -->
+    <div
+      class="grid grid-cols-1 gap-16 sm:grid-cols-2 sm:gap-12 lg:gap-20"
+    >
+      {/* Each side is a CENTERED CARD inside its half. The `data-install-col`
+          attribute is on the inner wrapper (not the grid cell) so the
+          particle script measures the actual content footprint, and the
+          brace lands snugly around that card — matching the Antigravity
+          reference where the brace pair flanks a compact column of
+          centered content, not the entire half-section. */}
+      {
+        INSTALLERS.windows ? (
+          <div class="flex justify-center">
+            <div
+              data-install-col="left"
+              class="install-col flex max-w-[360px] flex-col items-center gap-6 text-center"
             >
-              T
-            </text>
-            <circle
-              class="install-illus__ripple"
-              cx="32"
-              cy="50"
-              r="20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.2"
-              opacity="0"
-            />
-            <path
-              d="M44 60l4 12 3-5 6 1z"
-              fill="currentColor"
-            />
-            <path
-              d="M70 50h22M84 44l8 6-8 6"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <rect
-              x="100"
-              y="28"
-              width="48"
-              height="44"
-              rx="3"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M100 36h48"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <circle cx="105" cy="32" r="1.4" fill="currentColor" />
-            <circle cx="110" cy="32" r="1.4" fill="currentColor" />
-            <circle cx="115" cy="32" r="1.4" fill="currentColor" />
-            <path
-              d="M106 44h36M106 50h28M106 56h22"
-              stroke="currentColor"
-              stroke-width="1.2"
-              stroke-linecap="round"
-              opacity="0.6"
-            />
-          </svg>
-        </div>
-
-        <h3 class="text-[15px] font-semibold tracking-tight">
-          {t.install.steps[2].title[lang]}
-        </h3>
-
-        <div class="flex flex-col gap-2.5">
-          <div
-            class="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2.5"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="mt-0.5 h-4 w-4 shrink-0 text-white/80"
-              aria-hidden="true"
-              set:html={macosGlyph}
-            />
-            <span class="text-[12px] leading-relaxed text-white/75">
-              {t.install.steps[2].macos[lang]}
-            </span>
+              <div class="flex items-center gap-2.5">
+                <svg
+                  viewBox="0 0 24 24"
+                  class="h-5 w-5 text-white/85"
+                  aria-hidden="true"
+                  set:html={windowsGlyph}
+                />
+                <span class="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">
+                  Windows
+                </span>
+              </div>
+              <h3 class="text-[clamp(1.7rem,2.8vw,2.4rem)] font-semibold leading-[1.1] tracking-tight text-white">
+                {t.install.windowsLabel[lang]}
+              </h3>
+              <p class="text-[14px] leading-relaxed text-white/55">
+                {t.install.windowsHint[lang]}
+              </p>
+              <a
+                href={INSTALLERS.windows}
+                download
+                data-install-button="left"
+                class="install-btn mt-2 inline-flex items-center gap-2.5 rounded-full border border-white/35 bg-transparent px-8 py-3.5 text-[15px] font-medium text-white transition-colors duration-200 hover:border-white hover:bg-white hover:text-black"
+              >
+                <span aria-hidden="true">↓</span>
+                Download
+              </a>
+            </div>
           </div>
-          <div
-            class="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2.5"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="mt-0.5 h-4 w-4 shrink-0 text-white/80"
-              aria-hidden="true"
-              set:html={windowsGlyph}
-            />
-            <span class="text-[12px] leading-relaxed text-white/75">
-              {t.install.steps[2].windows[lang]}
-            </span>
-          </div>
-        </div>
+        ) : null
+      }
 
-        <p class="text-[12px] leading-relaxed text-white/55">
-          {t.install.steps[2].note[lang]}
-        </p>
-      </li>
-    </ol>
+      {
+        INSTALLERS.macos ? (
+          <div class="flex justify-center">
+            <div
+              data-install-col="right"
+              class="install-col flex max-w-[360px] flex-col items-center gap-6 text-center"
+            >
+              <div class="flex items-center gap-2.5">
+                <svg
+                  viewBox="0 0 24 24"
+                  class="h-5 w-5 text-white/85"
+                  aria-hidden="true"
+                  set:html={macosGlyph}
+                />
+                <span class="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">
+                  macOS
+                </span>
+              </div>
+              <h3 class="text-[clamp(1.7rem,2.8vw,2.4rem)] font-semibold leading-[1.1] tracking-tight text-white">
+                {t.install.macosLabel[lang]}
+              </h3>
+              <p class="text-[14px] leading-relaxed text-white/55">
+                {t.install.macosHint[lang]}
+              </p>
+              <a
+                href={INSTALLERS.macos}
+                download
+                data-install-button="right"
+                class="install-btn mt-2 inline-flex items-center gap-2.5 rounded-full border border-white/35 bg-transparent px-8 py-3.5 text-[15px] font-medium text-white transition-colors duration-200 hover:border-white hover:bg-white hover:text-black"
+              >
+                <span aria-hidden="true">↓</span>
+                Download
+              </a>
+            </div>
+          </div>
+        ) : null
+      }
+    </div>
   </div>
 </section>
 
 <style>
-  .install-illus__arrow {
-    animation: install-bob 2.6s ease-in-out infinite;
-    transform-origin: 60px 14px;
+  /* Lift the button on hover so the brace formation visibly tracks it. */
+  .install-btn {
+    will-change: transform;
+    transition:
+      transform 220ms ease,
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease;
   }
-
-  .install-illus__drag {
-    animation: install-drag 3s ease-in-out infinite;
-  }
-
-  .install-illus__ripple {
-    animation: install-ripple 2.4s ease-out infinite;
-    transform-origin: 32px 50px;
-  }
-
-  .group:hover .install-illus__arrow,
-  .group:hover .install-illus__drag,
-  .group:hover .install-illus__ripple {
-    animation-play-state: paused;
-  }
-
-  @keyframes install-bob {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(4px);
-    }
-  }
-
-  @keyframes install-drag {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    50% {
-      transform: translateX(8px);
-    }
-  }
-
-  @keyframes install-ripple {
-    0% {
-      opacity: 0.55;
-      transform: scale(0.5);
-    }
-    100% {
-      opacity: 0;
-      transform: scale(1.4);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .install-illus__arrow,
-    .install-illus__drag,
-    .install-illus__ripple {
-      animation: none;
-    }
+  .install-btn:hover {
+    transform: translateY(-2px);
   }
 </style>

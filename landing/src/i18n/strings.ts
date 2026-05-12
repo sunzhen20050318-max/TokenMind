@@ -37,12 +37,12 @@ export const STRINGS = {
 
   hero: {
     headline: {
-      zh: '新一代 AI Agent，跑在你自己的电脑上。',
-      en: 'Next-gen AI agents, running on your own machine.',
+      zh: '每一个 token，都从你的机器里经过。',
+      en: 'Every token passes through your machine.',
     },
     tagline: {
-      zh: '本地优先 · 多模型 · 多渠道 · 开箱即用',
-      en: 'Local-first · Multi-model · Multi-channel · Works out of the box',
+      zh: '本地优先的 AI Agent 框架，支持多模型与多渠道',
+      en: 'A local-first AI agent framework. Many models, many channels.',
     },
     macos: { zh: '下载 macOS 版', en: 'Download for macOS' },
     windows: { zh: '下载 Windows 版', en: 'Download for Windows' },
@@ -52,14 +52,14 @@ export const STRINGS = {
   feature: {
     onDevice: { zh: '本机运行', en: 'On device' },
     a: {
-      eyebrow: { zh: '立场', en: 'The stance' },
+      eyebrow: { zh: '隐私', en: 'Privacy' },
       title: {
-        zh: '你的，永远不离开你。',
-        en: 'Yours. It never leaves you.',
+        zh: '所有数据，只在本机。',
+        en: 'Everything stays on your machine.',
       },
       body: {
-        zh: '对话、记忆、文档、向量库 —— 全部只活在你这台机器里。无账号，无云端，无遥测。',
-        en: 'Conversations, memory, documents, vectors — they live only on your machine. No account. No cloud. No telemetry.',
+        zh: '对话、记忆、文档、向量库都存在本地。无需账号，无需上传，没有任何遥测。',
+        en: 'Conversations, memory, documents, vectors — all stored locally. No accounts, no uploads, no telemetry.',
       },
       // Quote-style accent character (left-side double quote in serif).
       accent: '"',
@@ -67,12 +67,12 @@ export const STRINGS = {
     b: {
       eyebrow: { zh: '开放', en: 'Open' },
       title: {
-        zh: '像你的编辑器一样可改造。',
-        en: 'Hack it like your editor.',
+        zh: '源码可读，工具可改。',
+        en: 'Read the source. Change anything.',
       },
       body: {
-        zh: 'MIT 开源，MCP 原生，skill 与 tool 完全可自定义。不锁定任何模型，不锁定任何渠道。',
-        en: 'MIT licensed. MCP-native. Skills and tools fully extensible. Locked to no model, no platform.',
+        zh: 'MIT 开源，MCP 原生支持。模型不绑定，渠道不绑定，工具与技能都可以自己写。',
+        en: 'MIT licensed, MCP-native. No model lock-in, no platform lock-in. Tools and skills are yours to write.',
       },
       accent: '⌘',
     },
@@ -167,41 +167,126 @@ export const STRINGS = {
     ],
   },
 
+  featureTrio: {
+    // Section frames the three pillars: tools (what), channels (where),
+    // memory (what it remembers). Copy is intentionally declarative and
+    // spare — the section earns its weight by claiming there are *only*
+    // three primitives, not by listing features.
+    eyebrow: { zh: '能力构成', en: 'Built from three' },
+    title: {
+      zh: '一个 Agent，三件事够了。',
+      en: 'Three things make an agent.',
+    },
+    body: {
+      zh: '能动手、能被找到、记得住事。其他都是衍生。',
+      en: 'It can act, it can be reached, it can remember. Everything else follows.',
+    },
+    cards: {
+      tools: {
+        kicker: { zh: '工具', en: 'Tools' },
+        title: {
+          zh: '不只是聊天，是真的能动手。',
+          en: 'Not just chat. It does things.',
+        },
+        body: {
+          zh: '文件、Shell、Web、MCP、知识库、记忆、定时任务、创作能力都内置在核心里，不依赖第三方插件市场。',
+          en: 'Filesystem, shell, web, MCP, knowledge, memory, scheduling, creative — all built into the core. No third-party plugin marketplace required.',
+        },
+      },
+      channels: {
+        kicker: { zh: '渠道', en: 'Channels' },
+        title: {
+          zh: '你在哪用，它就接到哪。',
+          en: 'Reach it wherever you work.',
+        },
+        body: {
+          zh: '桌面客户端、Web 控制台、邮件，以及主流 IM —— 都是一类入口，没有谁是次等公民。',
+          en: 'Desktop, web, email, every major messenger — all first-class entry points, none second-rate.',
+        },
+      },
+      memory: {
+        kicker: { zh: '记忆', en: 'Memory' },
+        title: {
+          zh: '记忆是文本，看得见也改得动。',
+          en: 'Memory is plain text. Read it. Edit it.',
+        },
+        body: {
+          zh: '长期事实存进 MEMORY.md，时间脉络归档进 HISTORY.md，到了上下文阈值自动整合 —— 全程明文，全程本机。',
+          en: 'Durable facts in MEMORY.md, dated digest in HISTORY.md, auto-consolidated at token threshold — plaintext, on device, all the way through.',
+        },
+        items: [
+          {
+            key: 'long-term',
+            name: { zh: '长期事实', en: 'Durable facts' },
+            desc: {
+              zh: '反复确认过的事，沉淀进 MEMORY.md。',
+              en: 'What you’ve confirmed lands in MEMORY.md.',
+            },
+          },
+          {
+            key: 'history',
+            name: { zh: '时间脉络', en: 'Timeline' },
+            desc: {
+              zh: '每段对话的摘要，按时间归档。',
+              en: 'A dated digest of each conversation.',
+            },
+          },
+          {
+            key: 'auto',
+            name: { zh: '自动整合', en: 'Auto-consolidate' },
+            desc: {
+              zh: '上下文逼近阈值时自动归档合并。',
+              en: 'Auto-archives as context approaches its limit.',
+            },
+          },
+          {
+            key: 'plain',
+            name: { zh: '可读可改', en: 'Plain text' },
+            desc: {
+              zh: 'Markdown 明文，文本编辑器即可改。',
+              en: 'Plain Markdown — edit in any text editor.',
+            },
+          },
+        ],
+      },
+    },
+  },
+
   useCases: {
-    eyebrow: { zh: '适用场景', en: 'Built for' },
-    title: { zh: '一个工具，多种用法。', en: 'One tool, many patterns.' },
+    eyebrow: { zh: '使用场景', en: 'Who it’s for' },
+    title: { zh: '看你是谁，决定它的用法。', en: 'Who you are shapes how you use it.' },
     items: [
       {
-        kicker: { zh: '开发者', en: 'For developers' },
+        kicker: { zh: '给开发者', en: 'For developers' },
         title: {
-          zh: '把它变成你的命令行副驾。',
-          en: 'A copilot that lives in your terminal.',
+          zh: '终端里随时能调的副手。',
+          en: 'An assistant your terminal can summon.',
         },
         body: {
-          zh: '通过 MCP 接你自己的 API、操作本地仓库、自动化脚本，全程在本地完成。',
-          en: 'Plug your own APIs in via MCP, run scripts, drive your local repo — all on device.',
+          zh: '通过 MCP 把自己的 API 接进来，调用本地仓库，跑自动化脚本，全过程都在本机。',
+          en: 'Pipe in your own APIs via MCP, work on your local repo, run scripts — all without leaving the machine.',
         },
       },
       {
-        kicker: { zh: '团队', en: 'For teams' },
+        kicker: { zh: '给团队', en: 'For teams' },
         title: {
-          zh: '让团队群里直接调用 Agent。',
-          en: 'Share an agent inside the team chat.',
+          zh: '一个 Agent，整个团队都能用。',
+          en: 'One agent the whole team can talk to.',
         },
         body: {
-          zh: '接入 Feishu / 钉钉 / 企业微信，统一知识库与团队记忆，权限与审批可控。',
-          en: 'Connect Feishu / DingTalk / WeCom; share the knowledge base and audit every tool call.',
+          zh: '接入飞书 / 钉钉 / 企业微信，共享知识库与团队记忆，每一次工具调用都有审计与审批。',
+          en: 'Plug into Feishu / DingTalk / WeCom. Share knowledge and memory; every tool call is logged and approvable.',
         },
       },
       {
-        kicker: { zh: '研究者', en: 'For researchers' },
+        kicker: { zh: '给研究者', en: 'For researchers' },
         title: {
-          zh: '长任务、长上下文、可追溯。',
-          en: 'Long tasks, long context, traceable answers.',
+          zh: '长上下文、长任务、可溯源。',
+          en: 'Long context, long tasks, traceable sources.',
         },
         body: {
-          zh: '阅读 PDF、整理资料、跑批量分析，每条引用都能溯源到原文位置。',
-          en: 'Read PDFs, organise sources, run batch analyses — every citation traces back to the page.',
+          zh: '阅读 PDF、整理资料、批量分析，每条引用都能回到原文的具体位置。',
+          en: 'Read PDFs, organise sources, run batch analysis. Every citation points to the exact page it came from.',
         },
       },
     ],
@@ -209,108 +294,74 @@ export const STRINGS = {
 
   providerStrip: {
     eyebrow: {
-      zh: '兼容主流大模型与本地推理',
-      en: 'Works with every major model & local runtime',
+      zh: '主流模型与本地推理，都能跑',
+      en: 'Runs with every major model — and your local one too',
     },
   },
 
   install: {
-    eyebrow: { zh: '三步开跑', en: 'Three steps' },
-    title: { zh: '下载，双击，开始用。', en: 'Download. Double-click. Done.' },
-    body: {
-      zh: '不用写代码，不用配环境，下完安装包双击就能用。',
-      en: 'No code, no toolchain. Grab the installer, double-click, you are in.',
-    },
-    osLabels: {
-      macos: { zh: 'macOS', en: 'macOS' },
-      windows: { zh: 'Windows', en: 'Windows' },
-    },
-    steps: [
-      {
-        kicker: { zh: '下载安装包', en: 'Download' },
-        title: { zh: '挑你的系统', en: 'Pick your platform' },
-        note: {
-          zh: '约 80MB · 推荐使用最新稳定版。',
-          en: 'About 80MB · always grab the latest stable build.',
-        },
-        macos: {
-          zh: 'macOS 12+（Apple Silicon / Intel 通用）',
-          en: 'macOS 12+ (Apple Silicon / Intel · universal)',
-        },
-        windows: {
-          zh: 'Windows 10/11（x64 安装包）',
-          en: 'Windows 10/11 (x64 installer)',
-        },
-        macosLabel: { zh: '下载 macOS · DMG', en: 'Download macOS · DMG' },
-        windowsLabel: { zh: '下载 Windows · EXE', en: 'Download Windows · EXE' },
-      },
-      {
-        kicker: { zh: '运行安装包', en: 'Install' },
-        title: {
-          zh: '系统标准的安装方式即可',
-          en: 'Whatever your OS already does',
-        },
-        note: {
-          zh: '首次打开时按系统提示授权即可，无需关闭安全保护。',
-          en: 'Authorise it the way your OS asks the first time. No need to disable any security setting.',
-        },
-        macos: {
-          zh: '挂载 DMG，把图标拖进 Applications 文件夹',
-          en: 'Mount the DMG, drag the icon into your Applications folder',
-        },
-        windows: {
-          zh: '双击 EXE 安装向导，一路下一步',
-          en: 'Double-click the EXE wizard, next → next → finish',
-        },
-      },
-      {
-        kicker: { zh: '启动 Agent', en: 'Launch' },
-        title: {
-          zh: '双击应用 → 浏览器立刻进入',
-          en: 'Double-click → your browser jumps right in',
-        },
-        note: {
-          zh: '应用会在本机启动一个服务（默认 http://localhost:18888），关掉应用即停止服务。',
-          en: 'The app boots a local service at http://localhost:18888. Quit the app to stop it.',
-        },
-        macos: {
-          zh: '从 Launchpad 或 Applications 双击 TokenMind',
-          en: 'Open it from Launchpad or your Applications folder',
-        },
-        windows: {
-          zh: '从开始菜单或桌面快捷方式双击',
-          en: 'Open it from the Start menu or desktop shortcut',
-        },
-      },
-    ],
-  },
-
-  cta: {
+    // Final download CTA. Black section with a white particle field;
+    // hovering left or right of center sweeps the particles into a
+    // pair of { } braces around the matching button (Windows on the
+    // left, macOS on the right). Copy is intentionally spare.
+    eyebrow: { zh: '下载', en: 'Download' },
     title: {
-      zh: '现在就把 AI 跑在自己的电脑上。',
-      en: 'Run your AI on your own machine — today.',
+      zh: '把 TokenMind 装进自己的电脑。',
+      en: 'Bring TokenMind to your own machine.',
     },
     body: {
-      zh: '完全免费 · MIT 开源 · macOS / Windows / Linux 全平台支持',
-      en: 'Free · MIT open source · macOS / Windows / Linux',
+      zh: '完全免费，MIT 开源，本地运行不上传。',
+      en: 'Completely free. MIT open source. Everything runs locally.',
+    },
+    windowsLabel: {
+      zh: 'Windows 下载',
+      en: 'Download for Windows',
+    },
+    macosLabel: {
+      zh: 'macOS 下载',
+      en: 'Download for macOS',
+    },
+    windowsHint: {
+      zh: 'Windows 10 / 11 · x64',
+      en: 'Windows 10 / 11 · x64',
+    },
+    macosHint: {
+      zh: 'macOS 12+ · Apple Silicon / Intel',
+      en: 'macOS 12+ · Apple Silicon / Intel',
     },
   },
 
   footer: {
-    // Brand-led footer styled after Antigravity's: a short tagline (left),
-    // a flat list of links (no headers), then a giant wordmark across the
-    // page, and a thin meta strip at the very bottom. The link labels are
-    // intentionally English-only — they're product-facing nouns that read
-    // the same in both routes, and skipping translation keeps the footer
-    // visually identical to the brand mark above it.
+    // Brand-led footer: tagline (left), two flat link columns (right),
+    // then a giant wordmark across the page, then a thin meta strip at
+    // the very bottom. All labels are i18n'd; only the HUGE "TokenMind"
+    // wordmark in the middle stays English (it's the brand mark, not
+    // copy). Each link entry is { key, label } where the key is used
+    // by Footer.astro to resolve the URL.
     tagline: {
-      zh: 'Run AI on your own machine.',
+      zh: 'AI Agent，跑在自己的电脑上。',
       en: 'Run AI on your own machine.',
     },
-    // Flat link lists. Order is shown left → right within each column.
-    primaryLinks: ['Download', 'Docs', 'GitHub', 'Gitee'],
-    secondaryLinks: ['License', 'Changelog', 'Contact'],
-    // Bottom meta strip — small links beside the brand mark.
-    metaLinks: ['MIT License', 'Privacy', 'Contact'],
+    primaryLinks: [
+      { key: 'download', label: { zh: '下载', en: 'Download' } },
+      { key: 'docs', label: { zh: '文档', en: 'Docs' } },
+      { key: 'github', label: { zh: 'GitHub', en: 'GitHub' } },
+      { key: 'gitee', label: { zh: 'Gitee', en: 'Gitee' } },
+    ],
+    secondaryLinks: [
+      { key: 'license', label: { zh: '开源协议', en: 'License' } },
+      { key: 'changelog', label: { zh: '更新日志', en: 'Changelog' } },
+      { key: 'contact', label: { zh: '联系我们', en: 'Contact' } },
+    ],
+    metaLinks: [
+      { key: 'mitLicense', label: { zh: 'MIT 协议', en: 'MIT License' } },
+      { key: 'privacy', label: { zh: '隐私', en: 'Privacy' } },
+      { key: 'contact', label: { zh: '联系', en: 'Contact' } },
+    ],
+    // ICP filing displayed at the very bottom of the footer per Chinese
+    // regulation. Must be a clickable link to the MIIT beian system.
+    // English-route shows the same number — there's only one filing,
+    // and it's a regulatory string, not translated copy.
+    icp: '黑ICP备2026005421号',
   },
 } as const;

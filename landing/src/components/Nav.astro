@@ -1,4 +1,9 @@
 ---
+/**
+ * Minimal fixed-corner nav. Four things only, clustered in the
+ * top-left of the viewport: the TokenMind brand mark, a GitHub link,
+ * a contact-email link, and a language toggle (中 ↔ EN).
+ */
 import { LINKS } from '../lib/links';
 import { STRINGS, type Lang } from '../i18n/strings';
 
@@ -9,139 +14,82 @@ interface Props {
 const { lang } = Astro.props;
 const t = STRINGS;
 
-// Section anchors mid-nav. Hidden on small viewports so the header stays
-// uncluttered; the brand cluster + icon links remain on mobile.
-const anchors = [
-  { href: '#features', label: t.nav.features[lang] },
-  { href: '#channels', label: t.nav.channels[lang] },
-  { href: '#install', label: t.nav.install[lang] },
-  { href: '#download', label: t.nav.download[lang] },
-];
-
-// Toggle target: from /  → /en/, from /en/* → /. Keep the user on the
-// landing if they're on landing; root-relative URLs are fine since this
-// site is single-page.
+// Toggle target: from /  → /en/, from /en/* → /.
 const otherLangHref = lang === 'zh' ? '/en/' : '/';
 ---
 
 <header
-  class="fixed inset-x-0 top-0 z-50 backdrop-blur-md"
+  class="pointer-events-none fixed left-0 top-0 z-50"
   data-nav-root
 >
-  <div
-    class="border-b border-[color:var(--color-line-soft)] bg-[color:var(--color-bg)]/75"
+  <nav
+    class="pointer-events-auto m-4 inline-flex items-center gap-2 sm:m-6"
+    aria-label="Primary"
   >
-    <nav
-      class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-6 px-5 sm:px-8"
-      aria-label="Primary"
+    <a
+      href={lang === 'zh' ? '/' : '/en/'}
+      class="inline-flex items-center gap-2.5 rounded-full bg-[color:var(--color-surface)]/85 px-3 py-2 text-[color:var(--color-fg)] backdrop-blur-md transition-opacity duration-150 hover:opacity-80"
+      aria-label={t.nav.homeLabel[lang]}
     >
-      <a
-        href={lang === 'zh' ? '/' : '/en/'}
-        class="flex items-center gap-2.5 text-[color:var(--color-fg)] transition-opacity duration-150 hover:opacity-70"
-        aria-label={t.nav.homeLabel[lang]}
+      <img
+        src="/tokenmind-mark-black.svg"
+        alt=""
+        width="22"
+        height="22"
+        class="h-5 w-auto"
+        draggable="false"
+      />
+      <span class="text-sm font-medium tracking-tight">TokenMind</span>
+    </a>
+
+    <a
+      href={LINKS.github}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--color-surface)]/85 text-[color:var(--color-fg)] backdrop-blur-md transition-colors duration-150 hover:bg-[color:var(--color-line-soft)]"
+      aria-label={t.nav.githubLabel[lang]}
+      title="GitHub"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        class="h-[18px] w-[18px]"
+        fill="currentColor"
+        aria-hidden="true"
       >
-        <img
-          src="/tokenmind-mark-black.svg"
-          alt=""
-          width="22"
-          height="22"
-          class="h-5 w-auto"
-          draggable="false"
+        <path
+          d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-2.16c-3.2.7-3.87-1.36-3.87-1.36-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.25 3.35.95.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.18 1.18.92-.26 1.91-.39 2.9-.39.99 0 1.97.13 2.9.39 2.21-1.49 3.18-1.18 3.18-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.05.78 2.12v3.14c0 .31.21.68.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"
         />
-        <span class="text-sm font-medium tracking-tight">TokenMind</span>
-      </a>
+      </svg>
+    </a>
 
-      <ul class="hidden items-center gap-1 md:flex">
-        {
-          anchors.map((a) => (
-            <li>
-              <a
-                href={a.href}
-                class="rounded-full px-3 py-1.5 text-[13px] font-medium text-[color:var(--color-muted)] transition-colors duration-150 hover:bg-[color:var(--color-line-soft)] hover:text-[color:var(--color-fg)]"
-              >
-                {a.label}
-              </a>
-            </li>
-          ))
-        }
-      </ul>
+    <a
+      href={`mailto:${LINKS.email}`}
+      class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--color-surface)]/85 text-[color:var(--color-fg)] backdrop-blur-md transition-colors duration-150 hover:bg-[color:var(--color-line-soft)]"
+      aria-label={t.nav.emailLabel[lang]}
+      title={LINKS.email}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        class="h-[18px] w-[18px]"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.7"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+        <path d="m3 7 9 6 9-6"></path>
+      </svg>
+    </a>
 
-      <ul class="flex items-center gap-1">
-        <li>
-          <a
-            href={otherLangHref}
-            class="inline-flex h-9 items-center justify-center rounded-full border border-[color:var(--color-line-strong)]/70 px-3 text-[12px] font-medium text-[color:var(--color-fg)] transition-colors duration-150 hover:bg-[color:var(--color-line-soft)]"
-            aria-label={t.nav.langSwitchLabel[lang]}
-            title={t.nav.langSwitchLabel[lang]}
-          >
-            {t.nav.langSwitch[lang]}
-          </a>
-        </li>
-        <li>
-          <a
-            href={LINKS.github}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full text-[color:var(--color-fg)] transition-colors duration-150 hover:bg-[color:var(--color-line-soft)]"
-            aria-label={t.nav.githubLabel[lang]}
-            title="GitHub"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="h-[18px] w-[18px]"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-2.16c-3.2.7-3.87-1.36-3.87-1.36-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.25 3.35.95.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.18 1.18.92-.26 1.91-.39 2.9-.39.99 0 1.97.13 2.9.39 2.21-1.49 3.18-1.18 3.18-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.05.78 2.12v3.14c0 .31.21.68.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"
-              />
-            </svg>
-          </a>
-        </li>
-        <li>
-          <a
-            href={LINKS.gitee}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full text-[color:var(--color-fg)] transition-colors duration-150 hover:bg-[color:var(--color-line-soft)]"
-            aria-label={t.nav.giteeLabel[lang]}
-            title="Gitee"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="h-[18px] w-[18px]"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12V9.165h-9.099a1.366 1.366 0 0 0-1.366 1.366v3.418c0 .754.612 1.366 1.366 1.366h4.785c.754 0 1.367.612 1.367 1.366v.683a1.366 1.366 0 0 1-1.367 1.366H7.214a1.366 1.366 0 0 1-1.366-1.366V8.482A2.733 2.733 0 0 1 8.581 5.75h11.917a4.097 4.097 0 0 0-4.012-3.301 12 12 0 0 0-4.502-2.45z"
-              />
-            </svg>
-          </a>
-        </li>
-        <li>
-          <a
-            href={`mailto:${LINKS.email}`}
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full text-[color:var(--color-fg)] transition-colors duration-150 hover:bg-[color:var(--color-line-soft)]"
-            aria-label={t.nav.emailLabel[lang]}
-            title={LINKS.email}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="h-[18px] w-[18px]"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-              <path d="m3 7 9 6 9-6"></path>
-            </svg>
-          </a>
-        </li>
-      </ul>
-    </nav>
-  </div>
+    <a
+      href={otherLangHref}
+      class="inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-[color:var(--color-surface)]/85 px-3 text-[13px] font-medium text-[color:var(--color-fg)] backdrop-blur-md transition-colors duration-150 hover:bg-[color:var(--color-line-soft)]"
+      aria-label={t.nav.langSwitchLabel[lang]}
+      title={t.nav.langSwitchLabel[lang]}
+    >
+      {t.nav.langSwitch[lang]}
+    </a>
+  </nav>
 </header>

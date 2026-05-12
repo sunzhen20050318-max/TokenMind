@@ -2,12 +2,10 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Hero from '../components/Hero.astro';
 import ZoomSection from '../components/ZoomSection.astro';
-import Tools from '../components/Tools.astro';
-import Channels from '../components/Channels.astro';
+import FeatureTrio from '../components/FeatureTrio.astro';
 import UseCases from '../components/UseCases.astro';
 import ProviderStrip from '../components/ProviderStrip.astro';
 import Install from '../components/Install.astro';
-import CTA from '../components/CTA.astro';
 import Footer from '../components/Footer.astro';
 
 const lang = 'zh';
@@ -16,11 +14,9 @@ const lang = 'zh';
 <BaseLayout lang={lang}>
   <Hero lang={lang} />
   <ZoomSection lang={lang} />
-  <Tools lang={lang} />
-  <Channels lang={lang} />
+  <FeatureTrio lang={lang} />
   <UseCases lang={lang} />
   <ProviderStrip lang={lang} />
   <Install lang={lang} />
-  <CTA lang={lang} />
   <Footer lang={lang} />
 </BaseLayout>

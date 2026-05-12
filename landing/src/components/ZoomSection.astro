@@ -9,29 +9,33 @@ const { lang } = Astro.props;
 const t = STRINGS;
 /*
   Product showcase. ONE continuous scroll timeline drives the whole
-  choreography. The inner container uses `position: sticky` (browser
-  native) instead of ScrollTrigger pin — this removes the two stutter
-  points at pin engagement and pin release, since native sticky has no
-  "switch frame" the way a pin does.
+  choreography, including a horizontal exit so the panels keep moving
+  in the direction they came from until they leave the viewport — no
+  "static hold" before the next section appears.
 
-  Choreography (driven by a single scrub-true timeline):
-    - 0%–33%   chatui zooms in 0.58 → 1.0 (section scrolling into view)
-    - 33%      sticky engages naturally (section's top hits viewport top)
-    - 33%–65%  chatui shrinks AND translates upward off-screen
-    - 45%–80%  panel A enters from the LEFT, lands upper-half, stays
-    - 65%–100% panel B enters from the RIGHT, lands lower-half, stays
-    - 100%     sticky disengages naturally (section bottom at viewport
-               bottom), panels then scroll up with the rest of the page
+  Choreography (driven by a single scrub timeline):
+    - 0%–20%    chatui zooms in 0.58 → 1.0 (section scrolling into view)
+    - 25%       sticky engages naturally (section's top hits viewport top)
+    - 20%–40%   chatui shrinks AND translates upward off-screen
+    - 30%–50%   panel A enters from the LEFT, lands upper-half
+    - 45%–65%   panel B enters from the RIGHT, lands lower-half
+    - 65%–78%   brief settle (both panels visible)
+    - 78%–100%  panels exit: A continues LEFT off-screen, B continues
+                RIGHT off-screen. The trio section behind the pin
+                reveals itself as the panels clear.
+    - 100%      sticky disengages naturally (section bottom at viewport
+                bottom)
 
-  Section height = 300vh: 100vh of scroll for entry zoom + 200vh of
-  scroll inside the sticky range for exit + reveal.
+  Section height = 400vh: 100vh of entry zoom + 300vh of pinned range
+  (entry + settle + exit). All animations live inside one timeline so
+  every wheel tick produces visible motion, with no scroll gaps.
 */
 ---
 
 <section
   data-zoom-section
   class="relative"
-  style="height: 300vh;"
+  style="height: 400vh;"
   aria-label="TokenMind 产品预览"
 >
   <div
@@ -44,7 +48,7 @@ const t = STRINGS;
          from the top edge, vacating the lower portion of the viewport. -->
     <div
       data-zoom-frame
-      class="relative z-10 aspect-[16/10] w-[1200px] max-h-[78vh] max-w-[92vw] origin-top overflow-hidden border border-[color:var(--color-line-strong)] bg-[color:var(--color-surface)] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.18)]"
+      class="relative z-10 aspect-[16/10] w-[96vw] max-h-[78vh] origin-top overflow-hidden border border-[color:var(--color-line-strong)] bg-[color:var(--color-surface)] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.18)]"
       style="border-radius: 24px; will-change: transform; transform: translateZ(0); backface-visibility: hidden;"
     >
       <div data-mock-content class="flex h-full font-sans">
@@ -185,7 +189,7 @@ const t = STRINGS;
     <!-- Manifesto A — The stance --------------------------------------- -->
     <aside
       data-feature-left
-      class="pointer-events-none absolute inset-x-0 top-[10vh] z-20 mx-auto h-[38vh] max-w-[1300px] px-[max(24px,3vw)]"
+      class="pointer-events-none absolute inset-x-0 top-[10vh] z-20 mx-auto h-[38vh] max-w-[96vw] px-[max(24px,2vw)]"
       style="will-change: transform, opacity; transform: translateZ(0); backface-visibility: hidden;"
     >
       <article
@@ -230,7 +234,7 @@ const t = STRINGS;
     <!-- Manifesto B — Open --------------------------------------------- -->
     <aside
       data-feature-right
-      class="pointer-events-none absolute inset-x-0 top-[54vh] z-20 mx-auto h-[38vh] max-w-[1300px] px-[max(24px,3vw)]"
+      class="pointer-events-none absolute inset-x-0 top-[54vh] z-20 mx-auto h-[38vh] max-w-[96vw] px-[max(24px,2vw)]"
       style="will-change: transform, opacity; transform: translateZ(0); backface-visibility: hidden;"
     >
       <article

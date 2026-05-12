@@ -87,6 +87,16 @@ const htmlLang = lang === 'zh' ? 'zh-CN' : 'en';
       import('../lib/sectionReveal').then(({ initSectionReveals }) => {
         requestAnimationFrame(() => initSectionReveals());
       });
+
+      // Three-pillar accordion (Tools / Channels / Memory).
+      import('../lib/featureTrio').then(({ initFeatureTrio }) => {
+        requestAnimationFrame(() => initFeatureTrio());
+      });
+
+      // Install section: white particle field + brace hover formation.
+      import('../lib/installParticles').then(({ initInstallParticles }) => {
+        requestAnimationFrame(() => initInstallParticles());
+      });
     </script>
   </body>
 </html>

@@ -4,34 +4,42 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 gsap.registerPlugin(ScrollTrigger);
 
 /**
- * Product showcase choreography. One continuous scrub-true timeline
- * driven by a single ScrollTrigger spans the whole section. Pinning is
- * handled by browser-native `position: sticky` on the inner container
- * (not GSAP pin), which avoids the two stutter points that pin
- * engagement / release used to introduce.
+ * Product showcase choreography. One continuous scrub timeline driven
+ * by a single ScrollTrigger spans the whole section, from entry zoom
+ * through horizontal panel exit. Pinning is handled by browser-native
+ * `position: sticky` on the inner container (not GSAP pin), which
+ * removes the two stutter points that pin engagement / release used
+ * to introduce.
  *
- * Section is 300vh tall. ScrollTrigger maps `top bottom → bottom bottom`
- * (= 300vh of scroll) to timeline progress 0 → 1:
+ * Section is 400vh tall. ScrollTrigger maps `top bottom → bottom bottom`
+ * (= 400vh of scroll) to timeline progress 0 → 1:
  *
- *   progress 0.00 → 0.33  entry zoom: chatui scales 0.58 → 1.0 as the
- *                         section scrolls into view (sticky not yet
- *                         engaged — element is in normal flow)
- *   progress 0.33         sticky engages (section.top hits viewport.top)
- *                         — no animation discontinuity, the timeline
- *                         simply keeps scrubbing
- *   progress 0.33 → 0.65  chatui shrinks AND translates upward off
- *                         viewport (scale 1 → 0.5, y 0 → -65vh)
- *   progress 0.45 → 0.80  panel A enters from the LEFT (overlaps the
- *                         tail of frame exit so motion is continuous)
- *   progress 0.65 → 1.00  panel B enters from the RIGHT (overlaps
- *                         panel A's tail; eases out through the end so
- *                         motion fills the full timeline — no static
- *                         hold zone at the tail)
- *   progress 1.00         sticky disengages naturally; panels then
- *                         scroll up with the rest of the page
+ *   0.00 → 0.20  entry zoom: chatui scales 0.58 → 1.0
+ *   0.25         sticky engages (section.top hits viewport.top)
+ *   0.20 → 0.40  chatui shrinks AND translates upward off-viewport
+ *   0.25 → 0.55  panels A AND B enter SIMULTANEOUSLY — A from the
+ *                LEFT (rightward) and B from the RIGHT (leftward).
+ *                They start at 0.25 (just as chatui begins shrinking)
+ *                so the user sees chatui sliding upward AND the side
+ *                panels sliding inward in the same frames — the two
+ *                motions overlap by 15% of timeline (~60vh of scroll).
+ *   0.55         CRITICAL POINT — both panels are at center together.
+ *                Exit begins immediately, no hold.
+ *   0.55 → 1.00  both panels exit SIMULTANEOUSLY, each continuing
+ *                in the direction it entered with: A continues right
+ *                (xPercent 0 → +150), B continues left (0 → -150).
+ *                Same direction throughout — never reverses.
  *
- * Continuous overlapping motion means every wheel tick produces visible
- * change — there are no scroll ranges where nothing is animating.
+ * There is no temporal crossover (no panel exits while the other is
+ * still entering). Both entrances finish before either exit begins.
+ * The vertical separation of A (top half) and B (bottom half) means
+ * they never spatially collide either, even as they sweep past 0.
+ *
+ * Between 0.50 and 0.65, panel A sits at center while B is still
+ * arriving — that's fine, the page is animating (B is moving), so the
+ * scroll still produces visible motion every tick. The pain point the
+ * user identified was the dead zone AFTER both had arrived; that zone
+ * no longer exists.
  *
  * Idempotent across HMR — bails out if a previous binding is still alive.
  */
@@ -63,12 +71,10 @@ export function initZoomSection(): void {
   // handles the visual pinning — no GSAP pin.
   //
   // scrub:0.4 (NOT true) adds a 0.4s catch-up filter on top of the raw
-  // scroll position. With `scrub: true`, the animation snaps to the
-  // exact scroll position every frame; combined with Lenis interpolation
-  // this can produce 1–2-frame micro-jitter and amplifies the brief
-  // compositor-layer recalc that sticky engagement triggers. The 0.4s
-  // smoothing absorbs both, giving a perceptibly silkier ride at the
-  // cost of an imperceptible animation lag.
+  // scroll position. Combined with Lenis interpolation this gives a
+  // perceptibly silkier ride at the cost of an imperceptible animation
+  // lag — and crucially smooths the brief compositor-layer recalc that
+  // sticky engagement triggers.
   const tl = gsap.timeline({
     defaults: { ease: 'power2.inOut' },
     scrollTrigger: {
@@ -81,43 +87,62 @@ export function initZoomSection(): void {
   });
 
   tl
-    // Entry zoom: chatui scales 0.58 → 1.0 as the section scrolls into
-    // view. Linear ease so the zoom feels mechanically tied to the
-    // scroll position.
+    // ── Entrance ──────────────────────────────────────────────────────
+    // chatui scales up as the section scrolls into view. Linear ease so
+    // the zoom feels mechanically tied to scroll position.
     .fromTo(
       frame,
       { scale: 0.58, y: 0, borderRadius: '24px' },
-      {
-        scale: 1,
-        borderRadius: '14px',
-        duration: 0.33,
-        ease: 'none',
-      },
+      { scale: 1, borderRadius: '14px', duration: 0.20, ease: 'none' },
       0,
     )
-    // Frame exit: shrinks AND slides upward off-viewport. ease-in lets
-    // the exit accelerate as panel A starts arriving, so they feel
-    // dynamically linked.
+    // chatui shrinks and translates upward off-viewport.
+    // Linear ease (none) — preserves non-zero velocity at the seam
+    // with the zoom-in segment above. With `power2.in` the exit
+    // started from velocity zero, which read as a brief pause at
+    // maximum size; linear keeps the motion continuous through 0.20.
     .to(
       frame,
-      { scale: 0.5, y: '-65vh', duration: 0.32, ease: 'power2.in' },
-      0.33,
+      { scale: 0.5, y: '-65vh', duration: 0.20, ease: 'none' },
+      0.20,
     )
-    // Panel A enters from the left, overlapping the back half of frame
-    // exit (0.45 → 0.65 both move) and continuing solo through 0.80.
+    // Both panels enter SIMULTANEOUSLY — start at 0.25 (overlapping
+    // most of chatui's exit at 0.20-0.40) and arrive at center at
+    // 0.55. The 0.25-0.40 window has chatui sliding up AND panels
+    // sliding in at the same time — that's the cross-cut the user
+    // asked for. Linear ease keeps velocity non-zero at the seam.
     .to(
       featLeft,
-      { xPercent: 0, opacity: 1, duration: 0.35, ease: 'power3.out' },
-      0.45,
+      { xPercent: 0, opacity: 1, duration: 0.30, ease: 'none' },
+      0.25,
     )
-    // Panel B enters from the right, starting while A is still finishing
-    // (0.65 → 0.80 both move) and easing out through the end of the
-    // timeline. Filling the tail eliminates any static hold zone — B is
-    // still subtly settling when the section exits.
     .to(
       featRight,
-      { xPercent: 0, opacity: 1, duration: 0.35, ease: 'power3.out' },
-      0.65,
+      { xPercent: 0, opacity: 1, duration: 0.30, ease: 'none' },
+      0.25,
+    )
+    // ── Exit ──────────────────────────────────────────────────────────
+    // Critical point is 0.55 — both panels are at xPercent 0 with
+    // non-zero velocity. The exits run 0.55 → 1.00, each panel
+    // continuing in its entry direction past 0:
+    //
+    //   - A continues RIGHTWARD past 0 to xPercent +150 (off-viewport)
+    //   - B continues LEFTWARD past 0 to xPercent -150 (off-viewport)
+    //
+    // Linear ease preserves velocity continuity through 0.55. Speed
+    // shifts slightly (entry +400 → exit +333) but never goes to zero,
+    // so there's no perceived pause at the seam. Panels are vertically
+    // stacked (A top half, B bottom half) so they don't collide as
+    // they sweep past 0 in opposite directions.
+    .to(
+      featLeft,
+      { xPercent: 150, opacity: 0, duration: 0.45, ease: 'none' },
+      0.55,
+    )
+    .to(
+      featRight,
+      { xPercent: -150, opacity: 0, duration: 0.45, ease: 'none' },
+      0.55,
     );
 
   trigger.dataset.zoomBound = 'true';

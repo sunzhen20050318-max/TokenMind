@@ -16,27 +16,27 @@ const t = STRINGS;
 // both routes — they're product-facing nouns that read the same in
 // either, and skipping translation keeps the footer visually anchored
 // to the brand.
-const VERSION = '0.1.11';
-
-// Resolve link labels to URLs. Order matters; lookup is by label string.
-const linkHref = (label: string): string => {
-  switch (label) {
-    case 'Download':
-      return '#download';
-    case 'Docs':
+// Resolve a link key to its URL. Each link entry in strings.ts carries
+// both the (translated) label AND a stable key — the URL lookup goes
+// through the key so labels can be freely renamed per language.
+const linkHref = (key: string): string => {
+  switch (key) {
+    case 'download':
+      return '#install';
+    case 'docs':
       return `${LINKS.github}/blob/main/README.md`;
-    case 'GitHub':
+    case 'github':
       return LINKS.github;
-    case 'Gitee':
+    case 'gitee':
       return LINKS.gitee;
-    case 'License':
-    case 'MIT License':
+    case 'license':
+    case 'mitLicense':
       return `${LINKS.github}/blob/main/LICENSE`;
-    case 'Changelog':
+    case 'changelog':
       return `${LINKS.github}/releases`;
-    case 'Contact':
+    case 'contact':
       return `mailto:${LINKS.email}`;
-    case 'Privacy':
+    case 'privacy':
       return `${LINKS.github}/blob/main/SECURITY.md`;
     default:
       return '#';
@@ -49,8 +49,13 @@ const isExternal = (href: string) =>
 <footer
   class="relative overflow-hidden border-t border-[color:var(--color-line-soft)] bg-[color:var(--color-surface)]"
 >
-  <!-- Top region: tagline (left) + two flat link columns (right). -->
-  <div class="mx-auto max-w-7xl px-6 pt-20 pb-12 sm:px-10 sm:pt-24 sm:pb-14">
+  <!-- Top region: tagline (LEFT) + two flat link columns sit in a
+       single horizontal row, modeled on the Antigravity footer
+       (image 20). The link columns sit roughly center / right-center
+       so the row reads as: short anchor phrase on the left, link
+       directory on the right — not a "filler band" pushed all the
+       way to the viewport edge. -->
+  <div class="px-6 pt-12 pb-8 sm:px-10 sm:pt-16 sm:pb-10 lg:px-16 lg:pt-14 xl:px-24 xl:pt-14 2xl:px-32 2xl:pt-16">
     <div class="grid grid-cols-1 gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
       <p
         class="max-w-md text-[clamp(1.4rem,2.2vw,2rem)] font-semibold leading-[1.15] tracking-tight text-[color:var(--color-fg)]"
@@ -60,8 +65,8 @@ const isExternal = (href: string) =>
 
       <ul class="flex flex-col gap-3 text-[15px]">
         {
-          t.footer.primaryLinks.map((label) => {
-            const href = linkHref(label);
+          t.footer.primaryLinks.map((link) => {
+            const href = linkHref(link.key);
             return (
               <li>
                 <a
@@ -72,7 +77,7 @@ const isExternal = (href: string) =>
                   }
                   class="text-[color:var(--color-fg)] transition-colors duration-150 hover:text-[color:var(--color-muted)]"
                 >
-                  {label}
+                  {link.label[lang]}
                 </a>
               </li>
             );
@@ -82,8 +87,8 @@ const isExternal = (href: string) =>
 
       <ul class="flex flex-col gap-3 text-[15px]">
         {
-          t.footer.secondaryLinks.map((label) => {
-            const href = linkHref(label);
+          t.footer.secondaryLinks.map((link) => {
+            const href = linkHref(link.key);
             return (
               <li>
                 <a
@@ -94,7 +99,7 @@ const isExternal = (href: string) =>
                   }
                   class="text-[color:var(--color-fg)] transition-colors duration-150 hover:text-[color:var(--color-muted)]"
                 >
-                  {label}
+                  {link.label[lang]}
                 </a>
               </li>
             );
@@ -104,19 +109,18 @@ const isExternal = (href: string) =>
     </div>
   </div>
 
-  <!--
-    HUGE brand wordmark across the page width. Uses the display serif at
-    a viewport-relative size so it scales fluidly. line-height is tight
-    so descenders don't push the meta strip down. The wordmark is purely
-    decorative (aria-hidden) — the brand link is in the meta strip.
-  -->
+  <!-- HUGE brand wordmark, separated from the top row by a deliberate
+       gap (Antigravity-style: top directory band + dramatic empty
+       interval + monumental wordmark anchor at the bottom). The
+       wordmark is purely decorative; the brand link lives in the
+       meta strip below. -->
   <div
-    class="pointer-events-none select-none px-6 pt-4 pb-6 sm:px-10"
+    class="pointer-events-none select-none px-6 pb-4 pt-2 sm:px-10 lg:px-16 xl:px-24 2xl:px-32"
     aria-hidden="true"
   >
     <div
       class="wordmark-display text-[color:var(--color-fg)]"
-      style="font-size: clamp(5rem, 22vw, 22rem); line-height: 0.9; letter-spacing: -0.04em;"
+      style="font-size: clamp(3rem, 18vw, 22rem); line-height: 0.9; letter-spacing: -0.04em;"
     >
       TokenMind
     </div>
@@ -126,7 +130,7 @@ const isExternal = (href: string) =>
        legal links on the right. -->
   <div class="border-t border-[color:var(--color-line-soft)]">
     <div
-      class="mx-auto flex max-w-7xl flex-col items-start gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-10 sm:py-6"
+      class="flex flex-col items-start gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-10 sm:py-6 lg:px-16 xl:px-24 2xl:px-32"
     >
       <a
         href={lang === 'zh' ? '/' : '/en/'}
@@ -142,19 +146,14 @@ const isExternal = (href: string) =>
           draggable="false"
         />
         <span class="text-[13px] font-medium tracking-tight">TokenMind</span>
-        <span
-          class="ml-2 font-mono text-[11px] text-[color:var(--color-subtle)]"
-        >
-          v{VERSION}
-        </span>
       </a>
 
       <ul
         class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-[color:var(--color-muted)]"
       >
         {
-          t.footer.metaLinks.map((label, i) => {
-            const href = linkHref(label);
+          t.footer.metaLinks.map((link, i) => {
+            const href = linkHref(link.key);
             return (
               <li class="flex items-center gap-x-4">
                 {i > 0 ? (
@@ -173,12 +172,28 @@ const isExternal = (href: string) =>
                   }
                   class="transition-colors duration-150 hover:text-[color:var(--color-fg)]"
                 >
-                  {label}
+                  {link.label[lang]}
                 </a>
               </li>
             );
           })
         }
+        <li class="flex items-center gap-x-4">
+          <span
+            class="text-[color:var(--color-line-strong)]"
+            aria-hidden="true"
+          >
+            ·
+          </span>
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="transition-colors duration-150 hover:text-[color:var(--color-fg)]"
+          >
+            {t.footer.icp}
+          </a>
+        </li>
       </ul>
     </div>
   </div>
