@@ -12,8 +12,8 @@
  * monospace font rendered on an offscreen canvas — this gives a
  * proper typographic brace, not a hand-drawn approximation.
  *
- * Skipped under prefers-reduced-motion. On coarse-pointer devices the
- * grid renders but the brace formation never triggers (no cursor).
+ * On coarse-pointer devices the grid renders but the brace formation
+ * never triggers (no cursor).
  */
 
 interface Particle {
@@ -133,9 +133,6 @@ export function initInstallParticles(): () => void {
     '[data-install-canvas]',
   );
   if (!section || !canvas) return () => {};
-
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduced) return () => {};
 
   const ctx = canvas.getContext('2d', { alpha: true });
   if (!ctx) return () => {};

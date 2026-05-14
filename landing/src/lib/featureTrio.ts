@@ -31,7 +31,6 @@ export function initFeatureTrio(): void {
   );
   if (!cards.length) return;
 
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const coarse = window.matchMedia('(pointer: coarse)').matches;
 
   // -- interaction --------------------------------------------------------
@@ -87,11 +86,6 @@ export function initFeatureTrio(): void {
   // -- entrance animation -------------------------------------------------
   // Mobile (< 768px): cards are stacked, so a simple stagger reveal is
   // enough. Desktop: middle drops from above, sides rise from below.
-  if (reduced) {
-    gsap.set(cards, { opacity: 1, y: 0 });
-    return;
-  }
-
   const mm = gsap.matchMedia();
 
   mm.add('(min-width: 768px)', () => {

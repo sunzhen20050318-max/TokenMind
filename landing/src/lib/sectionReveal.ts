@@ -22,17 +22,10 @@ gsap.registerPlugin(ScrollTrigger);
  * Astro HMR doesn't double-bind.
  */
 export function initSectionReveals(): void {
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
   // -- single-element reveals --------------------------------------------
   document.querySelectorAll<HTMLElement>('[data-reveal]').forEach((el) => {
     if (el.dataset.revealBound === 'true') return;
     el.dataset.revealBound = 'true';
-
-    if (reduced) {
-      gsap.set(el, { opacity: 1, y: 0 });
-      return;
-    }
 
     gsap.fromTo(
       el,
@@ -61,11 +54,6 @@ export function initSectionReveals(): void {
       const items = Array.from(container.children) as HTMLElement[];
       if (!items.length) return;
 
-      if (reduced) {
-        gsap.set(items, { opacity: 1, y: 0 });
-        return;
-      }
-
       gsap.fromTo(
         items,
         { opacity: 0, y: 28 },
@@ -93,11 +81,6 @@ export function initSectionReveals(): void {
 
       const items = Array.from(container.children) as HTMLElement[];
       if (!items.length) return;
-
-      if (reduced) {
-        gsap.set(items, { opacity: 1, scale: 1 });
-        return;
-      }
 
       gsap.fromTo(
         items,

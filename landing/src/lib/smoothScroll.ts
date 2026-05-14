@@ -15,15 +15,6 @@ gsap.registerPlugin(ScrollTrigger);
  * the client; further callers (per-page enhancements) can read the global.
  */
 export function initSmoothScroll(): Lenis {
-  // Respect the user's OS-level preference; reduce-motion users get native
-  // scroll with no easing so the page still works for them.
-  if (
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  ) {
-    return new Lenis({ smoothWheel: false, smoothTouch: false });
-  }
-
   const lenis = new Lenis({
     // lerp (linear interpolation factor 0–1) gives a constant per-frame
     // approach toward the target scroll, which feels more uniform than a

@@ -51,17 +51,6 @@ export function initZoomSection(): void {
   if (!trigger || !frame || !featLeft || !featRight) return;
   if (trigger.dataset.zoomBound === 'true') return;
 
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduced) {
-    // Skip choreography. Render the resting state: chatui partially out,
-    // both panels visible in their final stacked positions.
-    gsap.set(frame, { scale: 0.5, y: '-65vh', borderRadius: '14px' });
-    gsap.set(featLeft, { xPercent: 0, opacity: 1 });
-    gsap.set(featRight, { xPercent: 0, opacity: 1 });
-    trigger.dataset.zoomBound = 'true';
-    return;
-  }
-
   // Initial off-stage positions. xPercent ±120 keeps the panels safely
   // outside the viewport even on extra-wide monitors.
   gsap.set(featLeft, { xPercent: -120, opacity: 0 });

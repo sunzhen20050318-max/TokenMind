@@ -13,7 +13,6 @@
  * asked for ("均匀铺满 → 鼠标推开 → 鼠标移走后回到原位").
  *
  * Constraints:
- *   - Skipped under prefers-reduced-motion (canvas stays empty).
  *   - On coarse-pointer devices we still render the grid, but the cursor
  *     repulsion term turns off (no mouse to react to).
  */
@@ -42,9 +41,6 @@ const MOUSE_RADIUS = 150;
 const MOUSE_FORCE = 2.6;
 
 export function initCursorParticles(canvas: HTMLCanvasElement): () => void {
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduced) return () => {};
-
   const ctx = canvas.getContext('2d', { alpha: true });
   if (!ctx) return () => {};
 
