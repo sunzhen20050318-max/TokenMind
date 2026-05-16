@@ -25,8 +25,8 @@ from tokenmind.knowledge.models import (
     SessionKnowledgeLinks,
     utc_now_iso,
 )
+from tokenmind.knowledge.wiki_ingest import compile_with_llm
 from tokenmind.utils.helpers import safe_filename
-
 
 TEXT_SUFFIXES = {
     ".txt",
@@ -88,6 +88,12 @@ class KnowledgeService:
         self._state_lock = threading.RLock()
         self._state = self._load()
         self._ensure_index()
+        self._wiki_llm_provider = None
+        self._wiki_llm_model: str | None = None
+
+    def set_wiki_llm(self, provider, model: str) -> None:
+        self._wiki_llm_provider = provider
+        self._wiki_llm_model = model
 
     def configure(
         self,
@@ -1001,6 +1007,31 @@ class KnowledgeService:
         cache_path.write_text(
             json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+
+        if self._wiki_llm_provider is not None and self._wiki_llm_model:
+            try:
+                import asyncio
+                coro = compile_with_llm(
+                    provider=self._wiki_llm_provider,
+                    model=self._wiki_llm_model,
+                    kb_root=kb_root,
+                    source_title=title,
+                    source_text=text,
+                    source_page_id=page_id,
+                    language=getattr(kb, "language", "zh"),
+                )
+                # Create a fresh loop. If called from inside a running loop,
+                # this still works because we're on a sync method invoked from
+                # an executor / sync context. asyncio.run() would error inside
+                # an already-running loop; new_event_loop + run_until_complete
+                # avoids that.
+                loop = asyncio.new_event_loop()
+                try:
+                    loop.run_until_complete(coro)
+                finally:
+                    loop.close()
+            except Exception as exc:
+                logger.warning(f"wiki LLM compile failed: {exc}")
 
         return save_state(
             status="ready",

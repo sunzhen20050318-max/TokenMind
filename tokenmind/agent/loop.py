@@ -160,6 +160,7 @@ class AgentLoop:
             rerank_api_base=self.knowledge_config.rerank_api_base,
             rerank_top_n=self.knowledge_config.rerank_top_n,
         )
+        self.knowledge.set_wiki_llm(provider=provider, model=self.model)
         self.template_renderer = TemplateRenderer()
         self.sessions = session_manager or SessionManager(workspace)
         self.attachments = AttachmentStore(workspace)

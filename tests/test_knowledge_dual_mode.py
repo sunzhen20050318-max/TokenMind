@@ -275,3 +275,36 @@ def test_process_rag_document_unchanged(tmp_path):
             "SELECT COUNT(*) FROM chunks WHERE document_id = ?", (doc.id,)
         ).fetchone()[0]
     assert n >= 1
+
+
+def test_process_wiki_doc_calls_llm_when_provider_set(tmp_path, monkeypatch):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    src = tmp_path / "n.md"
+    src.write_text("Content for LLM", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "n.md")
+
+    calls = []
+
+    async def fake_compile(**kwargs):
+        calls.append(kwargs["source_title"])
+        return {"entities": [], "topics": []}
+
+    monkeypatch.setattr("tokenmind.knowledge.service.compile_with_llm", fake_compile, raising=False)
+    # Inject a stub provider via attribute set after service init
+    service._wiki_llm_provider = object()
+    service._wiki_llm_model = "stub"
+
+    service.process_document(doc.id)
+    assert "n.md" in calls or any("n" in c for c in calls)
+
+
+def test_process_wiki_doc_skips_llm_when_no_provider(tmp_path):
+    """No provider set → only template source page written, no error."""
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    src = tmp_path / "n.md"
+    src.write_text("text", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "n.md")
+    updated = service.process_document(doc.id)
+    assert updated.status == "ready"
