@@ -206,3 +206,21 @@ def test_upload_to_rag_kb_unchanged(tmp_path):
     doc = service.register_document_upload(kb.id, src, "src.md")
     assert "/raw/files/" not in doc.path.replace("\\", "/")
     assert Path(doc.path).exists()
+
+
+def test_compile_source_page_template(tmp_path):
+    from tokenmind.knowledge.wiki_ingest import compile_source_page_template
+    out = compile_source_page_template(
+        page_id="page_x",
+        source_id="doc_x",
+        title="My Doc",
+        raw_path="raw/files/my-doc.md",
+        sha256="abc123",
+        body_text="This is the content body...",
+    )
+    assert "# My Doc" in out
+    assert "## 原始资料" in out
+    assert "raw/files/my-doc.md" in out
+    assert "abc123" in out
+    assert "page_x" in out
+    assert out.startswith("---")  # frontmatter
