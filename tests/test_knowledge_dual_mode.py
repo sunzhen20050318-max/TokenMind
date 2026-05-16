@@ -1,3 +1,7 @@
+import hashlib
+import json
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -167,3 +171,38 @@ def test_extract_text_reads_markdown(tmp_path):
     f = tmp_path / "x.md"
     f.write_text("# Hello", encoding="utf-8")
     assert "Hello" in extract_text(f)
+
+
+def test_upload_to_wiki_kb_lands_in_raw_files(tmp_path):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    src = tmp_path / "src.md"
+    src.write_text("hello world", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "src.md")
+    assert "/raw/files/" in doc.path.replace("\\", "/")
+    assert Path(doc.path).exists()
+
+
+def test_upload_to_wiki_kb_writes_cache_with_sha256(tmp_path):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    src = tmp_path / "src.md"
+    content = b"content for sha"
+    src.write_bytes(content)
+    expected_sha = hashlib.sha256(content).hexdigest()
+
+    service.register_document_upload(kb.id, src, "src.md")
+    cache_path = tmp_path / "knowledge" / kb.id / ".wiki-cache.json"
+    cache = json.loads(cache_path.read_text())
+    assert f"sha256:{expected_sha}" in cache["sources"]
+
+
+def test_upload_to_rag_kb_unchanged(tmp_path):
+    """Legacy RAG path stays at <kb>/documents/."""
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("rag", "")
+    src = tmp_path / "src.md"
+    src.write_text("legacy", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "src.md")
+    assert "/raw/files/" not in doc.path.replace("\\", "/")
+    assert Path(doc.path).exists()

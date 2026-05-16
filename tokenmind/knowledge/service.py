@@ -792,9 +792,19 @@ class KnowledgeService:
         source: Path,
         original_name: str,
     ) -> KnowledgeDocumentRecord:
+        kb = self.get_knowledge_base(knowledge_base_id)
+        if kb.type == "wiki":
+            return self._wiki_register_source(kb, source, original_name)
+        return self._rag_register_document(knowledge_base_id, source, original_name)
+
+    def _rag_register_document(
+        self,
+        knowledge_base_id: str,
+        source: Path,
+        original_name: str,
+    ) -> KnowledgeDocumentRecord:
         with self._state_lock:
             self._reload()
-            self.get_knowledge_base(knowledge_base_id)
             target, safe_name = self._prepare_document_target(knowledge_base_id, original_name, source)
             shutil.copy2(source, target)
             now = utc_now_iso()
@@ -816,6 +826,70 @@ class KnowledgeService:
             self._update_knowledge_base_counts(knowledge_base_id)
             self._save()
             return document
+
+    def _wiki_register_source(
+        self,
+        kb: KnowledgeBaseRecord,
+        source: Path,
+        original_name: str,
+    ) -> KnowledgeDocumentRecord:
+        import hashlib
+
+        from tokenmind.knowledge.wiki_paths import get_kb_root, safe_wiki_filename
+
+        kb_root = Path(kb.root_path or get_kb_root(self.root.parent, kb.id))
+        raw_dir = kb_root / "raw" / "files"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+        safe_name = safe_wiki_filename(Path(original_name).stem) + Path(original_name).suffix
+        target = raw_dir / safe_name
+        if target.exists():
+            target = raw_dir / f"{Path(safe_name).stem}-{uuid.uuid4().hex[:6]}{Path(safe_name).suffix}"
+        shutil.copy2(source, target)
+        now = utc_now_iso()
+
+        document = KnowledgeDocumentRecord(
+            id=f"doc_{uuid.uuid4().hex[:10]}",
+            knowledge_base_id=kb.id,
+            name=original_name or safe_name,
+            path=str(target),
+            file_type=target.suffix.lower().lstrip("."),
+            size=target.stat().st_size,
+            status="processing",
+            processing_stage="queued",
+            processing_progress=5,
+            chunk_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        with self._state_lock:
+            self._reload()
+            self._state["documents"].append(document.model_dump())
+            self._update_wiki_cache(kb_root, sha256=sha256, document=document)
+            self._update_knowledge_base_counts(kb.id)
+            self._save()
+        return document
+
+    def _update_wiki_cache(
+        self,
+        kb_root: Path,
+        *,
+        sha256: str,
+        document: KnowledgeDocumentRecord,
+    ) -> None:
+        import json
+
+        cache_path = kb_root / ".wiki-cache.json"
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        cache["sources"][f"sha256:{sha256}"] = {
+            "document_id": document.id,
+            "title": document.name,
+            "raw_path": str(Path(document.path).relative_to(kb_root)),
+            "status": "registered",
+            "created_at": document.created_at,
+        }
+        cache["updated_at"] = utc_now_iso()
+        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def process_document(self, document_id: str) -> KnowledgeDocumentRecord:
         with self._state_lock:
