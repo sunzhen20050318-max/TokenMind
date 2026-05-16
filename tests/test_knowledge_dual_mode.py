@@ -597,3 +597,27 @@ def test_api_patch_session_rejects_non_wiki_kb(tmp_path):
         json={"active_wiki_kb_id": rag_kb["id"]},
     )
     assert resp.status_code == 400
+
+
+def test_delete_wiki_document_removes_source_page_and_cache_entry(tmp_path):
+    import json
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("w", "", type="wiki")
+    src = tmp_path / "x.md"
+    src.write_text("hello", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "x.md")
+    service.process_document(doc.id)
+
+    kb_root = tmp_path / "knowledge" / kb.id
+    source_pages_before = list((kb_root / "wiki" / "sources").glob("*.md"))
+    assert source_pages_before, "precondition: source page exists"
+
+    service.delete_document(kb.id, doc.id)
+
+    # raw file deleted
+    assert not Path(doc.path).exists()
+    # source page deleted
+    assert list((kb_root / "wiki" / "sources").glob("*.md")) == []
+    # cache entry removed
+    cache = json.loads((kb_root / ".wiki-cache.json").read_text())
+    assert not any(e.get("document_id") == doc.id for e in cache["sources"].values())

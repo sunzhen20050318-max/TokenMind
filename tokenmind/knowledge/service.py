@@ -1162,7 +1162,13 @@ class KnowledgeService:
                     return KnowledgeDocumentRecord(**item)
             raise KeyError(f"Knowledge document not found: {document_id}")
 
-    def delete_document(self, knowledge_base_id: str, document_id: str) -> None:
+    def delete_document(self, knowledge_base_id: str, document_id: str) -> Any:
+        kb = self.get_knowledge_base(knowledge_base_id)
+        if kb.type == "wiki":
+            return self._wiki_delete_document(kb, document_id)
+        return self._rag_delete_document(knowledge_base_id, document_id)
+
+    def _rag_delete_document(self, knowledge_base_id: str, document_id: str) -> None:
         document = self.get_document(knowledge_base_id, document_id)
         path = Path(document.path)
         if path.exists():
@@ -1188,6 +1194,49 @@ class KnowledgeService:
 
             self._update_knowledge_base_counts(knowledge_base_id)
             self._save()
+
+    def _wiki_delete_document(self, kb: KnowledgeBaseRecord, document_id: str) -> dict[str, Any]:
+        kb_root = Path(kb.root_path)
+        cache_path = kb_root / ".wiki-cache.json"
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+
+        source_page_id = None
+        cache_key_to_remove = None
+        for key, entry in cache.get("sources", {}).items():
+            if entry.get("document_id") == document_id:
+                source_page_id = entry.get("source_page_id")
+                cache_key_to_remove = key
+                break
+
+        with self._state_lock:
+            self._reload()
+            doc = next((d for d in self._state["documents"] if d["id"] == document_id), None)
+            if doc is None:
+                raise KeyError(f"document not found: {document_id}")
+            raw_path = Path(doc["path"])
+            if raw_path.exists():
+                raw_path.unlink()
+            self._state["documents"] = [d for d in self._state["documents"] if d["id"] != document_id]
+            self._update_knowledge_base_counts(kb.id)
+            self._save()
+
+        if source_page_id and source_page_id in cache.get("pages", {}):
+            page_rel = cache["pages"][source_page_id]["path"]
+            page_path = kb_root / page_rel
+            if page_path.exists():
+                page_path.unlink()
+            del cache["pages"][source_page_id]
+        if cache_key_to_remove:
+            del cache["sources"][cache_key_to_remove]
+        cache["updated_at"] = utc_now_iso()
+        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        try:
+            build_graph_data(kb_root, persist=True)
+        except Exception as exc:
+            logger.warning(f"graph rebuild after delete failed: {exc}")
+
+        return {"success": True, "document_id": document_id}
 
     def retrieve_for_session(
         self,
