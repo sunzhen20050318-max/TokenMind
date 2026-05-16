@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from tokenmind.server.dependencies import get_chat_service as _real_get_chat_service
+from tokenmind.server.dependencies import get_chat_service
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -54,12 +54,6 @@ class SessionPatchPayload(BaseModel):
 
     active_wiki_kb_id: str | None = None
     # Add more patchable fields here later if needed.
-
-
-def get_chat_service():
-    """Get chat service dependency."""
-    from tokenmind.server.dependencies import get_chat_service
-    return get_chat_service()
 
 
 @router.get("", response_model=SessionListResponse)
@@ -143,7 +137,7 @@ async def rename_session(
 async def patch_session(
     session_id: str,
     payload: SessionPatchPayload,
-    service: Any = Depends(_real_get_chat_service),
+    service: Any = Depends(get_chat_service),
 ) -> dict:
     """Partially update session attributes (e.g. active_wiki_kb_id)."""
     try:
