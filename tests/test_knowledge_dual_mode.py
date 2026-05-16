@@ -1,3 +1,6 @@
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from tokenmind.knowledge.models import KnowledgeBaseRecord, WikiPageRecord, WikiSourceRecord
 from tokenmind.knowledge.service import KnowledgeService
 from tokenmind.knowledge.wiki_paths import (
@@ -121,3 +124,39 @@ def test_create_wiki_kb_creates_structure(tmp_path):
     assert (root / ".wiki-cache.json").is_file()
     # purpose.md 含描述
     assert "GraphRAG 相关" in (root / "purpose.md").read_text(encoding="utf-8")
+
+
+class _StubChatService:
+    """Minimal ChatService stand-in exposing the methods the route hits."""
+
+    def __init__(self, knowledge: KnowledgeService):
+        self.knowledge = knowledge
+
+    def create_knowledge_base(self, name, description, *, type="rag", language="zh"):
+        return self.knowledge.create_knowledge_base(
+            name, description, type=type, language=language
+        ).model_dump()
+
+
+def test_api_create_wiki_kb(tmp_path):
+    """POST /api/knowledge with type=wiki creates wiki structure."""
+    from tokenmind.server.dependencies import get_chat_service
+    from tokenmind.server.routes.knowledge import router as knowledge_router
+
+    knowledge = KnowledgeService(tmp_path)
+    stub = _StubChatService(knowledge)
+
+    app = FastAPI()
+    app.include_router(knowledge_router)
+    app.dependency_overrides[get_chat_service] = lambda: stub
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/knowledge",
+        json={"name": "wiki kb", "description": "test", "type": "wiki"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["type"] == "wiki"
+    kb_id = body["id"]
+    assert (tmp_path / "knowledge" / kb_id / "raw" / "files").is_dir()

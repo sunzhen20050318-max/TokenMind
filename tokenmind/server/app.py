@@ -1130,9 +1130,18 @@ class ChatService:
         self._sync_knowledge_config()
         return self.knowledge.get_knowledge_overview()
 
-    def create_knowledge_base(self, name: str, description: str) -> dict[str, Any]:
+    def create_knowledge_base(
+        self,
+        name: str,
+        description: str,
+        *,
+        type: str = "rag",
+        language: str = "zh",
+    ) -> dict[str, Any]:
         self._sync_knowledge_config()
-        return self.knowledge.create_knowledge_base(name, description).model_dump()
+        return self.knowledge.create_knowledge_base(
+            name, description, type=type, language=language
+        ).model_dump()
 
     def get_knowledge_base_detail(self, knowledge_base_id: str) -> dict[str, Any]:
         self._sync_knowledge_config()

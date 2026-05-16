@@ -16,6 +16,8 @@ router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 class CreateKnowledgeBasePayload(BaseModel):
     name: str
     description: str = ""
+    type: str = "rag"
+    language: str = "zh"
 
 
 class SessionKnowledgePayload(BaseModel):
@@ -45,7 +47,12 @@ async def create_knowledge_base(
     service: Any = Depends(get_chat_service),
 ) -> dict:
     try:
-        return service.create_knowledge_base(payload.name, payload.description)
+        return service.create_knowledge_base(
+            payload.name,
+            payload.description,
+            type=payload.type,
+            language=payload.language,
+        )
     except HTTPException:
         raise
     except Exception as exc:
