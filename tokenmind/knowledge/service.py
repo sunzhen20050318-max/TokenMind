@@ -323,6 +323,15 @@ class KnowledgeService:
             if item["id"] == knowledge_base_id:
                 item["document_count"] = count
                 item["updated_at"] = now
+                if item.get("type") == "wiki":
+                    cache_path = Path(item.get("root_path") or "") / ".wiki-cache.json"
+                    if cache_path.is_file():
+                        try:
+                            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+                            item["source_count"] = len(cache.get("sources", {}))
+                            item["page_count"] = len(cache.get("pages", {}))
+                        except Exception:
+                            pass
                 break
 
     def set_session_links(self, session_id: str, knowledge_base_ids: list[str]) -> None:
@@ -892,6 +901,115 @@ class KnowledgeService:
         cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def process_document(self, document_id: str) -> KnowledgeDocumentRecord:
+        with self._state_lock:
+            self._reload()
+            existing = next((item for item in self._state["documents"] if item["id"] == document_id), None)
+            if existing is None:
+                raise KeyError(f"Knowledge document not found: {document_id}")
+            kb_id = str(existing["knowledge_base_id"])
+        kb = self.get_knowledge_base(kb_id)
+        if kb.type == "wiki":
+            return self._wiki_process_document(kb, document_id)
+        return self._rag_process_document(document_id)
+
+    def _wiki_process_document(
+        self, kb: KnowledgeBaseRecord, document_id: str
+    ) -> KnowledgeDocumentRecord:
+        from tokenmind.knowledge.wiki_extractors import extract_text
+        from tokenmind.knowledge.wiki_ingest import compile_source_page_template
+        from tokenmind.knowledge.wiki_paths import safe_wiki_filename
+
+        def save_state(**updates: Any) -> KnowledgeDocumentRecord:
+            with self._state_lock:
+                self._reload()
+                updated = self._update_document_record(document_id, **updates)
+                self._update_knowledge_base_counts(kb.id)
+                self._save()
+                return updated
+
+        with self._state_lock:
+            self._reload()
+            doc = next(item for item in self._state["documents"] if item["id"] == document_id)
+            path = Path(str(doc["path"]))
+            doc_name = doc.get("name") or path.stem
+
+        if not path.exists():
+            return save_state(
+                status="failed",
+                processing_stage="failed",
+                error_message="Source file is missing",
+            )
+
+        save_state(
+            status="processing",
+            processing_stage="extracting",
+            processing_progress=25,
+            error_message=None,
+        )
+        try:
+            text = extract_text(path)
+        except Exception as exc:
+            logger.exception("Failed to extract wiki document {}", document_id)
+            return save_state(
+                status="failed",
+                processing_stage="failed",
+                error_message=str(exc),
+            )
+
+        save_state(processing_stage="compiling_source", processing_progress=70)
+        kb_root = Path(kb.root_path)
+        try:
+            raw_rel = str(path.relative_to(kb_root))
+        except ValueError:
+            raw_rel = str(path)
+        page_id = f"page_{uuid.uuid4().hex[:10]}"
+        title = doc_name
+        safe_name = safe_wiki_filename(Path(title).stem) + ".md"
+
+        cache_path = kb_root / ".wiki-cache.json"
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        sha = ""
+        for key, entry in cache.get("sources", {}).items():
+            if entry.get("document_id") == document_id:
+                sha = key.split(":", 1)[1] if ":" in key else ""
+                break
+
+        page_md = compile_source_page_template(
+            page_id=page_id,
+            source_id=document_id,
+            title=title,
+            raw_path=raw_rel,
+            sha256=sha,
+            body_text=text,
+        )
+        page_path = kb_root / "wiki" / "sources" / safe_name
+        page_path.parent.mkdir(parents=True, exist_ok=True)
+        page_path.write_text(page_md, encoding="utf-8")
+
+        sources_map = cache.setdefault("sources", {})
+        sha_key = f"sha256:{sha}"
+        sources_map.setdefault(sha_key, {})
+        sources_map[sha_key]["status"] = "ready"
+        sources_map[sha_key]["source_page_id"] = page_id
+        cache.setdefault("pages", {})[page_id] = {
+            "path": f"wiki/sources/{safe_name}",
+            "type": "source",
+            "title": title,
+            "source_id": document_id,
+        }
+        cache["updated_at"] = utc_now_iso()
+        cache_path.write_text(
+            json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        return save_state(
+            status="ready",
+            processing_stage="ready",
+            processing_progress=100,
+            error_message=None,
+        )
+
+    def _rag_process_document(self, document_id: str) -> KnowledgeDocumentRecord:
         with self._state_lock:
             self._reload()
             existing = next((item for item in self._state["documents"] if item["id"] == document_id), None)

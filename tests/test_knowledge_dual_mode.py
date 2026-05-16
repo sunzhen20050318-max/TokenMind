@@ -224,3 +224,54 @@ def test_compile_source_page_template(tmp_path):
     assert "abc123" in out
     assert "page_x" in out
     assert out.startswith("---")  # frontmatter
+
+
+def test_process_wiki_document_writes_source_page(tmp_path):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    src = tmp_path / "notes.md"
+    src.write_text("# TokenMind\n\nA local-first agent framework.", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "notes.md")
+
+    updated = service.process_document(doc.id)
+
+    assert updated.status == "ready"
+    kb_root = tmp_path / "knowledge" / kb.id
+    sources = list((kb_root / "wiki" / "sources").glob("*.md"))
+    assert len(sources) == 1
+    body = sources[0].read_text(encoding="utf-8")
+    assert "TokenMind" in body
+    assert "raw/files/notes.md" in body
+
+
+def test_process_wiki_document_does_not_write_chunks(tmp_path):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    src = tmp_path / "n.md"
+    src.write_text("text", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "n.md")
+    service.process_document(doc.id)
+
+    import sqlite3
+    with sqlite3.connect(service.index_file) as conn:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM chunks WHERE document_id = ?", (doc.id,)
+        ).fetchone()[0]
+    assert n == 0
+
+
+def test_process_rag_document_unchanged(tmp_path):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("rag", "")
+    src = tmp_path / "n.md"
+    src.write_text("hello", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "n.md")
+    updated = service.process_document(doc.id)
+    assert updated.status == "ready"
+    # Legacy chunks still written
+    import sqlite3
+    with sqlite3.connect(service.index_file) as conn:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM chunks WHERE document_id = ?", (doc.id,)
+        ).fetchone()[0]
+    assert n >= 1
