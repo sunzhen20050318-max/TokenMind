@@ -61,6 +61,18 @@ class Session:
             self.metadata.pop("project_id", None)
         self.updated_at = datetime.now()
 
+    @property
+    def active_wiki_kb_id(self) -> str | None:
+        value = self.metadata.get("active_wiki_kb_id")
+        return value if isinstance(value, str) and value else None
+
+    def set_active_wiki_kb_id(self, kb_id: str | None) -> None:
+        if kb_id:
+            self.metadata["active_wiki_kb_id"] = kb_id
+        else:
+            self.metadata.pop("active_wiki_kb_id", None)
+        self.updated_at = datetime.now()
+
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
         msg = {

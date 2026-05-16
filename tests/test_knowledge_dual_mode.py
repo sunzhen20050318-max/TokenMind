@@ -308,3 +308,15 @@ def test_process_wiki_doc_skips_llm_when_no_provider(tmp_path):
     doc = service.register_document_upload(kb.id, src, "n.md")
     updated = service.process_document(doc.id)
     assert updated.status == "ready"
+
+
+def test_session_active_wiki_kb_id_accessor():
+    from tokenmind.session.manager import Session
+    s = Session(key="web:test")
+    assert s.active_wiki_kb_id is None
+    s.set_active_wiki_kb_id("kb_abc")
+    assert s.active_wiki_kb_id == "kb_abc"
+    assert s.metadata["active_wiki_kb_id"] == "kb_abc"
+    s.set_active_wiki_kb_id(None)
+    assert s.active_wiki_kb_id is None
+    assert "active_wiki_kb_id" not in s.metadata
