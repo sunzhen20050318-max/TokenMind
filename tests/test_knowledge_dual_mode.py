@@ -360,3 +360,20 @@ def test_context_builder_mentions_previous_kb_when_switched():
         "switched_from": "A",
     })
     assert "previously used" in section.lower() or "A" in section
+
+
+def test_retrieve_for_session_skips_wiki_kbs(tmp_path):
+    service = KnowledgeService(tmp_path)
+    rag_kb = service.create_knowledge_base("rag", "")
+    wiki_kb = service.create_knowledge_base("wiki", "", type="wiki")
+    # Link both
+    service.set_session_links("web:s1", [rag_kb.id, wiki_kb.id])
+    # Upload to wiki — should NOT be retrievable
+    src = tmp_path / "x.md"
+    src.write_text("alpha beta gamma keyword", encoding="utf-8")
+    doc = service.register_document_upload(wiki_kb.id, src, "x.md")
+    service.process_document(doc.id)
+
+    hits = service.retrieve_for_session("web:s1", "keyword")
+    for hit in hits:
+        assert hit["knowledge_base_id"] != wiki_kb.id, f"wiki KB leaked into retrieve: {hit}"

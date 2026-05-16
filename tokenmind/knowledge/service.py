@@ -1179,7 +1179,16 @@ class KnowledgeService:
         *,
         top_k: int | None = None,
     ) -> list[dict[str, Any]]:
-        linked_ids = self.get_session_links(session_id)
+        all_linked_ids = self.get_session_links(session_id)
+        # Wiki KBs are not auto-retrieved; they're accessed via tools (wiki_*) when active.
+        with self._state_lock:
+            self._reload()
+            rag_kb_ids = {
+                item["id"]
+                for item in self._state["knowledge_bases"]
+                if item["id"] in all_linked_ids and item.get("type", "rag") == "rag"
+            }
+        linked_ids = [k for k in all_linked_ids if k in rag_kb_ids]
         if not linked_ids or not query.strip():
             return []
 
