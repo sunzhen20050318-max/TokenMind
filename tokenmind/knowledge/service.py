@@ -198,14 +198,36 @@ class KnowledgeService:
             return KnowledgeDocumentRecord(**item)
         raise KeyError(f"Knowledge document not found: {document_id}")
 
-    def create_knowledge_base(self, name: str, description: str) -> KnowledgeBaseRecord:
+    def create_knowledge_base(
+        self,
+        name: str,
+        description: str,
+        *,
+        type: str = "rag",
+        language: str = "zh",
+    ) -> KnowledgeBaseRecord:
+        from tokenmind.knowledge.wiki_paths import ensure_wiki_structure, get_kb_root
+
+        if type not in ("rag", "wiki"):
+            raise ValueError(f"invalid kb type: {type}")
         with self._state_lock:
             self._reload()
             now = utc_now_iso()
+            kb_id = f"kb_{uuid.uuid4().hex[:10]}"
+            root_path = ""
+            if type == "wiki":
+                kb_root = get_kb_root(self.root.parent, kb_id)
+                ensure_wiki_structure(
+                    kb_root, name=name, description=description, language=language
+                )
+                root_path = str(kb_root)
             record = KnowledgeBaseRecord(
-                id=f"kb_{uuid.uuid4().hex[:10]}",
+                id=kb_id,
                 name=name,
                 description=description,
+                type=type,
+                language=language,
+                root_path=root_path,
                 created_at=now,
                 updated_at=now,
             )

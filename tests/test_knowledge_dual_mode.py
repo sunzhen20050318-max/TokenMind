@@ -1,4 +1,5 @@
 from tokenmind.knowledge.models import KnowledgeBaseRecord, WikiPageRecord, WikiSourceRecord
+from tokenmind.knowledge.service import KnowledgeService
 from tokenmind.knowledge.wiki_paths import (
     ensure_wiki_structure,
     get_kb_root,
@@ -95,3 +96,28 @@ def test_safe_wiki_filename_handles_special_chars():
     assert safe_wiki_filename("Hello / World?") == "Hello-World"
     assert safe_wiki_filename("  many   spaces  ") == "many-spaces"
     assert safe_wiki_filename("中文 标题") == "中文-标题"
+
+
+def test_create_rag_kb_keeps_legacy_behavior(tmp_path):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("legacy", "")
+    assert kb.type == "rag"
+    assert kb.root_path == ""
+    # 没有 raw/wiki 目录
+    assert not (tmp_path / "knowledge" / kb.id / "raw").exists()
+    assert not (tmp_path / "knowledge" / kb.id / "wiki").exists()
+
+
+def test_create_wiki_kb_creates_structure(tmp_path):
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("AI 论文", "GraphRAG 相关", type="wiki")
+    assert kb.type == "wiki"
+    root = tmp_path / "knowledge" / kb.id
+    assert kb.root_path == str(root)
+    assert (root / "raw" / "files").is_dir()
+    assert (root / "wiki" / "entities").is_dir()
+    assert (root / "wiki" / "sources").is_dir()
+    assert (root / "purpose.md").is_file()
+    assert (root / ".wiki-cache.json").is_file()
+    # purpose.md 含描述
+    assert "GraphRAG 相关" in (root / "purpose.md").read_text(encoding="utf-8")
