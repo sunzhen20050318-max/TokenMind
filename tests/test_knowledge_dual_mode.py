@@ -133,8 +133,16 @@ def test_create_wiki_kb_creates_structure(tmp_path):
 class _StubChatService:
     """Minimal ChatService stand-in exposing the methods the route hits."""
 
-    def __init__(self, knowledge: KnowledgeService):
-        self.knowledge = knowledge
+    def __init__(self, knowledge_or_path):
+        from tokenmind.session.manager import SessionManager
+
+        if isinstance(knowledge_or_path, KnowledgeService):
+            self.knowledge = knowledge_or_path
+            workspace = knowledge_or_path.workspace
+        else:
+            workspace = Path(knowledge_or_path)
+            self.knowledge = KnowledgeService(workspace)
+        self.session_manager = SessionManager(workspace)
 
     def create_knowledge_base(self, name, description, *, type="rag", language="zh"):
         return self.knowledge.create_knowledge_base(
@@ -165,6 +173,28 @@ class _StubChatService:
             raise ValueError("pages endpoint is only for wiki kbs")
         pages = scan_pages(Path(kb.root_path))
         return [{"title": p["title"], "type": p["type"], "path": p["path"]} for p in pages]
+
+    def patch_session(self, session_id: str, updates: dict) -> dict:
+        session = self.session_manager.get_or_create(session_id)
+        if "active_wiki_kb_id" in updates:
+            new_kb_id = updates["active_wiki_kb_id"]
+            if new_kb_id is not None:
+                kb = self.knowledge.get_knowledge_base(new_kb_id)
+                if kb.type != "wiki":
+                    raise ValueError("active_wiki_kb_id must reference a wiki kb")
+                previous = session.active_wiki_kb_id
+                if previous and previous != new_kb_id:
+                    try:
+                        prev_kb = self.knowledge.get_knowledge_base(previous)
+                        session.metadata["_previous_wiki_kb_name"] = prev_kb.name
+                    except KeyError:
+                        pass
+            session.set_active_wiki_kb_id(new_kb_id)
+            self.session_manager.save(session)
+        return {
+            "session_id": session_id,
+            "active_wiki_kb_id": session.active_wiki_kb_id,
+        }
 
 
 def test_api_create_wiki_kb(tmp_path):
@@ -512,4 +542,58 @@ def test_api_list_pages_rejects_rag_kb(tmp_path):
 
     kb = client.post("/api/knowledge", json={"name": "r"}).json()
     resp = client.get(f"/api/knowledge/{kb['id']}/pages")
+    assert resp.status_code == 400
+
+
+def test_api_patch_session_sets_active_wiki_kb_id(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from tokenmind.server.dependencies import get_chat_service
+    from tokenmind.server.routes.knowledge import router as knowledge_router
+    from tokenmind.server.routes.sessions import router as sessions_router
+
+    app = FastAPI()
+    app.include_router(knowledge_router)
+    app.include_router(sessions_router)
+    stub = _StubChatService(tmp_path)
+    app.dependency_overrides[get_chat_service] = lambda: stub
+    client = TestClient(app)
+
+    kb = client.post("/api/knowledge", json={"name": "w", "type": "wiki"}).json()
+
+    sid = "web:test123"
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        json={"active_wiki_kb_id": kb["id"]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["active_wiki_kb_id"] == kb["id"]
+
+    # Verify clearing
+    resp = client.patch(f"/api/sessions/{sid}", json={"active_wiki_kb_id": None})
+    assert resp.status_code == 200
+    assert resp.json()["active_wiki_kb_id"] is None
+
+
+def test_api_patch_session_rejects_non_wiki_kb(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from tokenmind.server.dependencies import get_chat_service
+    from tokenmind.server.routes.knowledge import router as knowledge_router
+    from tokenmind.server.routes.sessions import router as sessions_router
+
+    app = FastAPI()
+    app.include_router(knowledge_router)
+    app.include_router(sessions_router)
+    stub = _StubChatService(tmp_path)
+    app.dependency_overrides[get_chat_service] = lambda: stub
+    client = TestClient(app)
+
+    rag_kb = client.post("/api/knowledge", json={"name": "r"}).json()
+    resp = client.patch(
+        "/api/sessions/web:foo",
+        json={"active_wiki_kb_id": rag_kb["id"]},
+    )
     assert resp.status_code == 400

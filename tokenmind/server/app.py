@@ -1502,6 +1502,35 @@ class ChatService:
             "title": session.title,
         }
 
+    def patch_session(self, session_id: str, updates: dict) -> dict:
+        """Partially update session attributes.
+
+        Supported keys:
+          - ``active_wiki_kb_id``: must reference a wiki-type KB (or ``None``
+            to clear). When switching between active wikis the previous KB's
+            name is recorded in ``session.metadata['_previous_wiki_kb_name']``.
+        """
+        session = self.session_manager.get_or_create(session_id)
+        if "active_wiki_kb_id" in updates:
+            new_kb_id = updates["active_wiki_kb_id"]
+            if new_kb_id is not None:
+                kb = self.knowledge.get_knowledge_base(new_kb_id)
+                if kb.type != "wiki":
+                    raise ValueError("active_wiki_kb_id must reference a wiki kb")
+                previous = session.active_wiki_kb_id
+                if previous and previous != new_kb_id:
+                    try:
+                        prev_kb = self.knowledge.get_knowledge_base(previous)
+                        session.metadata["_previous_wiki_kb_name"] = prev_kb.name
+                    except KeyError:
+                        pass
+            session.set_active_wiki_kb_id(new_kb_id)
+            self.session_manager.save(session)
+        return {
+            "session_id": session_id,
+            "active_wiki_kb_id": session.active_wiki_kb_id,
+        }
+
     def ensure_session(self, session_id: str, title: str | None = None) -> dict:
         """Create a session if needed and optionally assign a title."""
         session = self.session_manager.get_or_create(session_id)
