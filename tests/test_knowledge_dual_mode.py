@@ -1,4 +1,9 @@
 from tokenmind.knowledge.models import KnowledgeBaseRecord, WikiPageRecord, WikiSourceRecord
+from tokenmind.knowledge.wiki_paths import (
+    ensure_wiki_structure,
+    get_kb_root,
+    safe_wiki_filename,
+)
 
 
 def test_record_defaults_to_rag_type():
@@ -48,3 +53,45 @@ def test_wiki_page_record_defaults():
     assert rec.outgoing_links == []
     assert rec.backlinks == []
     assert rec.sources == []
+
+
+def test_get_kb_root_joins_workspace_knowledge_kbid(tmp_path):
+    root = get_kb_root(tmp_path, "kb_abc")
+    assert root == tmp_path / "knowledge" / "kb_abc"
+
+
+def test_ensure_wiki_structure_creates_all_dirs_and_seeds(tmp_path):
+    kb_root = tmp_path / "knowledge" / "kb_x"
+    ensure_wiki_structure(kb_root, name="Test", description="desc", language="zh")
+    for sub in [
+        "raw/files",
+        "raw/webpages",
+        "raw/chats",
+        "raw/notes",
+        "raw/assets",
+        "wiki/sources",
+        "wiki/entities",
+        "wiki/topics",
+        "wiki/comparisons",
+        "wiki/synthesis/sessions",
+        "wiki/queries",
+    ]:
+        assert (kb_root / sub).is_dir(), f"{sub} not created"
+    for seed in [
+        "index.md",
+        "purpose.md",
+        "log.md",
+        ".wiki-schema.md",
+        ".wiki-cache.json",
+        "graph-data.json",
+    ]:
+        assert (kb_root / seed).is_file(), f"{seed} not created"
+    purpose = (kb_root / "purpose.md").read_text(encoding="utf-8")
+    assert "Test" in purpose
+    assert "desc" in purpose
+
+
+def test_safe_wiki_filename_handles_special_chars():
+    assert safe_wiki_filename("Hello / World?") == "Hello-World"
+    assert safe_wiki_filename("  many   spaces  ") == "many-spaces"
+    assert safe_wiki_filename("中文 标题") == "中文-标题"
