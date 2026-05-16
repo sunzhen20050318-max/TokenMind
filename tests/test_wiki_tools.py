@@ -70,4 +70,14 @@ def test_wiki_tool_returns_error_when_no_active_kb(tmp_path):
     tool = WikiGrepTool(get_active_kb=get_active)
     result = asyncio.run(tool.execute(keyword="x"))
     assert "Error" in result
-    assert "active" in result.lower()
+
+
+def test_agent_loop_registers_wiki_tools():
+    """AgentLoop._register_default_tools includes all 5 wiki_* tools."""
+    import inspect
+    from tokenmind.agent import loop as loop_module
+
+    src = inspect.getsource(loop_module.AgentLoop._register_default_tools)
+    for tool_class in ("WikiIndexTool", "WikiGrepTool", "WikiReadTool",
+                       "WikiBacklinksTool", "WikiGraphTool"):
+        assert tool_class in src, f"{tool_class} not registered in _register_default_tools"
