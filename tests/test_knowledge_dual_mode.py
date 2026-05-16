@@ -395,3 +395,18 @@ def test_delete_wiki_kb_clears_active_in_sessions(tmp_path):
     sm.invalidate("web:s1")
     reloaded = sm.get_or_create("web:s1")
     assert reloaded.active_wiki_kb_id is None
+
+
+def test_process_wiki_doc_rebuilds_graph(tmp_path):
+    import json
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    src = tmp_path / "n.md"
+    src.write_text("# Note\n[[Other]]", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "n.md")
+    service.process_document(doc.id)
+
+    graph = json.loads((tmp_path / "knowledge" / kb.id / "graph-data.json").read_text())
+    titles = {n["id"] for n in graph["nodes"]}
+    # The source page got written, so its title (probably "n" or similar) appears as a node.
+    assert len(titles) >= 1

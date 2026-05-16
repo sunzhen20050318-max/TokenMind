@@ -25,6 +25,7 @@ from tokenmind.knowledge.models import (
     SessionKnowledgeLinks,
     utc_now_iso,
 )
+from tokenmind.knowledge.wiki_graph import build_graph_data
 from tokenmind.knowledge.wiki_ingest import compile_with_llm
 from tokenmind.utils.helpers import safe_filename
 
@@ -1043,6 +1044,11 @@ class KnowledgeService:
                     loop.close()
             except Exception as exc:
                 logger.warning(f"wiki LLM compile failed: {exc}")
+
+        try:
+            build_graph_data(kb_root, persist=True)
+        except Exception as exc:
+            logger.warning(f"wiki graph rebuild failed: {exc}")
 
         return save_state(
             status="ready",
