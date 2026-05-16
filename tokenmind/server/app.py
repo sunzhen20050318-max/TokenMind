@@ -1236,6 +1236,15 @@ class ChatService:
             raise ValueError("graph is only available for wiki kbs")
         return build_graph_data(Path(kb.root_path), persist=True)
 
+    def list_wiki_pages(self, kb_id: str) -> list[dict[str, Any]]:
+        from tokenmind.knowledge.wiki_query import scan_pages
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("pages endpoint is only for wiki kbs")
+        pages = scan_pages(Path(kb.root_path))
+        return [{"title": p["title"], "type": p["type"], "path": p["path"]} for p in pages]
+
     async def send_message(
         self,
         content: str,

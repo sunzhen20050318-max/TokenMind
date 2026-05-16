@@ -205,3 +205,16 @@ async def rebuild_kb_graph(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{knowledge_base_id}/pages")
+async def list_wiki_pages(
+    knowledge_base_id: str,
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    try:
+        return {"pages": service.list_wiki_pages(knowledge_base_id)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

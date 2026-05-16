@@ -158,6 +158,14 @@ class _StubChatService:
             raise ValueError("graph is only available for wiki kbs")
         return build_graph_data(Path(kb.root_path), persist=True)
 
+    def list_wiki_pages(self, kb_id: str) -> list[dict]:
+        from tokenmind.knowledge.wiki_query import scan_pages
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("pages endpoint is only for wiki kbs")
+        pages = scan_pages(Path(kb.root_path))
+        return [{"title": p["title"], "type": p["type"], "path": p["path"]} for p in pages]
+
 
 def test_api_create_wiki_kb(tmp_path):
     """POST /api/knowledge with type=wiki creates wiki structure."""
@@ -475,3 +483,33 @@ def test_api_rebuild_graph_returns_count(tmp_path):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert "nodes" in body
+
+
+def test_api_list_pages_groups_by_type(tmp_path):
+    app = _make_kb_app(tmp_path)
+    client = TestClient(app)
+
+    kb = client.post(
+        "/api/knowledge", json={"name": "g", "type": "wiki"}
+    ).json()
+
+    # Seed a page manually
+    pages_dir = Path(tmp_path) / "knowledge" / kb["id"] / "wiki" / "entities"
+    (pages_dir / "Foo.md").write_text(
+        "---\ntype: entity\ntitle: Foo\n---\n# Foo\n", encoding="utf-8"
+    )
+
+    resp = client.get(f"/api/knowledge/{kb['id']}/pages")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    titles = [p["title"] for p in body["pages"]]
+    assert "Foo" in titles
+
+
+def test_api_list_pages_rejects_rag_kb(tmp_path):
+    app = _make_kb_app(tmp_path)
+    client = TestClient(app)
+
+    kb = client.post("/api/knowledge", json={"name": "r"}).json()
+    resp = client.get(f"/api/knowledge/{kb['id']}/pages")
+    assert resp.status_code == 400
