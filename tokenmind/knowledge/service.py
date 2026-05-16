@@ -276,7 +276,7 @@ class KnowledgeService:
             self._save()
             return updated
 
-    def delete_knowledge_base(self, knowledge_base_id: str) -> dict[str, Any]:
+    def delete_knowledge_base(self, knowledge_base_id: str, *, session_manager=None) -> dict[str, Any]:
         documents = self.list_documents(knowledge_base_id)
         for document in documents:
             self.delete_document(knowledge_base_id, document.id)
@@ -301,6 +301,17 @@ class KnowledgeService:
                     cleaned_session_links[session_id] = filtered
             self._state["session_links"] = cleaned_session_links
             self._save()
+
+        # Cascade: clear any session that had this KB as its active wiki KB.
+        if session_manager is not None:
+            for summary in session_manager.list_sessions():
+                key = summary.get("key") if isinstance(summary, dict) else getattr(summary, "key", None)
+                if not key:
+                    continue
+                session = session_manager.get_or_create(key)
+                if session.active_wiki_kb_id == knowledge_base_id:
+                    session.set_active_wiki_kb_id(None)
+                    session_manager.save(session)
 
         return {
             "success": True,

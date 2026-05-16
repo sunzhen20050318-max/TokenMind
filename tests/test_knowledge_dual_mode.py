@@ -377,3 +377,21 @@ def test_retrieve_for_session_skips_wiki_kbs(tmp_path):
     hits = service.retrieve_for_session("web:s1", "keyword")
     for hit in hits:
         assert hit["knowledge_base_id"] != wiki_kb.id, f"wiki KB leaked into retrieve: {hit}"
+
+
+def test_delete_wiki_kb_clears_active_in_sessions(tmp_path):
+    from tokenmind.session.manager import SessionManager
+
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("wiki", "", type="wiki")
+    sm = SessionManager(tmp_path)
+    s = sm.get_or_create("web:s1")
+    s.set_active_wiki_kb_id(kb.id)
+    sm.save(s)
+
+    service.delete_knowledge_base(kb.id, session_manager=sm)
+
+    # Force a re-read from disk to verify the change was persisted.
+    sm.invalidate("web:s1")
+    reloaded = sm.get_or_create("web:s1")
+    assert reloaded.active_wiki_kb_id is None

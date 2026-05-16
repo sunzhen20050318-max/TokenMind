@@ -1165,7 +1165,9 @@ class ChatService:
 
     def delete_knowledge_base(self, knowledge_base_id: str) -> dict[str, Any]:
         self._sync_knowledge_config()
-        result = self.knowledge.delete_knowledge_base(knowledge_base_id)
+        result = self.knowledge.delete_knowledge_base(
+            knowledge_base_id, session_manager=self.session_manager
+        )
         self.audit.record(
             "knowledge.base.deleted",
             "success",
