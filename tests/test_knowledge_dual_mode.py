@@ -1,5 +1,4 @@
-from tokenmind.knowledge.models import KnowledgeBaseRecord
-from tokenmind.knowledge.models import WikiSourceRecord, WikiPageRecord
+from tokenmind.knowledge.models import KnowledgeBaseRecord, WikiPageRecord, WikiSourceRecord
 
 
 def test_record_defaults_to_rag_type():
