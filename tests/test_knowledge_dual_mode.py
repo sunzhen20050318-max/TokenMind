@@ -160,3 +160,10 @@ def test_api_create_wiki_kb(tmp_path):
     assert body["type"] == "wiki"
     kb_id = body["id"]
     assert (tmp_path / "knowledge" / kb_id / "raw" / "files").is_dir()
+
+
+def test_extract_text_reads_markdown(tmp_path):
+    from tokenmind.knowledge.wiki_extractors import extract_text
+    f = tmp_path / "x.md"
+    f.write_text("# Hello", encoding="utf-8")
+    assert "Hello" in extract_text(f)
