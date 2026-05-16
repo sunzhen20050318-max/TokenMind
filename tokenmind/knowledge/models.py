@@ -61,3 +61,36 @@ class KnowledgeChunkRecord(BaseModel):
 class SessionKnowledgeLinks(BaseModel):
     session_id: str
     knowledge_base_ids: list[str] = Field(default_factory=list)
+
+
+class WikiSourceRecord(BaseModel):
+    id: str
+    knowledge_base_id: str
+    title: str
+    source_type: Literal["file", "webpage", "chat", "note"]
+    raw_path: str
+    original_name: str = ""
+    source_url: str | None = None
+    sha256: str = ""
+    size: int = 0
+    status: Literal["registered", "processing", "ready", "failed"] = "registered"
+    processing_stage: str = "ready"
+    processing_progress: int = 100
+    error_message: str | None = None
+    source_page_id: str | None = None
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
+
+
+class WikiPageRecord(BaseModel):
+    id: str
+    knowledge_base_id: str
+    page_type: Literal["source", "entity", "topic", "comparison", "synthesis", "query"]
+    title: str
+    path: str
+    summary: str = ""
+    outgoing_links: list[str] = Field(default_factory=list)
+    backlinks: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)

@@ -1,4 +1,5 @@
 from tokenmind.knowledge.models import KnowledgeBaseRecord
+from tokenmind.knowledge.models import WikiSourceRecord, WikiPageRecord
 
 
 def test_record_defaults_to_rag_type():
@@ -22,3 +23,29 @@ def test_record_accepts_wiki_type_and_wiki_fields():
     assert rec.type == "wiki"
     assert rec.page_count == 10
     assert rec.entity_count == 4
+
+
+def test_wiki_source_record_defaults():
+    rec = WikiSourceRecord(
+        id="src_x",
+        knowledge_base_id="kb_y",
+        title="notes",
+        source_type="file",
+        raw_path="raw/files/notes.md",
+    )
+    assert rec.status == "registered"
+    assert rec.processing_progress == 100
+    assert rec.source_page_id is None
+
+
+def test_wiki_page_record_defaults():
+    rec = WikiPageRecord(
+        id="page_x",
+        knowledge_base_id="kb_y",
+        page_type="entity",
+        title="GraphRAG",
+        path="wiki/entities/GraphRAG.md",
+    )
+    assert rec.outgoing_links == []
+    assert rec.backlinks == []
+    assert rec.sources == []
