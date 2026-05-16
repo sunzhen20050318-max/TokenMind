@@ -304,7 +304,7 @@ class KnowledgeService:
             self._save()
 
         # Cascade: clear any session that had this KB as its active wiki KB.
-        if session_manager is not None:
+        if session_manager is not None and hasattr(session_manager, "list_sessions"):
             for summary in session_manager.list_sessions():
                 key = summary.get("key") if isinstance(summary, dict) else getattr(summary, "key", None)
                 if not key:
