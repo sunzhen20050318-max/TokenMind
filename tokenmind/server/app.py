@@ -1217,6 +1217,25 @@ class ChatService:
             "document_id": document_id,
         }
 
+    def get_wiki_graph(self, kb_id: str) -> dict[str, Any]:
+        import json
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("graph is only available for wiki kbs")
+        p = Path(kb.root_path) / "graph-data.json"
+        if not p.is_file():
+            return {"nodes": [], "edges": [], "updated_at": None}
+        return json.loads(p.read_text(encoding="utf-8"))
+
+    def rebuild_wiki_graph(self, kb_id: str) -> dict[str, Any]:
+        from tokenmind.knowledge.wiki_graph import build_graph_data
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("graph is only available for wiki kbs")
+        return build_graph_data(Path(kb.root_path), persist=True)
+
     async def send_message(
         self,
         content: str,

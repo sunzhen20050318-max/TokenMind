@@ -141,6 +141,23 @@ class _StubChatService:
             name, description, type=type, language=language
         ).model_dump()
 
+    def get_wiki_graph(self, kb_id: str) -> dict:
+        import json as _json
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("graph is only available for wiki kbs")
+        p = Path(kb.root_path) / "graph-data.json"
+        if not p.is_file():
+            return {"nodes": [], "edges": [], "updated_at": None}
+        return _json.loads(p.read_text(encoding="utf-8"))
+
+    def rebuild_wiki_graph(self, kb_id: str) -> dict:
+        from tokenmind.knowledge.wiki_graph import build_graph_data
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("graph is only available for wiki kbs")
+        return build_graph_data(Path(kb.root_path), persist=True)
+
 
 def test_api_create_wiki_kb(tmp_path):
     """POST /api/knowledge with type=wiki creates wiki structure."""
@@ -410,3 +427,51 @@ def test_process_wiki_doc_rebuilds_graph(tmp_path):
     titles = {n["id"] for n in graph["nodes"]}
     # The source page got written, so its title (probably "n" or similar) appears as a node.
     assert len(titles) >= 1
+
+
+def _make_kb_app(tmp_path):
+    """Helper: build a FastAPI app wired to a stub ChatService over tmp_path."""
+    from tokenmind.server.dependencies import get_chat_service
+    from tokenmind.server.routes.knowledge import router as knowledge_router
+
+    knowledge = KnowledgeService(tmp_path)
+    stub = _StubChatService(knowledge)
+    app = FastAPI()
+    app.include_router(knowledge_router)
+    app.dependency_overrides[get_chat_service] = lambda: stub
+    return app
+
+
+def test_api_get_graph_returns_json(tmp_path):
+    app = _make_kb_app(tmp_path)
+    client = TestClient(app)
+
+    kb = client.post(
+        "/api/knowledge", json={"name": "g", "type": "wiki"}
+    ).json()
+    resp = client.get(f"/api/knowledge/{kb['id']}/graph")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "nodes" in body and "edges" in body
+
+
+def test_api_get_graph_rejects_rag_kb(tmp_path):
+    app = _make_kb_app(tmp_path)
+    client = TestClient(app)
+
+    kb = client.post("/api/knowledge", json={"name": "r"}).json()
+    resp = client.get(f"/api/knowledge/{kb['id']}/graph")
+    assert resp.status_code == 400
+
+
+def test_api_rebuild_graph_returns_count(tmp_path):
+    app = _make_kb_app(tmp_path)
+    client = TestClient(app)
+
+    kb = client.post(
+        "/api/knowledge", json={"name": "g", "type": "wiki"}
+    ).json()
+    resp = client.post(f"/api/knowledge/{kb['id']}/graph/rebuild")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "nodes" in body

@@ -179,3 +179,29 @@ async def delete_knowledge_document(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to delete knowledge document: {exc}") from exc
+
+
+@router.get("/{knowledge_base_id}/graph")
+async def get_kb_graph(
+    knowledge_base_id: str,
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    try:
+        return service.get_wiki_graph(knowledge_base_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{knowledge_base_id}/graph/rebuild")
+async def rebuild_kb_graph(
+    knowledge_base_id: str,
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    try:
+        return service.rebuild_wiki_graph(knowledge_base_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
