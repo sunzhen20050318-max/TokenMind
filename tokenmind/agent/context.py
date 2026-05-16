@@ -24,6 +24,8 @@ class ContextBuilder:
     _KNOWLEDGE_CONTEXT_TAG = "[Linked Knowledge - retrieved context only, not user text]"
     _KNOWLEDGE_CONTEXT_END_TAG = "[/Linked Knowledge]"
     _KNOWLEDGE_CONTEXT_TRAILER = "If the retrieved context is not relevant, say so instead of forcing it into the answer."
+    _ACTIVE_WIKI_TAG = "[Active Wiki Knowledge Base]"
+    _ACTIVE_WIKI_END_TAG = "[/Active Wiki Knowledge Base]"
 
     def __init__(self, workspace: Path, disabled_skills: list[str] | None = None):
         self.workspace = workspace
@@ -207,6 +209,42 @@ If the question is fully answerable from the current conversation, do not search
         lines.append(ContextBuilder._KNOWLEDGE_CONTEXT_END_TAG)
         return "\n".join(lines)
 
+    @staticmethod
+    def _build_active_wiki_section(active: dict | None) -> str | None:
+        if not active:
+            return None
+        name = active.get("kb_name", "(unnamed)")
+        purpose = (active.get("purpose_summary") or "").strip().splitlines()
+        purpose_line = purpose[0] if purpose else "(no purpose set)"
+        lines = [
+            ContextBuilder._ACTIVE_WIKI_TAG,
+            "You have an active Wiki knowledge base for this conversation.",
+            f"- Name: {name}",
+            f"- Purpose: {purpose_line}",
+            f"- Counts: {active.get('entity_count', 0)} entities, "
+            f"{active.get('topic_count', 0)} topics, "
+            f"{active.get('source_count', 0)} sources "
+            f"({active.get('page_count', 0)} pages total)",
+            "",
+            "Tools available for this KB:",
+            "  - wiki_index() — read the index.md to understand structure",
+            "  - wiki_grep(keyword) — search by keyword",
+            "  - wiki_read(page_path) — read a specific page",
+            "  - wiki_backlinks(page_path) — find pages linking to one",
+            "  - wiki_graph() — get the full link graph",
+            "",
+            "Prefer to read multiple pages and follow [[links]] before answering. "
+            "Do not invent information not present in the Wiki.",
+        ]
+        if active.get("switched_from"):
+            lines.append("")
+            lines.append(
+                f"Note: You previously used Wiki KB '{active['switched_from']}' in this conversation; "
+                "tool results from it remain in history but the active KB is now the one above."
+            )
+        lines.append(ContextBuilder._ACTIVE_WIKI_END_TAG)
+        return "\n".join(lines)
+
     @classmethod
     def strip_metadata_prefix(cls, text: str) -> str:
         result = text.lstrip()
@@ -214,6 +252,7 @@ If the question is fully answerable from the current conversation, do not search
             (cls._RUNTIME_CONTEXT_TAG, cls._RUNTIME_CONTEXT_END_TAG),
             (cls._ATTACHMENTS_CONTEXT_TAG, cls._ATTACHMENTS_CONTEXT_END_TAG),
             (cls._KNOWLEDGE_CONTEXT_TAG, cls._KNOWLEDGE_CONTEXT_END_TAG),
+            (cls._ACTIVE_WIKI_TAG, cls._ACTIVE_WIKI_END_TAG),
         )
         while True:
             for start_tag, end_tag in metadata_pairs:
@@ -267,6 +306,7 @@ If the question is fully answerable from the current conversation, do not search
         media: list[str] | None = None,
         attachments: list[dict[str, Any]] | None = None,
         knowledge_chunks: list[dict[str, Any]] | None = None,
+        active_wiki: dict | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
         current_role: str = "user",
@@ -293,11 +333,14 @@ If the question is fully answerable from the current conversation, do not search
         runtime_ctx = self._build_runtime_context(channel, chat_id)
         attachments_ctx = self._build_attachments_context(attachments)
         knowledge_ctx = self._build_knowledge_context(knowledge_chunks)
+        active_wiki_ctx = self._build_active_wiki_section(active_wiki)
         metadata_blocks = [runtime_ctx]
         if attachments_ctx:
             metadata_blocks.append(attachments_ctx)
         if knowledge_ctx:
             metadata_blocks.append(knowledge_ctx)
+        if active_wiki_ctx:
+            metadata_blocks.append(active_wiki_ctx)
         metadata_prefix = "\n\n".join(metadata_blocks)
 
         user_content = self._build_user_content(current_message, media)

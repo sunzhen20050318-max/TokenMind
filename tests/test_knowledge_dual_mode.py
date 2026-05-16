@@ -320,3 +320,43 @@ def test_session_active_wiki_kb_id_accessor():
     s.set_active_wiki_kb_id(None)
     assert s.active_wiki_kb_id is None
     assert "active_wiki_kb_id" not in s.metadata
+
+
+def test_context_builder_includes_active_wiki_section(tmp_path):
+    from tokenmind.agent.context import ContextBuilder
+    cb = ContextBuilder(tmp_path)
+    section = cb._build_active_wiki_section({
+        "kb_name": "AI 论文",
+        "purpose_summary": "围绕 GraphRAG 的论文集",
+        "page_count": 10,
+        "entity_count": 4,
+        "topic_count": 3,
+        "source_count": 5,
+        "switched_from": None,
+    })
+    assert section is not None
+    assert "AI 论文" in section
+    assert "wiki_index" in section
+    assert "wiki_grep" in section
+    assert "GraphRAG" in section
+
+
+def test_context_builder_returns_none_without_active_kb():
+    from tokenmind.agent.context import ContextBuilder
+    cb = ContextBuilder(Path("/tmp"))
+    assert cb._build_active_wiki_section(None) is None
+
+
+def test_context_builder_mentions_previous_kb_when_switched():
+    from tokenmind.agent.context import ContextBuilder
+    cb = ContextBuilder(Path("/tmp"))
+    section = cb._build_active_wiki_section({
+        "kb_name": "B",
+        "purpose_summary": "",
+        "page_count": 0,
+        "entity_count": 0,
+        "topic_count": 0,
+        "source_count": 0,
+        "switched_from": "A",
+    })
+    assert "previously used" in section.lower() or "A" in section

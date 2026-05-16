@@ -284,6 +284,31 @@ class AgentLoop:
             return None
         return {"kb_root": Path(kb.root_path), "kb_name": kb.name, "kb_id": kb.id}
 
+    def _build_active_wiki_arg(self) -> dict | None:
+        """Return the active_wiki dict for ContextBuilder.build_messages, or None."""
+        active_kb = self._get_active_wiki_kb()
+        if not active_kb:
+            return None
+        kb_root = active_kb["kb_root"]
+        purpose_path = kb_root / "purpose.md"
+        try:
+            purpose = purpose_path.read_text(encoding="utf-8") if purpose_path.is_file() else ""
+        except Exception:
+            purpose = ""
+        try:
+            kb_record = self.knowledge.get_knowledge_base(active_kb["kb_id"])
+        except Exception:
+            return None
+        return {
+            "kb_name": active_kb["kb_name"],
+            "purpose_summary": purpose[:400],
+            "page_count": kb_record.page_count,
+            "entity_count": kb_record.entity_count,
+            "topic_count": kb_record.topic_count,
+            "source_count": kb_record.source_count,
+            "switched_from": None,  # task 24 will populate via session.metadata
+        }
+
     def _record_usage(
         self,
         response: Any,
@@ -1575,6 +1600,7 @@ class AgentLoop:
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
                 current_role=current_role,
+                active_wiki=self._build_active_wiki_arg(),
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages, msg=msg)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -1650,6 +1676,7 @@ class AgentLoop:
             media=msg.media if msg.media else None,
             attachments=msg.metadata.get("attachments") if msg.metadata else None,
             knowledge_chunks=knowledge_chunks,
+            active_wiki=self._build_active_wiki_arg(),
             channel=msg.channel, chat_id=msg.chat_id,
         )
         raw_timeline_events: list[dict[str, Any]] = []
