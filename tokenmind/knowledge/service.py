@@ -25,8 +25,9 @@ from tokenmind.knowledge.models import (
     SessionKnowledgeLinks,
     utc_now_iso,
 )
+from tokenmind.knowledge.wiki_graph import build_graph_data
+from tokenmind.knowledge.wiki_ingest import compile_with_llm
 from tokenmind.utils.helpers import safe_filename
-
 
 TEXT_SUFFIXES = {
     ".txt",
@@ -88,6 +89,12 @@ class KnowledgeService:
         self._state_lock = threading.RLock()
         self._state = self._load()
         self._ensure_index()
+        self._wiki_llm_provider = None
+        self._wiki_llm_model: str | None = None
+
+    def set_wiki_llm(self, provider, model: str) -> None:
+        self._wiki_llm_provider = provider
+        self._wiki_llm_model = model
 
     def configure(
         self,
@@ -198,14 +205,36 @@ class KnowledgeService:
             return KnowledgeDocumentRecord(**item)
         raise KeyError(f"Knowledge document not found: {document_id}")
 
-    def create_knowledge_base(self, name: str, description: str) -> KnowledgeBaseRecord:
+    def create_knowledge_base(
+        self,
+        name: str,
+        description: str,
+        *,
+        type: str = "rag",
+        language: str = "zh",
+    ) -> KnowledgeBaseRecord:
+        from tokenmind.knowledge.wiki_paths import ensure_wiki_structure, get_kb_root
+
+        if type not in ("rag", "wiki"):
+            raise ValueError(f"invalid kb type: {type}")
         with self._state_lock:
             self._reload()
             now = utc_now_iso()
+            kb_id = f"kb_{uuid.uuid4().hex[:10]}"
+            root_path = ""
+            if type == "wiki":
+                kb_root = get_kb_root(self.root.parent, kb_id)
+                ensure_wiki_structure(
+                    kb_root, name=name, description=description, language=language
+                )
+                root_path = str(kb_root)
             record = KnowledgeBaseRecord(
-                id=f"kb_{uuid.uuid4().hex[:10]}",
+                id=kb_id,
                 name=name,
                 description=description,
+                type=type,
+                language=language,
+                root_path=root_path,
                 created_at=now,
                 updated_at=now,
             )
@@ -248,7 +277,7 @@ class KnowledgeService:
             self._save()
             return updated
 
-    def delete_knowledge_base(self, knowledge_base_id: str) -> dict[str, Any]:
+    def delete_knowledge_base(self, knowledge_base_id: str, *, session_manager=None) -> dict[str, Any]:
         documents = self.list_documents(knowledge_base_id)
         for document in documents:
             self.delete_document(knowledge_base_id, document.id)
@@ -273,6 +302,17 @@ class KnowledgeService:
                     cleaned_session_links[session_id] = filtered
             self._state["session_links"] = cleaned_session_links
             self._save()
+
+        # Cascade: clear any session that had this KB as its active wiki KB.
+        if session_manager is not None and hasattr(session_manager, "list_sessions"):
+            for summary in session_manager.list_sessions():
+                key = summary.get("key") if isinstance(summary, dict) else getattr(summary, "key", None)
+                if not key:
+                    continue
+                session = session_manager.get_or_create(key)
+                if session.active_wiki_kb_id == knowledge_base_id:
+                    session.set_active_wiki_kb_id(None)
+                    session_manager.save(session)
 
         return {
             "success": True,
@@ -301,6 +341,15 @@ class KnowledgeService:
             if item["id"] == knowledge_base_id:
                 item["document_count"] = count
                 item["updated_at"] = now
+                if item.get("type") == "wiki":
+                    cache_path = Path(item.get("root_path") or "") / ".wiki-cache.json"
+                    if cache_path.is_file():
+                        try:
+                            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+                            item["source_count"] = len(cache.get("sources", {}))
+                            item["page_count"] = len(cache.get("pages", {}))
+                        except Exception:
+                            pass
                 break
 
     def set_session_links(self, session_id: str, knowledge_base_ids: list[str]) -> None:
@@ -770,9 +819,19 @@ class KnowledgeService:
         source: Path,
         original_name: str,
     ) -> KnowledgeDocumentRecord:
+        kb = self.get_knowledge_base(knowledge_base_id)
+        if kb.type == "wiki":
+            return self._wiki_register_source(kb, source, original_name)
+        return self._rag_register_document(knowledge_base_id, source, original_name)
+
+    def _rag_register_document(
+        self,
+        knowledge_base_id: str,
+        source: Path,
+        original_name: str,
+    ) -> KnowledgeDocumentRecord:
         with self._state_lock:
             self._reload()
-            self.get_knowledge_base(knowledge_base_id)
             target, safe_name = self._prepare_document_target(knowledge_base_id, original_name, source)
             shutil.copy2(source, target)
             now = utc_now_iso()
@@ -795,7 +854,210 @@ class KnowledgeService:
             self._save()
             return document
 
+    def _wiki_register_source(
+        self,
+        kb: KnowledgeBaseRecord,
+        source: Path,
+        original_name: str,
+    ) -> KnowledgeDocumentRecord:
+        import hashlib
+
+        from tokenmind.knowledge.wiki_paths import get_kb_root, safe_wiki_filename
+
+        kb_root = Path(kb.root_path or get_kb_root(self.root.parent, kb.id))
+        raw_dir = kb_root / "raw" / "files"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+        safe_name = safe_wiki_filename(Path(original_name).stem) + Path(original_name).suffix
+        target = raw_dir / safe_name
+        if target.exists():
+            target = raw_dir / f"{Path(safe_name).stem}-{uuid.uuid4().hex[:6]}{Path(safe_name).suffix}"
+        shutil.copy2(source, target)
+        now = utc_now_iso()
+
+        document = KnowledgeDocumentRecord(
+            id=f"doc_{uuid.uuid4().hex[:10]}",
+            knowledge_base_id=kb.id,
+            name=original_name or safe_name,
+            path=str(target),
+            file_type=target.suffix.lower().lstrip("."),
+            size=target.stat().st_size,
+            status="processing",
+            processing_stage="queued",
+            processing_progress=5,
+            chunk_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        with self._state_lock:
+            self._reload()
+            self._state["documents"].append(document.model_dump())
+            self._update_wiki_cache(kb_root, sha256=sha256, document=document)
+            self._update_knowledge_base_counts(kb.id)
+            self._save()
+        return document
+
+    def _update_wiki_cache(
+        self,
+        kb_root: Path,
+        *,
+        sha256: str,
+        document: KnowledgeDocumentRecord,
+    ) -> None:
+        import json
+
+        cache_path = kb_root / ".wiki-cache.json"
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        cache["sources"][f"sha256:{sha256}"] = {
+            "document_id": document.id,
+            "title": document.name,
+            "raw_path": str(Path(document.path).relative_to(kb_root)),
+            "status": "registered",
+            "created_at": document.created_at,
+        }
+        cache["updated_at"] = utc_now_iso()
+        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def process_document(self, document_id: str) -> KnowledgeDocumentRecord:
+        with self._state_lock:
+            self._reload()
+            existing = next((item for item in self._state["documents"] if item["id"] == document_id), None)
+            if existing is None:
+                raise KeyError(f"Knowledge document not found: {document_id}")
+            kb_id = str(existing["knowledge_base_id"])
+        kb = self.get_knowledge_base(kb_id)
+        if kb.type == "wiki":
+            return self._wiki_process_document(kb, document_id)
+        return self._rag_process_document(document_id)
+
+    def _wiki_process_document(
+        self, kb: KnowledgeBaseRecord, document_id: str
+    ) -> KnowledgeDocumentRecord:
+        from tokenmind.knowledge.wiki_extractors import extract_text
+        from tokenmind.knowledge.wiki_ingest import compile_source_page_template
+        from tokenmind.knowledge.wiki_paths import safe_wiki_filename
+
+        def save_state(**updates: Any) -> KnowledgeDocumentRecord:
+            with self._state_lock:
+                self._reload()
+                updated = self._update_document_record(document_id, **updates)
+                self._update_knowledge_base_counts(kb.id)
+                self._save()
+                return updated
+
+        with self._state_lock:
+            self._reload()
+            doc = next(item for item in self._state["documents"] if item["id"] == document_id)
+            path = Path(str(doc["path"]))
+            doc_name = doc.get("name") or path.stem
+
+        if not path.exists():
+            return save_state(
+                status="failed",
+                processing_stage="failed",
+                error_message="Source file is missing",
+            )
+
+        save_state(
+            status="processing",
+            processing_stage="extracting",
+            processing_progress=25,
+            error_message=None,
+        )
+        try:
+            text = extract_text(path)
+        except Exception as exc:
+            logger.exception("Failed to extract wiki document {}", document_id)
+            return save_state(
+                status="failed",
+                processing_stage="failed",
+                error_message=str(exc),
+            )
+
+        save_state(processing_stage="compiling_source", processing_progress=70)
+        kb_root = Path(kb.root_path)
+        try:
+            raw_rel = str(path.relative_to(kb_root))
+        except ValueError:
+            raw_rel = str(path)
+        page_id = f"page_{uuid.uuid4().hex[:10]}"
+        title = doc_name
+        safe_name = safe_wiki_filename(Path(title).stem) + ".md"
+
+        cache_path = kb_root / ".wiki-cache.json"
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        sha = ""
+        for key, entry in cache.get("sources", {}).items():
+            if entry.get("document_id") == document_id:
+                sha = key.split(":", 1)[1] if ":" in key else ""
+                break
+
+        page_md = compile_source_page_template(
+            page_id=page_id,
+            source_id=document_id,
+            title=title,
+            raw_path=raw_rel,
+            sha256=sha,
+            body_text=text,
+        )
+        page_path = kb_root / "wiki" / "sources" / safe_name
+        page_path.parent.mkdir(parents=True, exist_ok=True)
+        page_path.write_text(page_md, encoding="utf-8")
+
+        sources_map = cache.setdefault("sources", {})
+        sha_key = f"sha256:{sha}"
+        sources_map.setdefault(sha_key, {})
+        sources_map[sha_key]["status"] = "ready"
+        sources_map[sha_key]["source_page_id"] = page_id
+        cache.setdefault("pages", {})[page_id] = {
+            "path": f"wiki/sources/{safe_name}",
+            "type": "source",
+            "title": title,
+            "source_id": document_id,
+        }
+        cache["updated_at"] = utc_now_iso()
+        cache_path.write_text(
+            json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        if self._wiki_llm_provider is not None and self._wiki_llm_model:
+            try:
+                import asyncio
+                coro = compile_with_llm(
+                    provider=self._wiki_llm_provider,
+                    model=self._wiki_llm_model,
+                    kb_root=kb_root,
+                    source_title=title,
+                    source_text=text,
+                    source_page_id=page_id,
+                    language=getattr(kb, "language", "zh"),
+                )
+                # Create a fresh loop. If called from inside a running loop,
+                # this still works because we're on a sync method invoked from
+                # an executor / sync context. asyncio.run() would error inside
+                # an already-running loop; new_event_loop + run_until_complete
+                # avoids that.
+                loop = asyncio.new_event_loop()
+                try:
+                    loop.run_until_complete(coro)
+                finally:
+                    loop.close()
+            except Exception as exc:
+                logger.warning(f"wiki LLM compile failed: {exc}")
+
+        try:
+            build_graph_data(kb_root, persist=True)
+        except Exception as exc:
+            logger.warning(f"wiki graph rebuild failed: {exc}")
+
+        return save_state(
+            status="ready",
+            processing_stage="ready",
+            processing_progress=100,
+            error_message=None,
+        )
+
+    def _rag_process_document(self, document_id: str) -> KnowledgeDocumentRecord:
         with self._state_lock:
             self._reload()
             existing = next((item for item in self._state["documents"] if item["id"] == document_id), None)
@@ -900,7 +1162,13 @@ class KnowledgeService:
                     return KnowledgeDocumentRecord(**item)
             raise KeyError(f"Knowledge document not found: {document_id}")
 
-    def delete_document(self, knowledge_base_id: str, document_id: str) -> None:
+    def delete_document(self, knowledge_base_id: str, document_id: str) -> Any:
+        kb = self.get_knowledge_base(knowledge_base_id)
+        if kb.type == "wiki":
+            return self._wiki_delete_document(kb, document_id)
+        return self._rag_delete_document(knowledge_base_id, document_id)
+
+    def _rag_delete_document(self, knowledge_base_id: str, document_id: str) -> None:
         document = self.get_document(knowledge_base_id, document_id)
         path = Path(document.path)
         if path.exists():
@@ -927,6 +1195,49 @@ class KnowledgeService:
             self._update_knowledge_base_counts(knowledge_base_id)
             self._save()
 
+    def _wiki_delete_document(self, kb: KnowledgeBaseRecord, document_id: str) -> dict[str, Any]:
+        kb_root = Path(kb.root_path)
+        cache_path = kb_root / ".wiki-cache.json"
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+
+        source_page_id = None
+        cache_key_to_remove = None
+        for key, entry in cache.get("sources", {}).items():
+            if entry.get("document_id") == document_id:
+                source_page_id = entry.get("source_page_id")
+                cache_key_to_remove = key
+                break
+
+        with self._state_lock:
+            self._reload()
+            doc = next((d for d in self._state["documents"] if d["id"] == document_id), None)
+            if doc is None:
+                raise KeyError(f"document not found: {document_id}")
+            raw_path = Path(doc["path"])
+            if raw_path.exists():
+                raw_path.unlink()
+            self._state["documents"] = [d for d in self._state["documents"] if d["id"] != document_id]
+            self._update_knowledge_base_counts(kb.id)
+            self._save()
+
+        if source_page_id and source_page_id in cache.get("pages", {}):
+            page_rel = cache["pages"][source_page_id]["path"]
+            page_path = kb_root / page_rel
+            if page_path.exists():
+                page_path.unlink()
+            del cache["pages"][source_page_id]
+        if cache_key_to_remove:
+            del cache["sources"][cache_key_to_remove]
+        cache["updated_at"] = utc_now_iso()
+        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        try:
+            build_graph_data(kb_root, persist=True)
+        except Exception as exc:
+            logger.warning(f"graph rebuild after delete failed: {exc}")
+
+        return {"success": True, "document_id": document_id}
+
     def retrieve_for_session(
         self,
         session_id: str,
@@ -934,7 +1245,16 @@ class KnowledgeService:
         *,
         top_k: int | None = None,
     ) -> list[dict[str, Any]]:
-        linked_ids = self.get_session_links(session_id)
+        all_linked_ids = self.get_session_links(session_id)
+        # Wiki KBs are not auto-retrieved; they're accessed via tools (wiki_*) when active.
+        with self._state_lock:
+            self._reload()
+            rag_kb_ids = {
+                item["id"]
+                for item in self._state["knowledge_bases"]
+                if item["id"] in all_linked_ids and item.get("type", "rag") == "rag"
+            }
+        linked_ids = [k for k in all_linked_ids if k in rag_kb_ids]
         if not linked_ids or not query.strip():
             return []
 

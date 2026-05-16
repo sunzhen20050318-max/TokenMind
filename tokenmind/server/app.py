@@ -1130,9 +1130,18 @@ class ChatService:
         self._sync_knowledge_config()
         return self.knowledge.get_knowledge_overview()
 
-    def create_knowledge_base(self, name: str, description: str) -> dict[str, Any]:
+    def create_knowledge_base(
+        self,
+        name: str,
+        description: str,
+        *,
+        type: str = "rag",
+        language: str = "zh",
+    ) -> dict[str, Any]:
         self._sync_knowledge_config()
-        return self.knowledge.create_knowledge_base(name, description).model_dump()
+        return self.knowledge.create_knowledge_base(
+            name, description, type=type, language=language
+        ).model_dump()
 
     def get_knowledge_base_detail(self, knowledge_base_id: str) -> dict[str, Any]:
         self._sync_knowledge_config()
@@ -1156,7 +1165,9 @@ class ChatService:
 
     def delete_knowledge_base(self, knowledge_base_id: str) -> dict[str, Any]:
         self._sync_knowledge_config()
-        result = self.knowledge.delete_knowledge_base(knowledge_base_id)
+        result = self.knowledge.delete_knowledge_base(
+            knowledge_base_id, session_manager=self.session_manager
+        )
         self.audit.record(
             "knowledge.base.deleted",
             "success",
@@ -1205,6 +1216,34 @@ class ChatService:
             "knowledge_base_id": knowledge_base_id,
             "document_id": document_id,
         }
+
+    def get_wiki_graph(self, kb_id: str) -> dict[str, Any]:
+        import json
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("graph is only available for wiki kbs")
+        p = Path(kb.root_path) / "graph-data.json"
+        if not p.is_file():
+            return {"nodes": [], "edges": [], "updated_at": None}
+        return json.loads(p.read_text(encoding="utf-8"))
+
+    def rebuild_wiki_graph(self, kb_id: str) -> dict[str, Any]:
+        from tokenmind.knowledge.wiki_graph import build_graph_data
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("graph is only available for wiki kbs")
+        return build_graph_data(Path(kb.root_path), persist=True)
+
+    def list_wiki_pages(self, kb_id: str) -> list[dict[str, Any]]:
+        from tokenmind.knowledge.wiki_query import scan_pages
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("pages endpoint is only for wiki kbs")
+        pages = scan_pages(Path(kb.root_path))
+        return [{"title": p["title"], "type": p["type"], "path": p["path"]} for p in pages]
 
     async def send_message(
         self,
@@ -1461,6 +1500,35 @@ class ChatService:
         return {
             "session_id": session_id,
             "title": session.title,
+        }
+
+    def patch_session(self, session_id: str, updates: dict) -> dict:
+        """Partially update session attributes.
+
+        Supported keys:
+          - ``active_wiki_kb_id``: must reference a wiki-type KB (or ``None``
+            to clear). When switching between active wikis the previous KB's
+            name is recorded in ``session.metadata['_previous_wiki_kb_name']``.
+        """
+        session = self.session_manager.get_or_create(session_id)
+        if "active_wiki_kb_id" in updates:
+            new_kb_id = updates["active_wiki_kb_id"]
+            if new_kb_id is not None:
+                kb = self.knowledge.get_knowledge_base(new_kb_id)
+                if kb.type != "wiki":
+                    raise ValueError("active_wiki_kb_id must reference a wiki kb")
+                previous = session.active_wiki_kb_id
+                if previous and previous != new_kb_id:
+                    try:
+                        prev_kb = self.knowledge.get_knowledge_base(previous)
+                        session.metadata["_previous_wiki_kb_name"] = prev_kb.name
+                    except KeyError:
+                        pass
+            session.set_active_wiki_kb_id(new_kb_id)
+            self.session_manager.save(session)
+        return {
+            "session_id": session_id,
+            "active_wiki_kb_id": session.active_wiki_kb_id,
         }
 
     def ensure_session(self, session_id: str, title: str | None = None) -> dict:

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from tokenmind.server.dependencies import get_chat_service
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -45,10 +49,11 @@ class RenameSessionResponse(BaseModel):
     title: str | None = None
 
 
-def get_chat_service():
-    """Get chat service dependency."""
-    from tokenmind.server.dependencies import get_chat_service
-    return get_chat_service()
+class SessionPatchPayload(BaseModel):
+    """Patch payload for partially updating a session."""
+
+    active_wiki_kb_id: str | None = None
+    # Add more patchable fields here later if needed.
 
 
 @router.get("", response_model=SessionListResponse)
@@ -126,3 +131,18 @@ async def rename_session(
         return RenameSessionResponse(**result)
     except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.patch("/{session_id}")
+async def patch_session(
+    session_id: str,
+    payload: SessionPatchPayload,
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    """Partially update session attributes (e.g. active_wiki_kb_id)."""
+    try:
+        return service.patch_session(session_id, payload.model_dump(exclude_unset=True))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

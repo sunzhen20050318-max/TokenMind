@@ -10,6 +10,7 @@ import sys
 import time
 import weakref
 from contextlib import AsyncExitStack
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -32,6 +33,13 @@ from tokenmind.agent.tools.registry import ToolRegistry
 from tokenmind.agent.tools.shell import ExecTool
 from tokenmind.agent.tools.spawn import SpawnTool
 from tokenmind.agent.tools.web import WebFetchTool, WebSearchTool
+from tokenmind.agent.tools.wiki import (
+    WikiBacklinksTool,
+    WikiGraphTool,
+    WikiGrepTool,
+    WikiIndexTool,
+    WikiReadTool,
+)
 from tokenmind.audit import AuditLogger
 from tokenmind.bus.events import InboundMessage, OutboundMessage
 from tokenmind.bus.queue import MessageBus
@@ -160,6 +168,7 @@ class AgentLoop:
             rerank_api_base=self.knowledge_config.rerank_api_base,
             rerank_top_n=self.knowledge_config.rerank_top_n,
         )
+        self.knowledge.set_wiki_llm(provider=provider, model=self.model)
         self.template_renderer = TemplateRenderer()
         self.sessions = session_manager or SessionManager(workspace)
         self.attachments = AttachmentStore(workspace)
@@ -184,6 +193,14 @@ class AgentLoop:
         self._background_tasks: set[asyncio.Task] = set()
         self._processing_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._pending_approvals: dict[str, PendingApproval] = {}
+        # Tracks the session_key of whichever per-session task is currently
+        # running on this asyncio context. Wiki tools use this (via
+        # _get_active_wiki_kb) to resolve the session's active Wiki KB.
+        # ContextVar gives us automatic isolation between concurrent
+        # sessions that run in separate asyncio tasks.
+        self._current_session_key: ContextVar[str | None] = ContextVar(
+            "tokenmind_current_session_key", default=None
+        )
         # Session-keyed queue of "guidance" snippets the user typed while
         # the agent was working. Each entry is a plain Chinese sentence;
         # the main ReAct loop flushes the queue right before each LLM call
@@ -231,6 +248,66 @@ class AgentLoop:
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+        # Wiki KB navigation tools. The resolver returns the active Wiki KB
+        # for the session currently being processed (tracked via a contextvar
+        # set in _dispatch / _process_message). Returns None when no wiki KB
+        # is active, in which case each tool replies with a clear error.
+        self.tools.register(WikiIndexTool(get_active_kb=self._get_active_wiki_kb))
+        self.tools.register(WikiGrepTool(get_active_kb=self._get_active_wiki_kb))
+        self.tools.register(WikiReadTool(get_active_kb=self._get_active_wiki_kb))
+        self.tools.register(WikiBacklinksTool(get_active_kb=self._get_active_wiki_kb))
+        self.tools.register(WikiGraphTool(get_active_kb=self._get_active_wiki_kb))
+
+    def _get_active_wiki_kb(self) -> dict | None:
+        """Return active Wiki KB context for the session currently being processed.
+
+        Returns {"kb_root": Path, "kb_name": str, "kb_id": str} or None.
+        The current session key is tracked on a contextvar that is set when
+        entering per-session message-handling paths (so concurrent sessions
+        running in different asyncio tasks each see their own active KB).
+        """
+        session_key = self._current_session_key.get(None)
+        if not session_key:
+            return None
+        try:
+            session = self.sessions.get_or_create(session_key)
+        except Exception:
+            return None
+        kb_id = session.active_wiki_kb_id
+        if not kb_id:
+            return None
+        try:
+            kb = self.knowledge.get_knowledge_base(kb_id)
+        except Exception:
+            return None
+        if kb.type != "wiki" or not kb.root_path:
+            return None
+        return {"kb_root": Path(kb.root_path), "kb_name": kb.name, "kb_id": kb.id}
+
+    def _build_active_wiki_arg(self) -> dict | None:
+        """Return the active_wiki dict for ContextBuilder.build_messages, or None."""
+        active_kb = self._get_active_wiki_kb()
+        if not active_kb:
+            return None
+        kb_root = active_kb["kb_root"]
+        purpose_path = kb_root / "purpose.md"
+        try:
+            purpose = purpose_path.read_text(encoding="utf-8") if purpose_path.is_file() else ""
+        except Exception:
+            purpose = ""
+        try:
+            kb_record = self.knowledge.get_knowledge_base(active_kb["kb_id"])
+        except Exception:
+            return None
+        return {
+            "kb_name": active_kb["kb_name"],
+            "purpose_summary": purpose[:400],
+            "page_count": kb_record.page_count,
+            "entity_count": kb_record.entity_count,
+            "topic_count": kb_record.topic_count,
+            "source_count": kb_record.source_count,
+            "switched_from": None,  # task 24 will populate via session.metadata
+        }
 
     def _record_usage(
         self,
@@ -877,25 +954,31 @@ class AgentLoop:
         if lock is None:
             lock = asyncio.Lock()
             self._processing_locks[msg.session_key] = lock
-        async with lock:
-            try:
-                response = await self._process_message(msg)
-                if response is not None:
-                    await self.bus.publish_outbound(response)
-                elif msg.channel == "cli":
+        # Bind the active session_key onto the contextvar so per-session
+        # tools (e.g. wiki_*) can resolve their session-scoped state.
+        token = self._current_session_key.set(msg.session_key)
+        try:
+            async with lock:
+                try:
+                    response = await self._process_message(msg)
+                    if response is not None:
+                        await self.bus.publish_outbound(response)
+                    elif msg.channel == "cli":
+                        await self.bus.publish_outbound(OutboundMessage(
+                            channel=msg.channel, chat_id=msg.chat_id,
+                            content="", metadata=msg.metadata or {},
+                        ))
+                except asyncio.CancelledError:
+                    logger.info("Task cancelled for session {}", msg.session_key)
+                    raise
+                except Exception:
+                    logger.exception("Error processing message for session {}", msg.session_key)
                     await self.bus.publish_outbound(OutboundMessage(
                         channel=msg.channel, chat_id=msg.chat_id,
-                        content="", metadata=msg.metadata or {},
+                        content="Sorry, I encountered an error.",
                     ))
-            except asyncio.CancelledError:
-                logger.info("Task cancelled for session {}", msg.session_key)
-                raise
-            except Exception:
-                logger.exception("Error processing message for session {}", msg.session_key)
-                await self.bus.publish_outbound(OutboundMessage(
-                    channel=msg.channel, chat_id=msg.chat_id,
-                    content="Sorry, I encountered an error.",
-                ))
+        finally:
+            self._current_session_key.reset(token)
 
     async def close_mcp(self) -> None:
         """Drain pending background archives, then close MCP connections."""
@@ -1478,6 +1561,29 @@ class AgentLoop:
         on_progress: Callable[[str], Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
+        # Bind the contextvar to whichever session_key this message resolves
+        # to (system messages re-parse channel:chat_id from msg.chat_id, so
+        # we recompute here). _dispatch already sets this for bus traffic,
+        # but _process_message is also reachable via process_direct
+        # (CLI/cron) — set it again as defense in depth (ContextVar.set is
+        # idempotent within the same context).
+        if msg.channel == "system":
+            _resolved_key = (msg.chat_id if ":" in msg.chat_id else f"cli:{msg.chat_id}")
+        else:
+            _resolved_key = session_key or msg.session_key
+        _ctx_token = self._current_session_key.set(_resolved_key)
+        try:
+            return await self._process_message_inner(msg, session_key, on_progress)
+        finally:
+            self._current_session_key.reset(_ctx_token)
+
+    async def _process_message_inner(
+        self,
+        msg: InboundMessage,
+        session_key: str | None = None,
+        on_progress: Callable[[str], Awaitable[None]] | None = None,
+    ) -> OutboundMessage | None:
+        """Inner body of _process_message (split out so the wrapper can bind contextvars)."""
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
             channel, chat_id = (msg.chat_id.split(":", 1) if ":" in msg.chat_id
@@ -1494,6 +1600,7 @@ class AgentLoop:
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
                 current_role=current_role,
+                active_wiki=self._build_active_wiki_arg(),
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages, msg=msg)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -1569,6 +1676,7 @@ class AgentLoop:
             media=msg.media if msg.media else None,
             attachments=msg.metadata.get("attachments") if msg.metadata else None,
             knowledge_chunks=knowledge_chunks,
+            active_wiki=self._build_active_wiki_arg(),
             channel=msg.channel, chat_id=msg.chat_id,
         )
         raw_timeline_events: list[dict[str, Any]] = []
