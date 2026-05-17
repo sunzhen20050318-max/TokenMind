@@ -458,6 +458,9 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                       <div className="knowledge-card__head">
                         <div>
                           <strong>{item.name}</strong>
+                          <span className={`knowledge-page__type-badge knowledge-page__type-badge--${item.type}`}>
+                            {item.type === 'wiki' ? 'Wiki' : 'RAG'}
+                          </span>
                           <div className="knowledge-card__pill-row">
                             <span className={`knowledge-card__status is-${item.status}`}>{item.status}</span>
                             <span className={`knowledge-card__enabled ${item.enabled ? 'is-on' : 'is-off'}`}>
@@ -480,7 +483,11 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                       <p>{item.description || '这个知识库还没有填写简介。'}</p>
 
                       <div className="knowledge-card__meta">
-                        <span>{item.document_count} 份资料</span>
+                        <span>
+                          {item.type === 'wiki'
+                            ? `${item.source_count} 份素材 · ${item.page_count} 页 · ${item.entity_count + item.topic_count} 概念`
+                            : `${item.document_count} 份资料`}
+                        </span>
                         <span>{formatDate(item.updated_at)}</span>
                       </div>
 
