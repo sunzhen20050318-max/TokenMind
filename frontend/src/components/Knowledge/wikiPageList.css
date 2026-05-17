@@ -1,0 +1,68 @@
+.wiki-pagelist {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.wiki-pagelist__empty {
+  padding: 18px;
+  color: var(--kb-muted, #b6b6bf);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.wiki-pagelist__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 6px;
+  border-bottom: 1px solid var(--kb-border, rgba(255, 255, 255, 0.06));
+}
+
+.wiki-pagelist__group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kb-soft, #6f6f77);
+}
+
+.wiki-pagelist__group-count {
+  font-size: 11px;
+  color: var(--kb-soft, #6f6f77);
+}
+
+.wiki-pagelist__items {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wiki-pagelist__item button {
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--kb-text, #f5f5f7);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.wiki-pagelist__item button:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.wiki-pagelist__item.is-active button {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}

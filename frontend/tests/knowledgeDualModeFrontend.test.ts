@@ -67,3 +67,17 @@ test('api.patchSession is a function with (sessionId, payload) signature', async
   const { api } = await import('../src/services/api');
   assert.equal(typeof api.patchSession, 'function');
 });
+
+test('WikiPageList groups pages by type in defined order', async () => {
+  const pages = [
+    { title: 'Y', type: 'source' as const, path: 'wiki/sources/Y.md' },
+    { title: 'A', type: 'entity' as const, path: 'wiki/entities/A.md' },
+    { title: 'T', type: 'topic' as const, path: 'wiki/topics/T.md' },
+  ];
+  const TYPE_ORDER = ['entity', 'topic', 'source', 'synthesis', 'comparison', 'query', 'page'];
+  const order: string[] = [];
+  for (const t of TYPE_ORDER) {
+    for (const p of pages.filter((p) => p.type === t)) order.push(p.title);
+  }
+  assert.deepEqual(order, ['A', 'T', 'Y']);
+});
