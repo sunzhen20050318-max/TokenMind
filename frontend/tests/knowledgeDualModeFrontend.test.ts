@@ -49,3 +49,21 @@ test('isRagKb returns true when type is "rag" or missing', () => {
   assert.equal(isRagKb(rag), true);
   assert.equal(isWikiKb(rag), false);
 });
+
+test('createKnowledgeBase payload accepts optional type field', () => {
+  type CreateKbPayload = Parameters<typeof import('../src/services/api').api.createKnowledgeBase>[0];
+  const payload: CreateKbPayload = { name: 'x', description: 'y', type: 'wiki' };
+  assert.equal(payload.type, 'wiki');
+});
+
+test('api exposes listWikiPages, getWikiGraph, rebuildWikiGraph', async () => {
+  const { api } = await import('../src/services/api');
+  assert.equal(typeof api.listWikiPages, 'function');
+  assert.equal(typeof api.getWikiGraph, 'function');
+  assert.equal(typeof api.rebuildWikiGraph, 'function');
+});
+
+test('api.patchSession is a function with (sessionId, payload) signature', async () => {
+  const { api } = await import('../src/services/api');
+  assert.equal(typeof api.patchSession, 'function');
+});

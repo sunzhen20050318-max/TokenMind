@@ -54,7 +54,14 @@ import type {
   RuntimeSettingsUpdate,
   ToolsSettingsUpdate,
 } from '../types/config';
-import type { KnowledgeDetailResponse, KnowledgeDocument, KnowledgeOverviewResponse } from '../types/knowledge';
+import type {
+  KnowledgeBaseType,
+  KnowledgeDetailResponse,
+  KnowledgeDocument,
+  KnowledgeOverviewResponse,
+  WikiGraphData,
+  WikiPageListResponse,
+} from '../types/knowledge';
 import type { UsageAggregateResponse, UsageQuery } from '../types/usage';
 
 const API_BASE = '/api';
@@ -657,6 +664,21 @@ export const api = {
     return res.json();
   },
 
+  async patchSession(
+    sessionId: string,
+    payload: { active_wiki_kb_id?: string | null },
+  ): Promise<{ session_id: string; active_wiki_kb_id: string | null }> {
+    const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to patch session: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
   async getMemoryOverview(
     sessionId?: string | null,
     archiveQuery?: string
@@ -870,7 +892,12 @@ export const api = {
     return res.json();
   },
 
-  async createKnowledgeBase(payload: { name: string; description: string }): Promise<KnowledgeDetailResponse | KnowledgeOverviewResponse | Record<string, unknown>> {
+  async createKnowledgeBase(payload: {
+    name: string;
+    description: string;
+    type?: KnowledgeBaseType;
+    language?: string;
+  }): Promise<KnowledgeDetailResponse | KnowledgeOverviewResponse | Record<string, unknown>> {
     const res = await fetch(`${API_BASE}/knowledge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -903,6 +930,32 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Failed to delete knowledge base: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listWikiPages(id: string): Promise<WikiPageListResponse> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}/pages`);
+    if (!res.ok) {
+      throw new Error(`Failed to list wiki pages: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getWikiGraph(id: string): Promise<WikiGraphData> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}/graph`);
+    if (!res.ok) {
+      throw new Error(`Failed to load wiki graph: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async rebuildWikiGraph(id: string): Promise<WikiGraphData> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}/graph/rebuild`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to rebuild wiki graph: ${res.statusText}`);
     }
     return res.json();
   },
