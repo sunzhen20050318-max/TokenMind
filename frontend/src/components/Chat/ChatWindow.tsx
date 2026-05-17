@@ -267,6 +267,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     loadKnowledgeBases,
     loadLinkedKnowledgeBases,
     setLinkedKnowledgeBases,
+    activeWikiKbId,
+    setActiveWikiKb,
     pendingSessionStarter,
     clearPendingSessionStarter,
     pendingApproval,
@@ -823,6 +825,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             linkedKnowledgeBaseIds={linkedKnowledgeBaseIds}
             onUpdateLinkedKnowledgeBases={(knowledgeBaseIds) => {
               void setLinkedKnowledgeBases(knowledgeBaseIds);
+            }}
+            availableWikiKbs={availableKnowledgeBases.filter(
+              (kb) => kb.enabled && kb.type === 'wiki',
+            )}
+            activeWikiKbId={activeWikiKbId}
+            onSetActiveWikiKb={(kbId) => {
+              void setActiveWikiKb(sessionId, kbId);
             }}
           />
 

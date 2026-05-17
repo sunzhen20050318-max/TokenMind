@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { UploadProgress } from '../../types';
+import type { KnowledgeBase } from '../../types/knowledge';
+import { ActiveWikiSelector } from './ActiveWikiSelector';
 import { hasFileTransfer } from './inputAreaDrag';
 import './inputArea.css';
 
@@ -56,6 +58,9 @@ interface InputAreaProps {
   knowledgeOptions?: ComposerKnowledgeOption[];
   linkedKnowledgeBaseIds?: string[];
   onUpdateLinkedKnowledgeBases?: (knowledgeBaseIds: string[]) => void;
+  availableWikiKbs?: KnowledgeBase[];
+  activeWikiKbId?: string | null;
+  onSetActiveWikiKb?: (kbId: string | null) => void;
   externalDragActive?: boolean;
   /**
    * Messages the user typed while the agent was busy. Rendered as chips
@@ -202,6 +207,9 @@ export const InputArea: React.FC<InputAreaProps> = ({
   knowledgeOptions = [],
   linkedKnowledgeBaseIds = [],
   onUpdateLinkedKnowledgeBases,
+  availableWikiKbs = [],
+  activeWikiKbId = null,
+  onSetActiveWikiKb,
   externalDragActive = false,
   pendingMessages = [],
   onCancelPendingMessage,
@@ -579,6 +587,14 @@ export const InputArea: React.FC<InputAreaProps> = ({
                 </div>
               ) : null}
             </div>
+
+            {onSetActiveWikiKb && (
+              <ActiveWikiSelector
+                availableWikiKbs={availableWikiKbs}
+                activeKbId={activeWikiKbId}
+                onChange={onSetActiveWikiKb}
+              />
+            )}
           </div>
 
           <div className="composer__footer-right">
