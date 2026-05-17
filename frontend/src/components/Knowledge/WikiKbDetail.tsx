@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../services/api';
 import type { KnowledgeBase, WikiPageSummary } from '../../types/knowledge';
+import { KnowledgeGraph } from './KnowledgeGraph';
 import { WikiPageList } from './WikiPageList';
 import { WikiPageViewer } from './WikiPageViewer';
 import './wikiKbDetail.css';
@@ -91,8 +92,13 @@ export const WikiKbDetail: React.FC<WikiKbDetailProps> = ({ kb }) => {
 
       {tab === 'graph' && (
         <div className="wiki-detail__graph-slot">
-          {/* KnowledgeGraph is mounted here in Task F11 */}
-          <div className="wiki-detail__loading">图谱组件将在 Task F11 接入</div>
+          <KnowledgeGraph
+            knowledgeBaseId={kb.id}
+            onSelectNode={(path) => {
+              setSelectedPath(path);
+              setTab('pages');
+            }}
+          />
         </div>
       )}
     </div>
