@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { CreateKnowledgeBaseModal } from '../components/Knowledge/CreateKnowledgeBaseModal';
+import { WikiKbDetail } from '../components/Knowledge/WikiKbDetail';
+import { isWikiKb } from '../types/knowledge';
 import type { KnowledgeBase, KnowledgeDetailResponse } from '../types/knowledge';
 import type { UploadProgress } from '../types';
 import './knowledge.css';
@@ -512,6 +514,9 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
           {detailLoading && !detail ? (
             <div className="knowledge-page__empty">正在加载知识库详情…</div>
           ) : detail ? (
+            isWikiKb(detail.knowledge_base) ? (
+              <WikiKbDetail kb={detail.knowledge_base} />
+            ) : (
             <>
               <div className="knowledge-page__detail-head">
                 <div>
@@ -675,6 +680,7 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                 </div>
               </div>
             </>
+            )
           ) : null}
         </section>
       )}
