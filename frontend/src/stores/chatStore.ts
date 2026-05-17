@@ -56,6 +56,7 @@ export interface SessionSlice {
   isLoading: boolean;
   currentTurnId: string | null;
   linkedKnowledgeBaseIds: string[];
+  activeWikiKbId: string | null;
   pendingApproval: PendingToolApproval | null;
   /**
    * Messages typed while the agent was busy. Auto-flushed (one at a time)
@@ -80,6 +81,7 @@ const EMPTY_SLICE: SessionSlice = {
   isLoading: false,
   currentTurnId: null,
   linkedKnowledgeBaseIds: [],
+  activeWikiKbId: null,
   pendingApproval: null,
   pendingMessages: [],
   sessionExecTrusted: false,
@@ -114,6 +116,7 @@ interface ChatState {
   creativeCapabilities: CreativeSettings | null;
   availableKnowledgeBases: KnowledgeBase[];
   linkedKnowledgeBaseIds: string[];
+  activeWikiKbId: string | null;
   pendingSessionStarter: { sessionId: string; message: string } | null;
   previewAttachment: Attachment | null;
 
@@ -160,6 +163,7 @@ interface ChatState {
   loadKnowledgeBases: () => Promise<void>;
   loadLinkedKnowledgeBases: (sessionId: string) => Promise<void>;
   setLinkedKnowledgeBases: (knowledgeBaseIds: string[]) => Promise<void>;
+  setActiveWikiKb: (sessionId: string, kbId: string | null) => Promise<void>;
   queuePendingSessionStarter: (sessionId: string, message: string) => void;
   clearPendingSessionStarter: (sessionId?: string) => void;
   openAttachmentPreview: (attachment: Attachment) => void;
@@ -230,6 +234,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   creativeCapabilities: null,
   availableKnowledgeBases: [],
   linkedKnowledgeBaseIds: [],
+  activeWikiKbId: null,
   pendingSessionStarter: null,
   previewAttachment: null,
 
@@ -305,6 +310,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isLoading: state.isLoading,
         currentTurnId: state.currentTurnId,
         linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+        activeWikiKbId: state.activeWikiKbId,
         pendingApproval: state.pendingApproval,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
@@ -322,6 +328,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isLoading: restored?.isLoading ?? false,
       currentTurnId: restored?.currentTurnId ?? null,
       linkedKnowledgeBaseIds: restored?.linkedKnowledgeBaseIds ?? [],
+      activeWikiKbId: restored?.activeWikiKbId ?? null,
       pendingApproval: restored?.pendingApproval ?? null,
       pendingMessages: restored?.pendingMessages ?? [],
       sessionExecTrusted: restored?.sessionExecTrusted ?? false,
@@ -425,6 +432,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         timelineEvents: [],
         currentTurnId: null,
         linkedKnowledgeBaseIds: [],
+        activeWikiKbId: null,
       });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to open project' });
@@ -447,6 +455,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           timelineEvents: deletingActiveProject ? [] : state.timelineEvents,
           currentTurnId: deletingActiveProject ? null : state.currentTurnId,
           linkedKnowledgeBaseIds: deletingActiveProject ? [] : state.linkedKnowledgeBaseIds,
+          activeWikiKbId: deletingActiveProject ? null : state.activeWikiKbId,
         };
       });
     } catch (e) {
@@ -927,6 +936,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  setActiveWikiKb: async (sessionId, kbId) => {
+    try {
+      const result = await api.patchSession(sessionId, { active_wiki_kb_id: kbId });
+      applySliceUpdate(set, get, sessionId, () => ({
+        activeWikiKbId: result.active_wiki_kb_id,
+      }));
+    } catch (e) {
+      console.error('Failed to set active wiki KB', e);
+      set({ error: e instanceof Error ? e.message : 'Failed to set active wiki KB' });
+      throw e;
+    }
+  },
+
   // ───────────────────── Per-session helpers ─────────────────────
 
   isCurrentSession: (sessionId) => get().currentSession === sessionId,
@@ -942,6 +964,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isLoading: state.isLoading,
         currentTurnId: state.currentTurnId,
         linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+        activeWikiKbId: state.activeWikiKbId,
         pendingApproval: state.pendingApproval,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
@@ -1162,6 +1185,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             isLoading: state.isLoading,
             currentTurnId: state.currentTurnId,
             linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+            activeWikiKbId: state.activeWikiKbId,
             pendingApproval: state.pendingApproval,
             pendingMessages: state.pendingMessages,
             sessionExecTrusted: state.sessionExecTrusted,
@@ -1208,6 +1232,7 @@ function applySliceUpdate(
       isLoading: state.isLoading,
       currentTurnId: state.currentTurnId,
       linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
+      activeWikiKbId: state.activeWikiKbId,
       pendingApproval: state.pendingApproval,
       pendingMessages: state.pendingMessages,
       sessionExecTrusted: state.sessionExecTrusted,
