@@ -1245,6 +1245,14 @@ class ChatService:
         pages = scan_pages(Path(kb.root_path))
         return [{"title": p["title"], "type": p["type"], "path": p["path"]} for p in pages]
 
+    def read_wiki_page(self, kb_id: str, page_path: str) -> dict[str, Any]:
+        from tokenmind.knowledge.wiki_query import read_wiki_page
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("page read is only available for wiki kbs")
+        return read_wiki_page(Path(kb.root_path), page_path)
+
     async def send_message(
         self,
         content: str,

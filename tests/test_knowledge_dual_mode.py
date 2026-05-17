@@ -174,6 +174,13 @@ class _StubChatService:
         pages = scan_pages(Path(kb.root_path))
         return [{"title": p["title"], "type": p["type"], "path": p["path"]} for p in pages]
 
+    def read_wiki_page(self, kb_id: str, page_path: str) -> dict:
+        from tokenmind.knowledge.wiki_query import read_wiki_page
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("page read is only available for wiki kbs")
+        return read_wiki_page(Path(kb.root_path), page_path)
+
     def patch_session(self, session_id: str, updates: dict) -> dict:
         session = self.session_manager.get_or_create(session_id)
         if "active_wiki_kb_id" in updates:
@@ -621,3 +628,25 @@ def test_delete_wiki_document_removes_source_page_and_cache_entry(tmp_path):
     # cache entry removed
     cache = json.loads((kb_root / ".wiki-cache.json").read_text())
     assert not any(e.get("document_id") == doc.id for e in cache["sources"].values())
+
+
+def test_api_read_wiki_page_returns_content(tmp_path):
+    from pathlib import Path as _P
+    app = _make_kb_app(tmp_path)
+    client = TestClient(app)
+    kb = client.post("/api/knowledge", json={"name": "w", "type": "wiki"}).json()
+    pages_dir = _P(tmp_path) / "knowledge" / kb["id"] / "wiki" / "entities"
+    (pages_dir / "Foo.md").write_text(
+        "---\ntype: entity\ntitle: Foo\n---\n# Foo\nLinks to [[Bar]].\n",
+        encoding="utf-8",
+    )
+    resp = client.get(
+        f"/api/knowledge/{kb['id']}/pages/raw",
+        params={"path": "wiki/entities/Foo.md"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["title"] == "Foo"
+    assert body["type"] == "entity"
+    assert "[[Bar]]" in body["content"]
+    assert "Bar" in body["outgoing_links"]

@@ -218,3 +218,19 @@ async def list_wiki_pages(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{knowledge_base_id}/pages/raw")
+async def read_wiki_page(
+    knowledge_base_id: str,
+    path: str,
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    try:
+        return service.read_wiki_page(knowledge_base_id, path)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
