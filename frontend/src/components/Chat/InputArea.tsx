@@ -542,7 +542,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
                 className={`composer__knowledge-trigger ${knowledgeOpen ? 'is-open' : ''}`}
                 onClick={() => setKnowledgeOpen((state) => !state)}
               >
-                {linkedKnowledgeBases.length > 0 ? '已链接知识库' : '链接知识库'}
+                {linkedKnowledgeBases.length > 0 ? '已链接 RAG 知识库' : '链接 RAG 知识库'}
               </button>
 
               {knowledgeOpen ? (

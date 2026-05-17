@@ -814,7 +814,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               void handleReasoningChange(value);
             }}
             knowledgeOptions={availableKnowledgeBases
-              .filter((item) => item.enabled)
+              .filter((item) => item.enabled && item.type === 'rag')
               .map((item) => ({
               id: item.id,
               name: item.name,
