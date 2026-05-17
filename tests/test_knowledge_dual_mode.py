@@ -348,12 +348,17 @@ def test_process_wiki_doc_calls_llm_when_provider_set(tmp_path, monkeypatch):
 
     calls = []
 
-    async def fake_compile(**kwargs):
-        calls.append(kwargs["source_title"])
-        return {"entities": [], "topics": []}
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            self._title_seen = None
 
-    monkeypatch.setattr("tokenmind.knowledge.service.compile_with_llm", fake_compile, raising=False)
-    # Inject a stub provider via attribute set after service init
+        async def run(self, *, source_title, source_text, source_page_id, source_page_path):
+            calls.append(source_title)
+            return {"iterations": 0, "tool_calls": 0, "tool_breakdown": {}, "errors": []}
+
+    monkeypatch.setattr(
+        "tokenmind.knowledge.wiki_compile.WikiCompileRunner", FakeRunner, raising=True
+    )
     service._wiki_llm_provider = object()
     service._wiki_llm_model = "stub"
 

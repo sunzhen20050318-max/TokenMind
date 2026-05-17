@@ -15,14 +15,16 @@ interface KnowledgeGraphProps {
   onSelectNode?: (path: string) => void;
 }
 
+// Muted palette inspired by Obsidian's graph: low-saturation,
+// single-direction hue per page type, kept readable on dark background.
 const CATEGORY_COLORS: Record<string, string> = {
-  entity: '#a6c4ff',
-  topic: '#b3d8b1',
-  source: '#d9c98a',
-  synthesis: '#e0a6ff',
-  comparison: '#ffb38a',
-  query: '#cccccc',
-  page: '#888888',
+  entity: '#7a9cd9',
+  topic: '#7fb37d',
+  source: '#c0a86b',
+  synthesis: '#b07ed9',
+  comparison: '#d99a6b',
+  query: '#888888',
+  page: '#6e6e6e',
 };
 
 export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ knowledgeBaseId, onSelectNode }) => {
@@ -62,9 +64,10 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ knowledgeBaseId,
   }, [loadGraph]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
     if (!chartRef.current) {
-      chartRef.current = echarts.init(containerRef.current, 'dark');
+      chartRef.current = echarts.init(container, 'dark');
     }
     const onClick = (params: unknown) => {
       const p = params as { dataType?: string; data?: { path?: string } | null };
@@ -74,7 +77,14 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ knowledgeBaseId,
       }
     };
     chartRef.current.on('click', onClick);
+
+    const ro = new ResizeObserver(() => {
+      chartRef.current?.resize();
+    });
+    ro.observe(container);
+
     return () => {
+      ro.disconnect();
       chartRef.current?.off('click', onClick);
     };
   }, [onSelectNode]);
@@ -82,45 +92,88 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ knowledgeBaseId,
   useEffect(() => {
     if (!chartRef.current || !data) return;
     const categories = Array.from(new Set(data.nodes.map((n) => n.type))).map((t) => ({ name: t }));
-    chartRef.current.setOption({
-      backgroundColor: 'transparent',
-      tooltip: {
-        formatter: (params: { dataType?: string; data?: { name?: string; type?: string; summary?: string } }) => {
-          if (params.dataType !== 'node') return '';
-          const d = params.data ?? {};
-          return `<strong>${d.name ?? ''}</strong><br/>${d.type ?? ''}<br/>${d.summary ?? ''}`;
+    chartRef.current.setOption(
+      {
+        backgroundColor: 'transparent',
+        tooltip: {
+          backgroundColor: 'rgba(20,20,22,0.94)',
+          borderColor: 'rgba(255,255,255,0.12)',
+          textStyle: { color: '#e5e5e5', fontSize: 12 },
+          formatter: (params: { dataType?: string; data?: { name?: string; type?: string; summary?: string } }) => {
+            if (params.dataType !== 'node') return '';
+            const d = params.data ?? {};
+            const summary = d.summary?.trim();
+            return `<strong>${d.name ?? ''}</strong><div style="opacity:0.6;font-size:11px;margin-top:2px">${d.type ?? ''}</div>${summary ? `<div style="margin-top:6px;max-width:280px;line-height:1.5">${summary}</div>` : ''}`;
+          },
         },
-      },
-      legend: {
-        data: categories.map((c) => c.name),
-        textStyle: { color: '#b6b6bf', fontSize: 11 },
-        top: 8,
-      },
-      series: [
-        {
-          type: 'graph',
-          layout: 'force',
-          force: { repulsion: 220, gravity: 0.05, edgeLength: [60, 140] },
-          roam: true,
-          draggable: true,
-          label: { show: true, position: 'right', color: '#f5f5f7', fontSize: 11 },
-          lineStyle: { color: 'rgba(255,255,255,0.18)', width: 1 },
-          emphasis: { focus: 'adjacency', lineStyle: { width: 2 } },
-          categories,
-          data: data.nodes.map((n) => ({
-            id: n.id,
-            name: n.title,
-            type: n.type,
-            path: n.path,
-            summary: n.summary,
-            category: n.type,
-            symbolSize: 8 + Math.min(n.degree * 3, 24),
-            itemStyle: { color: CATEGORY_COLORS[n.type] ?? '#888888' },
-          })),
-          links: data.edges.map((e) => ({ source: e.source, target: e.target })),
+        legend: {
+          data: categories.map((c) => c.name),
+          textStyle: { color: '#888', fontSize: 11 },
+          itemWidth: 8,
+          itemHeight: 8,
+          top: 10,
+          right: 16,
+          orient: 'horizontal',
         },
-      ],
-    });
+        series: [
+          {
+            type: 'graph',
+            layout: 'force',
+            force: {
+              repulsion: 320,
+              gravity: 0.08,
+              edgeLength: [80, 180],
+              friction: 0.15,
+            },
+            roam: true,
+            draggable: true,
+            zoom: 1.0,
+            label: {
+              show: true,
+              position: 'right',
+              color: '#9a9aa3',
+              fontSize: 11,
+              formatter: '{b}',
+            },
+            lineStyle: {
+              color: 'rgba(255,255,255,0.10)',
+              width: 0.8,
+              curveness: 0,
+            },
+            emphasis: {
+              focus: 'adjacency',
+              scale: 1.1,
+              label: { color: '#ffffff', fontSize: 12 },
+              lineStyle: { color: 'rgba(166,196,255,0.55)', width: 1.5 },
+            },
+            blur: {
+              itemStyle: { opacity: 0.18 },
+              lineStyle: { opacity: 0.05 },
+              label: { opacity: 0.2 },
+            },
+            categories,
+            data: data.nodes.map((n) => ({
+              id: n.id,
+              name: n.title,
+              type: n.type,
+              path: n.path,
+              summary: n.summary,
+              category: n.type,
+              symbolSize: 6 + Math.min(n.degree * 2.5, 22),
+              itemStyle: {
+                color: CATEGORY_COLORS[n.type] ?? '#888888',
+                borderColor: 'rgba(255,255,255,0.18)',
+                borderWidth: 0.5,
+                opacity: 0.92,
+              },
+            })),
+            links: data.edges.map((e) => ({ source: e.source, target: e.target })),
+          },
+        ],
+      },
+      { notMerge: true },
+    );
+    chartRef.current.resize();
   }, [data]);
 
   useEffect(() => {

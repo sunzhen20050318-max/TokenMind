@@ -7,6 +7,8 @@ import uuid as _uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from loguru import logger
+
 from tokenmind.knowledge.wiki_paths import safe_wiki_filename
 from tokenmind.knowledge.wiki_prompts import (
     build_compile_system_prompt,
@@ -41,14 +43,12 @@ def compile_source_page_template(
         f"---\n\n"
         f"# {title}\n\n"
         f"## 摘要\n\n"
-        f"（待 LLM 编译生成摘要）\n\n"
         f"## 内容节选\n\n"
         f"{excerpt}\n\n"
         f"## 原始资料\n\n"
         f"- 路径：{raw_path}\n"
         f"- SHA256：{sha256}\n\n"
-        f"## 关联\n\n"
-        f"- [[待归类主题]]\n"
+        f"## 提到的概念\n"
     )
 
 
@@ -82,23 +82,37 @@ async def compile_with_llm(
             {"role": "user", "content": user_msg},
         ],
         model=model,
-        max_tokens=4000,
+        max_tokens=8000,
     )
     raw = (response.content or "").strip()
-    raw = re.sub(r"^```(json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE | re.MULTILINE).strip()
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        return {"_fallback": True, "error": str(exc), "raw": raw[:500]}
+    cleaned = _extract_json_payload(raw)
+    data = _try_parse_json(cleaned)
+    if data is None:
+        # One repair retry: ask the LLM to fix the JSON it just emitted.
+        repaired_raw = await _repair_json_via_llm(provider, model, cleaned)
+        if repaired_raw:
+            data = _try_parse_json(_extract_json_payload(repaired_raw))
+    if data is None:
+        logger.warning(
+            "wiki compile JSON parse failed after repair (cleaned head: {!r})",
+            cleaned[:300],
+        )
+        return {"_fallback": True, "error": "json parse failed", "raw": raw[:500]}
 
-    for entity in data.get("entities", []):
+    entities = data.get("entities", []) or []
+    topics = data.get("topics", []) or []
+    logger.info(
+        "wiki compile parsed: entities={} topics={} for {}",
+        len(entities), len(topics), source_title,
+    )
+    for entity in entities:
         _write_or_merge_page(
             kb_root=kb_root,
             page_type="entity",
             data=entity,
             source_page_id=source_page_id,
         )
-    for topic in data.get("topics", []):
+    for topic in topics:
         _write_or_merge_page(
             kb_root=kb_root,
             page_type="topic",
@@ -106,6 +120,69 @@ async def compile_with_llm(
             source_page_id=source_page_id,
         )
     return data
+
+
+_THINK_BLOCK_RE = re.compile(r"<\s*(think|thinking|reasoning)\b[^>]*>.*?<\s*/\s*\1\s*>", re.IGNORECASE | re.DOTALL)
+_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?|\n?```", re.IGNORECASE)
+
+
+def _try_parse_json(text: str) -> dict | None:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+async def _repair_json_via_llm(provider, model: str, broken_json: str) -> str | None:
+    """Ask the LLM to fix its own broken JSON. Returns the repaired raw text
+    or None on failure. Cheap because we only ship the broken payload, not
+    the original source material."""
+    try:
+        response = await provider.chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You repair invalid JSON. Output ONLY a valid JSON object that "
+                        "preserves the original structure and content. Do not add commentary, "
+                        "do not wrap in code fences."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Fix this JSON:\n\n{broken_json[:12000]}",
+                },
+            ],
+            model=model,
+            max_tokens=8000,
+        )
+        return (response.content or "").strip()
+    except Exception as exc:
+        logger.warning(f"JSON repair call failed: {exc}")
+        return None
+
+
+def _extract_json_payload(raw: str) -> str:
+    """Pull the JSON object out of an LLM response that may be wrapped in
+    ``<think>`` blocks (reasoning models), ```` ```json ```` code fences, or
+    surrounded by prose. Returns the substring most likely to parse as JSON,
+    or the original string if no obvious wrapper is detected."""
+    text = _THINK_BLOCK_RE.sub("", raw).strip()
+    text = _CODE_FENCE_RE.sub("", text).strip()
+    # Find the outermost balanced { ... } region.
+    start = text.find("{")
+    if start == -1:
+        return text
+    depth = 0
+    for i in range(start, len(text)):
+        ch = text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return text[start:]
 
 
 def _read_purpose(kb_root: Path) -> str:

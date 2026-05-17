@@ -123,8 +123,15 @@ def _split_frontmatter(text: str) -> tuple[dict, str]:
     for line in fm_text.strip().splitlines():
         if ":" not in line:
             continue
+        # Skip block-list items (lines starting with whitespace + "-")
+        if line.lstrip().startswith("-"):
+            continue
         k, _, v = line.partition(":")
-        fm[k.strip()] = v.strip()
+        value = v.strip()
+        # Strip matching surrounding quotes so `evidence: "X"` → `X`.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        fm[k.strip()] = value
     return fm, body.lstrip("\n")
 
 

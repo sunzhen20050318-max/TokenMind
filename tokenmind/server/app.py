@@ -83,21 +83,28 @@ class ChatService:
         self.bus = bus
         self.agent_loop = agent_loop
         self.session_manager = session_manager
-        knowledge = self._load_knowledge_config()
-        self.knowledge = KnowledgeService(
-            session_manager.workspace,
-            vector_backend=knowledge.vector_backend,
-            chunk_size=knowledge.chunk_size,
-            chunk_overlap=knowledge.chunk_overlap,
-            top_k=knowledge.top_k,
-            embedding_model=knowledge.embedding_model,
-            embedding_api_key=knowledge.embedding_api_key,
-            embedding_api_base=knowledge.embedding_api_base,
-            rerank_model=knowledge.rerank_model,
-            rerank_api_key=knowledge.rerank_api_key,
-            rerank_api_base=knowledge.rerank_api_base,
-            rerank_top_n=knowledge.rerank_top_n,
-        )
+        # Share the single KnowledgeService owned by AgentLoop so HTTP-side
+        # uploads (which trigger wiki LLM compilation) and chat-side wiki tools
+        # see the same instance — and so set_wiki_llm() that AgentLoop already
+        # called actually applies to the upload path.
+        knowledge_service = getattr(agent_loop, "knowledge", None)
+        if knowledge_service is None:
+            knowledge = self._load_knowledge_config()
+            knowledge_service = KnowledgeService(
+                session_manager.workspace,
+                vector_backend=knowledge.vector_backend,
+                chunk_size=knowledge.chunk_size,
+                chunk_overlap=knowledge.chunk_overlap,
+                top_k=knowledge.top_k,
+                embedding_model=knowledge.embedding_model,
+                embedding_api_key=knowledge.embedding_api_key,
+                embedding_api_base=knowledge.embedding_api_base,
+                rerank_model=knowledge.rerank_model,
+                rerank_api_key=knowledge.rerank_api_key,
+                rerank_api_base=knowledge.rerank_api_base,
+                rerank_top_n=knowledge.rerank_top_n,
+            )
+        self.knowledge = knowledge_service
         self.projects = ProjectStore(session_manager.workspace)
         self.audit = AuditLogger(session_manager.workspace)
         self.attachments = AttachmentStore(session_manager.workspace)
@@ -105,6 +112,11 @@ class ChatService:
         self._response_futures: dict[str, asyncio.Future] = {}
         self._last_upload_cleanup_at: datetime | None = None
         self._knowledge_tasks: set[asyncio.Task[Any]] = set()
+        # Per-KB serialization for wiki compile. Different KBs can compile in
+        # parallel; within one KB the queue is strictly serial so an LLM
+        # compiling document N sees the entity/topic titles that compile N-1
+        # just wrote to disk. Used by _process_knowledge_document.
+        self._kb_compile_locks: dict[str, asyncio.Lock] = {}
 
     @property
     def uploads_dir(self) -> Path:
@@ -164,9 +176,31 @@ class ChatService:
 
     async def _process_knowledge_document(self, document_id: str) -> None:
         try:
-            await asyncio.to_thread(self.knowledge.process_document, document_id)
+            kb_id = self._lookup_document_kb_id(document_id)
+            if kb_id and self._document_kb_is_wiki(kb_id):
+                lock = self._kb_compile_locks.setdefault(kb_id, asyncio.Lock())
+                async with lock:
+                    await asyncio.to_thread(self.knowledge.process_document, document_id)
+            else:
+                await asyncio.to_thread(self.knowledge.process_document, document_id)
         except Exception:
             logger.exception("Failed background processing for knowledge document {}", document_id)
+
+    def _lookup_document_kb_id(self, document_id: str) -> str | None:
+        try:
+            for item in self.knowledge._state["documents"]:  # type: ignore[attr-defined]
+                if item.get("id") == document_id:
+                    return str(item.get("knowledge_base_id") or "")
+        except Exception:
+            return None
+        return None
+
+    def _document_kb_is_wiki(self, kb_id: str) -> bool:
+        try:
+            kb = self.knowledge.get_knowledge_base(kb_id)
+            return kb.type == "wiki"
+        except Exception:
+            return False
 
     @staticmethod
     def _format_bytes(size: int) -> str:
@@ -1234,7 +1268,31 @@ class ChatService:
         kb = self.knowledge.get_knowledge_base(kb_id)
         if kb.type != "wiki":
             raise ValueError("graph is only available for wiki kbs")
-        return build_graph_data(Path(kb.root_path), persist=True)
+        result = build_graph_data(Path(kb.root_path), persist=True)
+        self.knowledge.refresh_knowledge_base_counts(kb_id)
+        return result
+
+    async def recompile_wiki_sources(self, kb_id: str) -> dict[str, Any]:
+        """Re-run the wiki ingest pipeline (including LLM compile) for every
+        source document already registered in this KB. Runs each document in a
+        worker thread because process_document is sync and may itself spin up
+        a fresh asyncio loop for the LLM call."""
+        self._sync_knowledge_config()
+        kb = self.knowledge.get_knowledge_base(kb_id)
+        if kb.type != "wiki":
+            raise ValueError("recompile is only available for wiki kbs")
+        documents = self.knowledge.list_documents(kb_id)
+        results: list[dict[str, Any]] = []
+        for doc in documents:
+            try:
+                # Recompile always bypasses the SHA cache gate — that's the
+                # whole point of clicking "recompile".
+                await asyncio.to_thread(self.knowledge.process_document, doc.id, force=True)
+                results.append({"document_id": doc.id, "status": "ok"})
+            except Exception as exc:
+                logger.exception("recompile failed for document {}", doc.id)
+                results.append({"document_id": doc.id, "status": "failed", "error": str(exc)})
+        return {"processed": len(results), "results": results}
 
     def list_wiki_pages(self, kb_id: str) -> list[dict[str, Any]]:
         from tokenmind.knowledge.wiki_query import scan_pages

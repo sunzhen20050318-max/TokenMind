@@ -49,6 +49,28 @@
 .wiki-viewer__type--topic { color: #b3d8b1; }
 .wiki-viewer__type--source { color: #d9c98a; }
 
+.wiki-viewer__confidence {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  cursor: help;
+}
+
+.wiki-viewer__confidence--extracted   { color: #6dbb73; }
+.wiki-viewer__confidence--inferred    { color: #d9b86b; }
+.wiki-viewer__confidence--ambiguous   { color: #d99a6b; }
+.wiki-viewer__confidence--unverified  { color: #d96b6b; }
+
+.wiki-viewer__evidence {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--kb-soft, #6f6f77);
+  font-style: italic;
+}
+
 .wiki-viewer__path {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;

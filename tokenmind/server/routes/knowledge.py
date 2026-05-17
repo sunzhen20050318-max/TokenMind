@@ -207,6 +207,24 @@ async def rebuild_kb_graph(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/{knowledge_base_id}/recompile")
+async def recompile_wiki_sources(
+    knowledge_base_id: str,
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    """Re-run wiki LLM compile for every source already uploaded to this KB.
+
+    Useful when the wiki LLM was not wired at the time of upload (entities and
+    topics ended up empty) or when the provider has been changed.
+    """
+    try:
+        return await service.recompile_wiki_sources(knowledge_base_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{knowledge_base_id}/pages")
 async def list_wiki_pages(
     knowledge_base_id: str,

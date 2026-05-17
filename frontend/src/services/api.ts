@@ -960,6 +960,19 @@ export const api = {
     return res.json();
   },
 
+  async recompileWikiSources(id: string): Promise<{
+    processed: number;
+    results: Array<{ document_id: string; status: string; error?: string }>;
+  }> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}/recompile`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to recompile wiki sources: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
   async uploadKnowledgeDocuments(
     id: string,
     files: File[],

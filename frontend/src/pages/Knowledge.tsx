@@ -44,6 +44,10 @@ function describeProcessingStage(stage?: string): string {
       return '正在生成向量';
     case 'indexing':
       return '正在写入索引';
+    case 'compiling_source':
+      return '正在写源页面';
+    case 'compiling_with_llm':
+      return 'LLM 正在抽取实体与主题（可能 1–3 分钟）';
     case 'ready':
       return '处理完成';
     case 'failed':
@@ -514,19 +518,33 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
           {detailLoading && !detail ? (
             <div className="knowledge-page__empty">正在加载知识库详情…</div>
           ) : detail ? (
-            isWikiKb(detail.knowledge_base) ? (
-              <WikiKbDetail kb={detail.knowledge_base} />
-            ) : (
+            (() => {
+              const kb = detail.knowledge_base;
+              const wiki = isWikiKb(kb);
+              return (
             <>
               <div className="knowledge-page__detail-head">
                 <div>
-                  <div className="knowledge-page__eyebrow">知识库详情</div>
-                  <h2>{detail.knowledge_base.name}</h2>
-                  <p>{detail.knowledge_base.description || '这个知识库还没有简介。'}</p>
+                  <div className="knowledge-page__eyebrow">
+                    知识库详情
+                    <span className={`knowledge-page__type-badge knowledge-page__type-badge--${kb.type}`}>
+                      {wiki ? 'Wiki' : 'RAG'}
+                    </span>
+                  </div>
+                  <h2>{kb.name}</h2>
+                  <p>{kb.description || '这个知识库还没有简介。'}</p>
                 </div>
                 <div className="knowledge-page__detail-meta">
-                  <span>{detail.documents.length} 份资料</span>
-                  <span>{formatDate(detail.knowledge_base.updated_at)}</span>
+                  {wiki ? (
+                    <>
+                      <span>{kb.source_count} 份素材</span>
+                      <span>{kb.page_count} 页</span>
+                      <span>{kb.entity_count + kb.topic_count} 概念</span>
+                    </>
+                  ) : (
+                    <span>{detail.documents.length} 份资料</span>
+                  )}
+                  <span>{formatDate(kb.updated_at)}</span>
                 </div>
               </div>
 
@@ -534,24 +552,16 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                 <button
                   type="button"
                   className="knowledge-page__button knowledge-page__button--ghost"
-                  onClick={() =>
-                    void handleRenameKnowledgeBase(detail.knowledge_base.id, detail.knowledge_base.name)
-                  }
-                  disabled={
-                    renamingBaseId === detail.knowledge_base.id || deletingBaseId === detail.knowledge_base.id
-                  }
+                  onClick={() => void handleRenameKnowledgeBase(kb.id, kb.name)}
+                  disabled={renamingBaseId === kb.id || deletingBaseId === kb.id}
                 >
                   重命名
                 </button>
                 <button
                   type="button"
                   className="knowledge-page__button knowledge-page__button--ghost is-danger"
-                  onClick={() =>
-                    void handleDeleteKnowledgeBase(detail.knowledge_base.id, detail.knowledge_base.name)
-                  }
-                  disabled={
-                    deletingBaseId === detail.knowledge_base.id || renamingBaseId === detail.knowledge_base.id
-                  }
+                  onClick={() => void handleDeleteKnowledgeBase(kb.id, kb.name)}
+                  disabled={deletingBaseId === kb.id || renamingBaseId === kb.id}
                 >
                   删除知识库
                 </button>
@@ -561,8 +571,12 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                 <article className="knowledge-panel">
                   <div className="knowledge-panel__head">
                     <div>
-                      <h3>资料列表</h3>
-                      <p>一个知识库里可以放不同格式的资料，启用后会统一参与当前会话的检索参考。</p>
+                      <h3>{wiki ? 'Wiki 内容' : '资料列表'}</h3>
+                      <p>
+                        {wiki
+                          ? '上传素材后，LLM 会把它编译成相互链接的 Markdown 页面。对话时模型用工具浏览，你可以在这里查看页面与图谱。'
+                          : '一个知识库里可以放不同格式的资料，启用后会统一参与当前会话的检索参考。'}
+                      </p>
                     </div>
                     <div className="knowledge-panel__actions">
                       <input
@@ -590,7 +604,8 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                     <div className="knowledge-upload-progress">
                       <div className="knowledge-upload-progress__meta">
                         <span>
-                          正在上传 {uploadingCount} 份资料 · {formatFileSize(uploadProgress.loaded)} /{' '}
+                          {wiki ? '正在编译 ' : '正在上传 '}
+                          {uploadingCount} 份资料 · {formatFileSize(uploadProgress.loaded)} /{' '}
                           {formatFileSize(uploadProgress.total)}
                         </span>
                         <strong>{uploadProgress.percent}%</strong>
@@ -604,7 +619,13 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                     </div>
                   ) : null}
 
-                  {detail.documents.length === 0 ? (
+                  {wiki ? (
+                    <WikiKbDetail
+                      kb={kb}
+                      documents={detail.documents}
+                      onDeleteDocument={(documentId) => void handleDeleteDocument(documentId)}
+                    />
+                  ) : detail.documents.length === 0 ? (
                     <div className="knowledge-page__empty is-inline">
                       这个知识库里还没有资料。先上传几份资料，后面聊天时就能通过“链接知识库”手动调用它。
                     </div>
@@ -643,44 +664,70 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                     <div className="knowledge-panel__head">
                       <div>
                         <h3>当前状态</h3>
-                        <p>这里帮助你快速判断这个知识库是否已经准备好被聊天会话链接使用。</p>
+                        <p>
+                          {wiki
+                            ? '激活后，LLM 在对话里可以用 wiki 工具浏览这里的页面和图谱。'
+                            : '这里帮助你快速判断这个知识库是否已经准备好被聊天会话链接使用。'}
+                        </p>
                       </div>
                     </div>
 
                     <div className="knowledge-state-list">
                       <div className="knowledge-state-list__row">
                         <span>知识库状态</span>
-                        <strong>{detail.knowledge_base.status}</strong>
+                        <strong>{kb.status}</strong>
                       </div>
                       <div className="knowledge-state-list__row">
-                        <span>链接权限</span>
-                        <strong>{detail.knowledge_base.enabled ? '已启用' : '未启用'}</strong>
+                        <span>{wiki ? '激活权限' : '链接权限'}</span>
+                        <strong>{kb.enabled ? '已启用' : '未启用'}</strong>
                       </div>
-                      <div className="knowledge-state-list__row">
-                        <span>资料数量</span>
-                        <strong>{detail.documents.length}</strong>
-                      </div>
+                      {wiki ? (
+                        <>
+                          <div className="knowledge-state-list__row">
+                            <span>素材数量</span>
+                            <strong>{kb.source_count}</strong>
+                          </div>
+                          <div className="knowledge-state-list__row">
+                            <span>Wiki 页面</span>
+                            <strong>{kb.page_count}</strong>
+                          </div>
+                          <div className="knowledge-state-list__row">
+                            <span>实体 / 主题</span>
+                            <strong>
+                              {kb.entity_count} / {kb.topic_count}
+                            </strong>
+                          </div>
+                          <div className="knowledge-state-list__row">
+                            <span>页面链接</span>
+                            <strong>{kb.link_count}</strong>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="knowledge-state-list__row">
+                          <span>资料数量</span>
+                          <strong>{detail.documents.length}</strong>
+                        </div>
+                      )}
                       <div className="knowledge-state-list__row">
                         <span>最后更新</span>
-                        <strong>{formatDate(detail.knowledge_base.updated_at)}</strong>
+                        <strong>{formatDate(kb.updated_at)}</strong>
                       </div>
                     </div>
 
                     <button
                       type="button"
-                      className={`knowledge-page__button knowledge-page__button--toggle ${detail.knowledge_base.enabled ? 'is-on' : ''}`}
-                      onClick={() =>
-                        void handleToggleEnabled(detail.knowledge_base.id, !detail.knowledge_base.enabled)
-                      }
-                      disabled={updatingBaseId === detail.knowledge_base.id}
+                      className={`knowledge-page__button knowledge-page__button--toggle ${kb.enabled ? 'is-on' : ''}`}
+                      onClick={() => void handleToggleEnabled(kb.id, !kb.enabled)}
+                      disabled={updatingBaseId === kb.id}
                     >
-                      {detail.knowledge_base.enabled ? '停用当前知识库' : '启用当前知识库'}
+                      {kb.enabled ? '停用当前知识库' : '启用当前知识库'}
                     </button>
                   </aside>
                 </div>
               </div>
             </>
-            )
+              );
+            })()
           ) : null}
         </section>
       )}

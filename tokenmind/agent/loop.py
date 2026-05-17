@@ -386,6 +386,7 @@ class AgentLoop:
         # Update subagents and memory_consolidator which also hold provider references
         self.subagents.provider = new_provider
         self.memory_consolidator.provider = new_provider
+        self.knowledge.set_wiki_llm(provider=new_provider, model=self.model)
         self.knowledge_config = cfg.tools.knowledge
         self.creative_config = cfg.creative
         self.knowledge.configure(

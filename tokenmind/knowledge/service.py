@@ -26,7 +26,9 @@ from tokenmind.knowledge.models import (
     utc_now_iso,
 )
 from tokenmind.knowledge.wiki_graph import build_graph_data
-from tokenmind.knowledge.wiki_ingest import compile_with_llm
+# compile_with_llm is the legacy JSON-middleman path; we now drive the LLM
+# directly via WikiCompileRunner (imported lazily in _wiki_process_document).
+# The legacy function and its tests are kept until Phase C cleanup.
 from tokenmind.utils.helpers import safe_filename
 
 TEXT_SUFFIXES = {
@@ -92,9 +94,58 @@ class KnowledgeService:
         self._wiki_llm_provider = None
         self._wiki_llm_model: str | None = None
 
+    def _wiki_cache_hit(self, kb_root: Path, document_id: str) -> str | None:
+        """Return the source-page relative path if this document's SHA has a
+        compiled cache entry whose page file still exists. None otherwise.
+
+        Used by _wiki_process_document to skip the LLM compile for unchanged
+        re-uploads. Matches by document_id → SHA → cache entry chain so the
+        same content uploaded twice resolves to the same cached compile.
+        """
+        cache_path = kb_root / ".wiki-cache.json"
+        if not cache_path.is_file():
+            return None
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        for entry in cache.get("sources", {}).values():
+            if entry.get("document_id") != document_id:
+                continue
+            if not entry.get("compiled_at"):
+                return None
+            page_id = entry.get("source_page_id")
+            if not page_id:
+                return None
+            page_info = cache.get("pages", {}).get(page_id)
+            if not page_info:
+                return None
+            page_rel = page_info.get("path")
+            if not page_rel:
+                return None
+            page_abs = kb_root / page_rel
+            if page_abs.is_file():
+                return page_rel
+            return None
+        return None
+
+    def refresh_knowledge_base_counts(self, knowledge_base_id: str) -> None:
+        """Re-scan the on-disk wiki workspace and update cached counts on the
+        KB record. Safe to call any time; used after operations that change
+        page/edge totals without going through process_document."""
+        with self._state_lock:
+            self._reload()
+            self._update_knowledge_base_counts(knowledge_base_id)
+            self._save()
+
     def set_wiki_llm(self, provider, model: str) -> None:
         self._wiki_llm_provider = provider
         self._wiki_llm_model = model
+        logger.info(
+            "wiki LLM wired: provider={} model={}",
+            getattr(provider, "provider_name", type(provider).__name__),
+            model,
+        )
 
     def configure(
         self,
@@ -342,14 +393,31 @@ class KnowledgeService:
                 item["document_count"] = count
                 item["updated_at"] = now
                 if item.get("type") == "wiki":
-                    cache_path = Path(item.get("root_path") or "") / ".wiki-cache.json"
+                    kb_root = Path(item.get("root_path") or "")
+                    cache_path = kb_root / ".wiki-cache.json"
                     if cache_path.is_file():
                         try:
                             cache = json.loads(cache_path.read_text(encoding="utf-8"))
                             item["source_count"] = len(cache.get("sources", {}))
-                            item["page_count"] = len(cache.get("pages", {}))
                         except Exception:
                             pass
+                    if kb_root.is_dir():
+                        entity_dir = kb_root / "wiki" / "entities"
+                        topic_dir = kb_root / "wiki" / "topics"
+                        source_dir = kb_root / "wiki" / "sources"
+                        entity_count = sum(1 for _ in entity_dir.glob("*.md")) if entity_dir.is_dir() else 0
+                        topic_count = sum(1 for _ in topic_dir.glob("*.md")) if topic_dir.is_dir() else 0
+                        source_pages = sum(1 for _ in source_dir.glob("*.md")) if source_dir.is_dir() else 0
+                        item["entity_count"] = entity_count
+                        item["topic_count"] = topic_count
+                        item["page_count"] = entity_count + topic_count + source_pages
+                        graph_path = kb_root / "graph-data.json"
+                        if graph_path.is_file():
+                            try:
+                                graph = json.loads(graph_path.read_text(encoding="utf-8"))
+                                item["link_count"] = len(graph.get("edges", []))
+                            except Exception:
+                                pass
                 break
 
     def set_session_links(self, session_id: str, knowledge_base_ids: list[str]) -> None:
@@ -918,7 +986,16 @@ class KnowledgeService:
         cache["updated_at"] = utc_now_iso()
         cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def process_document(self, document_id: str) -> KnowledgeDocumentRecord:
+    def process_document(
+        self, document_id: str, *, force: bool = False
+    ) -> KnowledgeDocumentRecord:
+        """Run the ingest pipeline for one document.
+
+        force=False (default): if the document's SHA already has a successful
+        source page on disk, skip the LLM compile and reuse the existing
+        artifacts. Cheap re-uploads of identical content stay free.
+        force=True: always re-run the full pipeline (used by /recompile).
+        """
         with self._state_lock:
             self._reload()
             existing = next((item for item in self._state["documents"] if item["id"] == document_id), None)
@@ -927,11 +1004,11 @@ class KnowledgeService:
             kb_id = str(existing["knowledge_base_id"])
         kb = self.get_knowledge_base(kb_id)
         if kb.type == "wiki":
-            return self._wiki_process_document(kb, document_id)
+            return self._wiki_process_document(kb, document_id, force=force)
         return self._rag_process_document(document_id)
 
     def _wiki_process_document(
-        self, kb: KnowledgeBaseRecord, document_id: str
+        self, kb: KnowledgeBaseRecord, document_id: str, *, force: bool = False
     ) -> KnowledgeDocumentRecord:
         from tokenmind.knowledge.wiki_extractors import extract_text
         from tokenmind.knowledge.wiki_ingest import compile_source_page_template
@@ -957,6 +1034,24 @@ class KnowledgeService:
                 processing_stage="failed",
                 error_message="Source file is missing",
             )
+
+        # Cache gate: if this document's SHA matches a previously-compiled
+        # source whose page still exists on disk, skip the whole pipeline.
+        # force=True (e.g. from /recompile) bypasses this.
+        if not force:
+            cached = self._wiki_cache_hit(Path(kb.root_path), document_id)
+            if cached is not None:
+                logger.info(
+                    "wiki compile cache hit for {}: reusing {}",
+                    doc_name,
+                    cached,
+                )
+                return save_state(
+                    status="ready",
+                    processing_stage="ready",
+                    processing_progress=100,
+                    error_message=None,
+                )
 
         save_state(
             status="processing",
@@ -1021,34 +1116,78 @@ class KnowledgeService:
         )
 
         if self._wiki_llm_provider is not None and self._wiki_llm_model:
+            save_state(
+                processing_stage="compiling_with_llm",
+                processing_progress=80,
+            )
             try:
                 import asyncio
-                coro = compile_with_llm(
+                from tokenmind.knowledge.wiki_compile import WikiCompileRunner
+
+                logger.info("wiki LLM compile (runner): starting for {}", title)
+                runner = WikiCompileRunner(
                     provider=self._wiki_llm_provider,
                     model=self._wiki_llm_model,
                     kb_root=kb_root,
+                    language=getattr(kb, "language", "zh"),
+                )
+                coro = runner.run(
                     source_title=title,
                     source_text=text,
                     source_page_id=page_id,
-                    language=getattr(kb, "language", "zh"),
+                    source_page_path=page_path,
                 )
-                # Create a fresh loop. If called from inside a running loop,
-                # this still works because we're on a sync method invoked from
-                # an executor / sync context. asyncio.run() would error inside
-                # an already-running loop; new_event_loop + run_until_complete
-                # avoids that.
+                # Fresh loop: this sync method runs in a worker thread via
+                # asyncio.to_thread, so asyncio.run would error.
                 loop = asyncio.new_event_loop()
                 try:
-                    loop.run_until_complete(coro)
+                    stats = loop.run_until_complete(coro)
                 finally:
                     loop.close()
+                logger.info(
+                    "wiki compile done for {}: {} iterations, {} tool calls ({}), errors={}",
+                    title,
+                    stats.get("iterations"),
+                    stats.get("tool_calls"),
+                    stats.get("tool_breakdown"),
+                    len(stats.get("errors", [])),
+                )
+                # Post-check: warn if the LLM left the source page sections empty.
+                try:
+                    body = page_path.read_text(encoding="utf-8")
+                    summary_empty = bool(re.search(r"## 摘要\s*\n\s*##", body))
+                    concepts_empty = bool(re.search(r"## 提到的概念\s*$", body))
+                    if summary_empty or concepts_empty:
+                        logger.warning(
+                            "wiki compile finished but source page sections empty for {} "
+                            "(summary_empty={}, concepts_empty={})",
+                            title,
+                            summary_empty,
+                            concepts_empty,
+                        )
+                except OSError:
+                    pass
             except Exception as exc:
-                logger.warning(f"wiki LLM compile failed: {exc}")
+                logger.warning(f"wiki LLM compile (runner) failed: {exc}")
 
         try:
             build_graph_data(kb_root, persist=True)
         except Exception as exc:
             logger.warning(f"wiki graph rebuild failed: {exc}")
+
+        # Mark this SHA as compiled so a subsequent re-upload with identical
+        # content can hit the cache gate at the top of this function.
+        if sha:
+            try:
+                cache = json.loads(cache_path.read_text(encoding="utf-8"))
+                key = f"sha256:{sha}"
+                if key in cache.get("sources", {}):
+                    cache["sources"][key]["compiled_at"] = utc_now_iso()
+                    cache_path.write_text(
+                        json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+            except Exception as exc:
+                logger.warning(f"failed to mark cache compiled_at: {exc}")
 
         return save_state(
             status="ready",

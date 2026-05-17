@@ -79,14 +79,28 @@ export const WikiPageViewer: React.FC<WikiPageViewerProps> = ({
     );
   }
 
+  const confidence = (page.frontmatter?.confidence ?? '').toUpperCase();
+  const evidence = page.frontmatter?.evidence ?? '';
+
   return (
     <article className="wiki-viewer">
       <header className="wiki-viewer__head">
         <div className="wiki-viewer__meta">
           <span className={`wiki-viewer__type wiki-viewer__type--${page.type}`}>{page.type}</span>
+          {confidence ? (
+            <span
+              className={`wiki-viewer__confidence wiki-viewer__confidence--${confidence.toLowerCase()}`}
+              title={evidence || undefined}
+            >
+              {confidence}
+            </span>
+          ) : null}
           <span className="wiki-viewer__path">{page.path}</span>
         </div>
         <h1 className="wiki-viewer__title">{page.title}</h1>
+        {evidence ? (
+          <p className="wiki-viewer__evidence">证据:{evidence}</p>
+        ) : null}
       </header>
       <div className="wiki-viewer__body">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>
