@@ -153,3 +153,53 @@
     transform: translateY(0) scale(1);
   }
 }
+
+.kb-modal__type-group {
+  border: none;
+  padding: 0;
+  margin: 0 0 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.kb-modal__type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.kb-modal__type-card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.kb-modal__type-card.is-active {
+  border-color: #f5f5f7;
+  background: rgba(245, 245, 247, 0.06);
+}
+
+.kb-modal__type-card input[type="radio"] {
+  /* Visually hide but keep accessible */
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kb-modal__type-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f5f5f7;
+}
+
+.kb-modal__type-blurb {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b6b6bf;
+}

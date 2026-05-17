@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { api } from '../../services/api';
+import type { KnowledgeBaseType } from '../../types/knowledge';
 import './createKnowledgeBaseModal.css';
 
 interface CreateKnowledgeBaseModalProps {
@@ -8,12 +9,32 @@ interface CreateKnowledgeBaseModalProps {
   onCreated: () => void | Promise<void>;
 }
 
+interface TypeOption {
+  value: KnowledgeBaseType;
+  title: string;
+  blurb: string;
+}
+
+const TYPE_OPTIONS: TypeOption[] = [
+  {
+    value: 'rag',
+    title: 'RAG 知识库',
+    blurb: '上传文档后自动切分、向量化，提问时由后端检索片段注入上下文。',
+  },
+  {
+    value: 'wiki',
+    title: 'Wiki 知识库',
+    blurb: 'LLM 把原始资料编译成相互链接的 Markdown 页面，对话时模型用工具浏览。',
+  },
+];
+
 export const CreateKnowledgeBaseModal: React.FC<CreateKnowledgeBaseModalProps> = ({
   onClose,
   onCreated,
 }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [type, setType] = useState<KnowledgeBaseType>('rag');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -38,6 +59,7 @@ export const CreateKnowledgeBaseModal: React.FC<CreateKnowledgeBaseModalProps> =
       await api.createKnowledgeBase({
         name: trimmedName,
         description: description.trim(),
+        type,
       });
       await onCreated();
       onClose();
@@ -68,6 +90,25 @@ export const CreateKnowledgeBaseModal: React.FC<CreateKnowledgeBaseModalProps> =
             ×
           </button>
         </div>
+
+        <fieldset className="kb-modal__type-group" aria-label="知识库类型">
+          {TYPE_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className={`kb-modal__type-card ${type === option.value ? 'is-active' : ''}`}
+            >
+              <input
+                type="radio"
+                name="kb-type"
+                value={option.value}
+                checked={type === option.value}
+                onChange={() => setType(option.value)}
+              />
+              <span className="kb-modal__type-title">{option.title}</span>
+              <span className="kb-modal__type-blurb">{option.blurb}</span>
+            </label>
+          ))}
+        </fieldset>
 
         <label className="kb-modal__field">
           <span>名称</span>
