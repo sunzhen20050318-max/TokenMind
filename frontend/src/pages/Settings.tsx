@@ -2913,7 +2913,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     return (
-      <div className="settings-mcp-editor">
+      <>
+        <div className="settings-mcp-editor-backdrop" onClick={closeEditor} />
+        <aside className="settings-mcp-editor" role="dialog" aria-label={meta.title}>
         <div className="settings-mcp-editor__head">
           <div>
             <h3>{meta.title}</h3>
@@ -3340,7 +3342,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {savingSection === 'tools' ? '保存中…' : '保存'}
           </button>
         </div>
-      </div>
+        </aside>
+      </>
     );
   };
 
@@ -3462,7 +3465,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const editingExistingName = selectedMcpName;
 
     return (
-      <div className="settings-mcp-editor">
+      <>
+        <div className="settings-mcp-editor-backdrop" onClick={closeMcpEditor} />
+        <aside className="settings-mcp-editor" role="dialog" aria-label="MCP 服务编辑器">
         <div className="settings-mcp-editor__head">
           <h3>{editingExistingName ? `编辑 ${editingExistingName}` : '新建 MCP 服务'}</h3>
           <button
@@ -3706,7 +3711,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {savingSection === 'mcp' ? '保存中…' : '保存'}
           </button>
         </div>
-      </div>
+        </aside>
+      </>
     );
   };
 
