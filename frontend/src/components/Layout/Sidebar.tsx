@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { GroupedVirtuoso } from 'react-virtuoso';
 import { BrandMark } from '../BrandMark';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
@@ -61,6 +62,19 @@ function formatSessionTime(value?: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function sessionBucket(value: string | undefined, now: Date): string {
+  if (!value) return '更早';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '更早';
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.floor((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (dayDiff <= 0) return '今天';
+  if (dayDiff === 1) return '昨天';
+  if (dayDiff < 7) return '本周';
+  if (dayDiff < 30) return '本月';
+  return '更早';
 }
 
 function SidebarIcon({
@@ -401,6 +415,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
     });
   }, [query, sessions]);
 
+  const groupedSessions = useMemo(() => {
+    const now = new Date();
+    const buckets = new Map<string, typeof filteredSessions>();
+    const order: string[] = [];
+    for (const session of filteredSessions) {
+      const label = sessionBucket(session.updated_at || session.created_at, now);
+      let arr = buckets.get(label);
+      if (!arr) {
+        arr = [];
+        buckets.set(label, arr);
+        order.push(label);
+      }
+      arr.push(session);
+    }
+    return order.map((label) => ({ label, sessions: buckets.get(label) ?? [] }));
+  }, [filteredSessions]);
+
   const projectTree = useMemo(
     () =>
       buildProjectSidebarTree({
@@ -524,7 +555,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       );
     }
 
-    return filteredSessions.map((session) => {
+    const renderSession = (session: typeof filteredSessions[number]) => {
       const isActive = currentSession === session.session_id && mainView === 'chat';
       const title = session.title || session.first_message || '新对话';
       const compactLabel = title.trim().slice(0, 1).toUpperCase() || 'T';
@@ -630,7 +661,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ) : null}
         </div>
       );
-    });
+    };
+
+    if (compact) {
+      return filteredSessions.map(renderSession);
+    }
+
+    // For small lists, skip virtualization — avoids minor layout flash and
+    // keeps the DOM simple for screen readers / tests.
+    if (filteredSessions.length <= 30) {
+      return groupedSessions.map((group) => (
+        <React.Fragment key={group.label}>
+          <div className="shell-sidebar__bucket-head">{group.label}</div>
+          {group.sessions.map(renderSession)}
+        </React.Fragment>
+      ));
+    }
+
+    const groupCounts = groupedSessions.map((g) => g.sessions.length);
+    const flatSessions = groupedSessions.flatMap((g) => g.sessions);
+
+    return (
+      <GroupedVirtuoso
+        style={{ height: '100%' }}
+        groupCounts={groupCounts}
+        groupContent={(groupIndex) => (
+          <div className="shell-sidebar__bucket-head shell-sidebar__bucket-head--sticky">
+            {groupedSessions[groupIndex].label}
+          </div>
+        )}
+        itemContent={(index) => {
+          const session = flatSessions[index];
+          if (!session) return null;
+          return renderSession(session);
+        }}
+      />
+    );
   };
 
   return (
