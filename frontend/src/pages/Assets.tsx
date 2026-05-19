@@ -167,7 +167,6 @@ export const AssetsPage: React.FC<AssetsPageProps> = ({ onNavigateToSession }) =
     <div className="assets-page">
       <header className="assets-page__header">
         <h1>资产库</h1>
-        <p>统一管理 AI 生成与你上传的图片、视频、文件，支持收藏与回到来源会话。</p>
       </header>
 
       <div className="assets-page__tabs">

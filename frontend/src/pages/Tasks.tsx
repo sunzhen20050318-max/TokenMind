@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BrandMark } from '../components/BrandMark';
 import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
+import { ListSkeleton } from '../components/Skeleton/Skeleton';
 import type { Session } from '../types';
 import type { CreateCronJobPayload, CronJob, CronStatus } from '../types/cron';
 import { useChatStore } from '../stores/chatStore';
@@ -375,11 +376,7 @@ export const TasksModal: React.FC<TasksModalProps> = ({
 
         <section className="tasks-main">
           <header className="tasks-header">
-            <div>
-              <div className="tasks-kicker">自动化</div>
-              <h2>{currentSectionMeta.title}</h2>
-              <p>{currentSectionMeta.copy}</p>
-            </div>
+            <h2>{currentSectionMeta.title}</h2>
             <button aria-label="关闭定时任务" className="tasks-close" onClick={onClose} type="button">
               <CloseIcon />
             </button>
@@ -418,7 +415,9 @@ export const TasksModal: React.FC<TasksModalProps> = ({
               </div>
 
               {loading ? (
-                <div className="tasks-empty">正在加载任务...</div>
+                <div className="tasks-empty">
+                  <ListSkeleton count={5} />
+                </div>
               ) : jobs.length === 0 ? (
                 <div className="tasks-empty">还没有自动化任务。先在右侧创建一个试试看。</div>
               ) : (

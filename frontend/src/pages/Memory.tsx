@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { BrandMark } from '../components/BrandMark';
 import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
+import { ListSkeleton } from '../components/Skeleton/Skeleton';
 import type { MemoryOverviewResponse } from '../types/memory';
 import './memory.css';
 
@@ -407,7 +408,11 @@ export const MemoryModal: React.FC<MemoryModalProps> = ({ onClose, currentSessio
 
   const renderSection = () => {
     if (loading || !overview) {
-      return <div className="memory-loading">正在加载记忆中心...</div>;
+      return (
+        <div className="memory-loading">
+          <ListSkeleton count={4} />
+        </div>
+      );
     }
 
     switch (selectedSection) {
@@ -479,11 +484,7 @@ export const MemoryModal: React.FC<MemoryModalProps> = ({ onClose, currentSessio
 
         <section className="memory-main">
           <header className="memory-header">
-            <div>
-              <div className="memory-kicker">记忆中心</div>
-              <h1>{currentSectionMeta.title}</h1>
-              <p>{currentSectionMeta.copy}</p>
-            </div>
+            <h1>{currentSectionMeta.title}</h1>
             <button aria-label="关闭记忆中心" className="memory-close" onClick={handleClose} type="button">
               <CloseIcon />
             </button>

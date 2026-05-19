@@ -23,7 +23,7 @@
 }
 
 .announcement-toast--info {
-  border-color: rgba(120, 150, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 .announcement-toast--warning {
@@ -96,7 +96,7 @@
 }
 
 .announcement-toast__body a {
-  color: #8aa1de;
+  color: rgba(255, 255, 255, 0.75);
   text-decoration: none;
 }
 
@@ -120,7 +120,7 @@
 .announcement-toast__link {
   background: transparent;
   border: none;
-  color: #8aa1de;
+  color: rgba(255, 255, 255, 0.75);
   padding: 0;
   cursor: pointer;
   font-size: 12px;

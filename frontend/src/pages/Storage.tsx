@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BrandMark } from '../components/BrandMark';
 import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
+import { CardGridSkeleton, ListSkeleton } from '../components/Skeleton/Skeleton';
 import type { StorageFileItem, StorageOverviewResponse } from '../types/storage';
 import { useChatStore } from '../stores/chatStore';
 import './storage.css';
@@ -226,11 +227,7 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
 
         <section className="storage-main">
           <header className="storage-header">
-            <div>
-              <div className="storage-kicker">文件中心</div>
-              <h2>{currentSectionMeta.title}</h2>
-              <p>{currentSectionMeta.copy}</p>
-            </div>
+            <h2>{currentSectionMeta.title}</h2>
             <div className="storage-header-actions">
               <button className="storage-secondary" onClick={() => void loadData()} type="button">
                 刷新
@@ -245,7 +242,10 @@ export const StorageModal: React.FC<StorageModalProps> = ({ onClose }) => {
           {notice ? <div className={`storage-notice ${notice.tone}`}>{notice.text}</div> : null}
 
           {loading || !overview ? (
-            <div className="storage-empty">正在加载文件中心...</div>
+            <div className="storage-loading">
+              <CardGridSkeleton count={4} />
+              <ListSkeleton count={5} />
+            </div>
           ) : (
             <>
               <section className="storage-metrics" id="storage-section-overview">

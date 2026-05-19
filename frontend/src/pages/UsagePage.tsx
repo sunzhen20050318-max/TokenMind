@@ -179,12 +179,7 @@ export function UsagePage() {
   return (
     <div className="usage-page">
       <header className="usage-page__header">
-        <div>
-          <h1>Token 用量</h1>
-          <p className="usage-page__subtitle">
-            统计每次 LLM 调用的输入、输出、缓存命中与推理 token,按模型、会话、厂商任意组合筛选。
-          </p>
-        </div>
+        <h1>Token 用量</h1>
         <button
           type="button"
           className="usage-page__refresh"

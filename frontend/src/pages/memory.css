@@ -51,10 +51,10 @@
 
 .memory-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 30px 34px 20px;
+  padding: 16px 34px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #2b2b2f 0%, #29292c 100%);
 }
@@ -83,9 +83,11 @@
 }
 
 .memory-header h1 {
-  margin-top: 10px;
-  font-size: 31px;
-  line-height: 1.06;
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .memory-profile-card {
