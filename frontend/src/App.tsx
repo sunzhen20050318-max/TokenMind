@@ -13,6 +13,7 @@ import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
 import { ProjectHome } from './pages/ProjectHome';
 import { SettingsPage } from './pages/Settings';
+import type { SectionId } from './pages/Settings';
 // UsagePage pulls in ECharts (~190kB gz). Lazy-load so the main bundle stays
 // slim for users who never open the usage view.
 const UsagePage = lazy(() =>
@@ -23,10 +24,18 @@ import { VoiceClonePage } from './pages/voice/VoiceCloneStudio';
 import { TtsPage } from './pages/voice/TtsStudio';
 import { VoiceDesignPage } from './pages/voice/VoiceDesignStudio';
 import { api } from './services/api';
-import { fetchVersionInfo, POLL_INTERVAL_MS } from './services/updates';
+import {
+  fetchVersionInfo,
+  POLL_INTERVAL_MS,
+  setPendingSkillSuggestions,
+} from './services/updates';
 import type { VersionInfo } from './types/updates';
 import { StaleClientBanner } from './components/Updates/StaleClientBanner';
+import { ToastContainer } from './components/Toast/ToastContainer';
+import { CommandPalette } from './components/CommandPalette/CommandPalette';
+import type { CommandPaletteAction } from './components/CommandPalette/CommandPalette';
 import { useChatStore } from './stores/chatStore';
+import { useToastStore } from './stores/toastStore';
 import { useSessions } from './hooks/useSessions';
 import { useSessionOrchestrator } from './hooks/useSessionOrchestrator';
 import { APP_VERSION } from './version';
@@ -120,6 +129,8 @@ const App: React.FC = () => {
     activeProject,
     openProject,
     queuePendingSessionStarter,
+    availableKnowledgeBases,
+    loadKnowledgeBases,
   } = useChatStore();
   const { sessions } = useSessions();
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -146,6 +157,9 @@ const App: React.FC = () => {
 
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [updatesRefreshing, setUpdatesRefreshing] = useState(false);
+  // When set, the next render of <SettingsPage> opens with this section
+  // pre-selected. Cleared once the user navigates somewhere else.
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SectionId | undefined>(undefined);
   // Poke a counter when the user dismisses banner/toast so the components
   // re-evaluate which announcements are still active without us refetching.
   const [, setUpdatesTick] = useState(0);
@@ -170,8 +184,43 @@ const App: React.FC = () => {
     };
   }, [refreshVersionInfo]);
 
+  // Poll pending skill suggestions and push them into the shared bell cache.
+  // 45-second interval is a compromise: fast enough that a freshly minted
+  // suggestion shows up before the user forgets the conversation that
+  // produced it, slow enough to not spam the API.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const items = await api.listSkillSuggestions();
+        if (cancelled) return;
+        setPendingSkillSuggestions(items);
+        // Bump the tick so anything that reads bell items (Header badge,
+        // open AnnouncementPanel) re-renders without us having to thread
+        // the suggestion array through every component.
+        setUpdatesTick((v) => v + 1);
+      } catch {
+        // Silently ignore — the suggestions API may not be available yet
+        // (e.g. backend still booting) and a transient failure shouldn't
+        // hide existing items.
+      }
+    };
+    void refresh();
+    const handle = window.setInterval(() => void refresh(), 45_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, []);
+
   const handleUpdatesDismissed = useCallback(() => {
     setUpdatesTick((value) => value + 1);
+  }, []);
+
+  const navigateToSkills = useCallback(() => {
+    setSettingsInitialSection('skills');
+    setMainView('settings');
   }, []);
 
   const handleManualRefresh = useCallback(() => {
@@ -181,7 +230,25 @@ const App: React.FC = () => {
   useEffect(() => {
     void fetchModelProviders();
     void loadCreativeCapabilities();
-  }, [fetchModelProviders, loadCreativeCapabilities]);
+    void loadKnowledgeBases();
+  }, [fetchModelProviders, loadCreativeCapabilities, loadKnowledgeBases]);
+
+  // Surface chatStore.error (currently sprinkled across ~12 call sites but
+  // never rendered) as a transient toast. After toasting we clear the field
+  // so subsequent errors of the same text trigger a new toast.
+  useEffect(() => {
+    let lastError: string | null = useChatStore.getState().error;
+    return useChatStore.subscribe((state) => {
+      if (state.error && state.error !== lastError) {
+        lastError = state.error;
+        useToastStore.getState().pushToast(state.error, { level: 'error' });
+        useChatStore.setState({ error: null });
+        lastError = null;
+      } else if (!state.error) {
+        lastError = null;
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!currentSession) {
@@ -266,11 +333,17 @@ const App: React.FC = () => {
               onUpdatesChange={handleUpdatesDismissed}
               onRefreshUpdates={handleManualRefresh}
               updatesRefreshing={updatesRefreshing}
+              onNavigateToSkills={navigateToSkills}
             />
             {mainView === 'settings' ? (
               <SettingsPage
-                onNavigateBack={() => setMainView('chat')}
+                initialSection={settingsInitialSection}
+                onNavigateBack={() => {
+                  setSettingsInitialSection(undefined);
+                  setMainView('chat');
+                }}
                 onNavigateToSession={(sessionId) => {
+                  setSettingsInitialSection(undefined);
                   setCurrentSession(sessionId);
                   setMainView('chat');
                 }}
@@ -354,7 +427,10 @@ const App: React.FC = () => {
                 }}
               />
             ) : currentSession ? (
-              <ChatWindow sessionId={currentSession} />
+              <ChatWindow
+                sessionId={currentSession}
+                onNavigateToSettings={() => setMainView('settings')}
+              />
             ) : (
               <div className="app-main__empty">点击左侧“新建对话”开始新的会话</div>
             )}
@@ -362,6 +438,21 @@ const App: React.FC = () => {
         </div>
       </div>
       <AttachmentPreview />
+      <ToastContainer />
+      <CommandPalette
+        sessions={sessions}
+        knowledgeBases={availableKnowledgeBases}
+        onAction={(action: CommandPaletteAction) => {
+          if (action.kind === 'open-session' && action.sessionId) {
+            setCurrentSession(action.sessionId);
+            setMainView('chat');
+          } else if (action.kind === 'open-kb' && action.knowledgeBaseId) {
+            setMainView('knowledge');
+          } else if (action.kind === 'open-nav' && action.nav) {
+            setMainView(action.nav);
+          }
+        }}
+      />
       <AnnouncementToast info={versionInfo} />
       <UpdateModal info={versionInfo} onDismiss={handleUpdatesDismissed} />
       <CrossSessionApprovalToast

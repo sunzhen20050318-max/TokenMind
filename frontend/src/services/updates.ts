@@ -271,19 +271,68 @@ function reconcileReceived(ids: string[]): Record<string, number> {
   return map;
 }
 
+// -- Pending skill suggestions cache ----------------------------------------
+//
+// App.tsx polls /api/skills/suggestions periodically and calls
+// ``setPendingSkillSuggestions`` to refresh this cache. ``getBellItems`` reads
+// it on every call so the bell badge stays in sync without us having to thread
+// suggestions through every consumer.
+
+import type { SkillSuggestion } from '../types';
+
+let _pendingSkillSuggestions: SkillSuggestion[] = [];
+
+export function setPendingSkillSuggestions(items: SkillSuggestion[]): void {
+  _pendingSkillSuggestions = Array.isArray(items) ? items : [];
+}
+
+export function getPendingSkillSuggestions(): SkillSuggestion[] {
+  return _pendingSkillSuggestions;
+}
+
 /** Build the bell-panel item list. Includes:
  *  - active announcements (within their date/version window)
  *  - the latest version when newer than the running APP_VERSION
+ *  - pending skill suggestions awaiting user approval
  * Each item is filtered by the 15-day TTL and sorted newest-first. */
 export function getBellItems(info: VersionInfo | null): BellItem[] {
-  if (!info) return [];
-
   const now = Date.now();
   const cutoff = now - BELL_TTL_MS;
   const readSet = readReadAnnouncements();
 
   const candidateIds: string[] = [];
   const candidates: BellItem[] = [];
+
+  // -------- pending skill suggestions --------
+  // Render before announcements / version checks so an empty ``info`` payload
+  // (offline, fresh install) still surfaces pending approvals.
+  for (const sug of _pendingSkillSuggestions) {
+    if (!sug.id) continue;
+    const bellId = `skill-sug-${sug.id}`;
+    candidateIds.push(bellId);
+    candidates.push({
+      id: bellId,
+      type: 'skill-suggestion',
+      title: sug.kind === 'update'
+        ? `技能更新待审批: ${sug.name}`
+        : `新技能待审批: ${sug.name}`,
+      message: sug.description || '',
+      level: 'info',
+      receivedAt: 0,
+      publishedAt: sug.created_at ? Date.parse(sug.created_at) : undefined,
+      isRead: readSet.has(bellId),
+      navTarget: 'skills',
+    });
+  }
+
+  if (!info) {
+    // No version info yet — still return any skill suggestions we have.
+    const receivedMap = reconcileReceived(candidateIds);
+    return candidates
+      .map((item) => ({ ...item, receivedAt: receivedMap[item.id] ?? now }))
+      .filter((item) => item.receivedAt >= cutoff)
+      .sort((a, b) => b.receivedAt - a.receivedAt);
+  }
 
   // -------- announcements --------
   if (Array.isArray(info.announcements)) {

@@ -245,7 +245,7 @@ const REASONING_OPTIONS = [
   { value: 'high', label: '深度' },
 ];
 
-type SectionId = (typeof SECTION_META)[number]['id'];
+export type SectionId = (typeof SECTION_META)[number]['id'];
 type TasksScheduleKind = 'every' | 'cron' | 'at';
 type FixedCronPreset = 'daily' | 'weekdays' | 'weekly' | 'custom';
 type StorageFilterMode = 'all' | 'referenced' | 'orphan';
@@ -5651,10 +5651,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {skillSuggestions.length > 0 ? (
           <div className="settings-skill-suggestions">
             <div className="settings-skill-suggestions__head">
-              <div>
-                <h4>待确认建议</h4>
-                <p>Agent 会把可复用流程先保存为草稿，只有你确认后才会写入技能库。</p>
-              </div>
+              <h4>待确认建议</h4>
               <span>{skillSuggestions.length} 条</span>
             </div>
             <div className="settings-skill-suggestions__list">
@@ -5833,11 +5830,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <section className="settings-main">
           <header className="settings-header">
-            <div>
-              <div className="settings-kicker">设置</div>
-              <h1>{currentSectionMeta.title}</h1>
-              <p>{currentSectionMeta.copy}</p>
-            </div>
+            <h1>{currentSectionMeta.title}</h1>
             {onClose ? (
               <button aria-label="关闭设置中心" className="settings-close" onClick={onClose} type="button">
                 <CloseIcon />

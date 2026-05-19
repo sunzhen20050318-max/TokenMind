@@ -105,27 +105,21 @@
 }
 
 .settings-page .settings-header {
-  padding: 36px 48px 24px;
+  padding: 14px 48px;
   background: transparent;
-  border-bottom: none;
-}
-
-.settings-page .settings-kicker {
-  display: none;
+  border-bottom: 1px solid var(--border);
 }
 
 .settings-page .settings-header h1 {
-  margin-top: 0;
-  font-size: 30px;
+  margin: 0;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .settings-page .settings-header > div > p {
-  margin-top: 10px;
-  font-size: 14px;
-  color: var(--muted);
+  display: none;
 }
 
 .settings-page .settings-content {
@@ -351,23 +345,15 @@
 
 .settings-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 24px 32px 18px;
+  padding: 14px 32px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #101012 0%, var(--bg) 100%);
 }
 
-.settings-kicker {
-  color: var(--soft);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.settings-sidebar p,
-.settings-header p {
+.settings-sidebar p {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
@@ -375,9 +361,9 @@
 
 .settings-header h1 {
   color: var(--text);
-  margin-top: 6px;
-  font-size: 22px;
-  line-height: 1.15;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
   letter-spacing: -0.01em;
   font-weight: 600;
 }
@@ -1682,14 +1668,12 @@
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 30%),
-    rgba(255, 255, 255, 0.025);
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .settings-skill-suggestions__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 12px;
@@ -1700,13 +1684,6 @@
   color: var(--text);
   font-size: 15px;
   font-weight: 600;
-}
-
-.settings-skill-suggestions__head p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .settings-skill-suggestions__head span {
@@ -1785,9 +1762,7 @@
   padding: 24px;
   border: 1px solid var(--border-strong);
   border-radius: 18px;
-  background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.08), transparent 28%),
-    rgba(15, 15, 18, 0.98);
+  background: rgba(15, 15, 18, 0.98);
   box-shadow: 0 24px 72px rgba(0, 0, 0, 0.58);
 }
 

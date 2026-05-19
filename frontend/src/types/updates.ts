@@ -41,7 +41,7 @@ export interface VersionInfo {
 }
 
 /** Unified inbox-item shown in the bell panel. */
-export type BellItemType = 'announcement' | 'version';
+export type BellItemType = 'announcement' | 'version' | 'skill-suggestion';
 
 export interface BellItem {
   id: string;
@@ -61,4 +61,7 @@ export interface BellItem {
   link?: string;
   /** Per-OS download URL (version items). */
   downloadUrl?: string;
+  /** Internal navigation hint — skill-suggestion items click into Settings.
+   * Components map this to a callback rather than a URL. */
+  navTarget?: 'skills';
 }

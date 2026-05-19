@@ -15,6 +15,9 @@ interface AnnouncementPanelProps {
   onClose: () => void;
   onRefresh: () => void;
   refreshing: boolean;
+  /** Click handler for skill-suggestion items. Receives the bell item id;
+   * the consumer is expected to navigate to Settings → Skills. */
+  onNavigateToSkills?: () => void;
 }
 
 const ICONS: Record<string, string> = {
@@ -24,6 +27,8 @@ const ICONS: Record<string, string> = {
   critical: '🚨',
   // Version updates get a distinct icon regardless of level
   version: '🎉',
+  // Pending skill suggestions
+  'skill-suggestion': '✨',
 };
 
 export function AnnouncementPanel({
@@ -32,6 +37,7 @@ export function AnnouncementPanel({
   onClose,
   onRefresh,
   refreshing,
+  onNavigateToSkills,
 }: AnnouncementPanelProps) {
   const items = getBellItems(info);
   const unread = items.filter((item) => !item.isRead);
@@ -98,6 +104,16 @@ export function AnnouncementPanel({
                 markBellItemRead(item.id);
                 onChange();
               }}
+              onNavigateToSkills={
+                item.type === 'skill-suggestion'
+                  ? () => {
+                      markBellItemRead(item.id);
+                      onChange();
+                      onClose();
+                      onNavigateToSkills?.();
+                    }
+                  : undefined
+              }
             />
           ))}
         </div>
@@ -109,12 +125,18 @@ export function AnnouncementPanel({
 function Item({
   item,
   onMarkRead,
+  onNavigateToSkills,
 }: {
   item: BellItem;
   onMarkRead: () => void;
+  onNavigateToSkills?: () => void;
 }) {
   const icon =
-    item.type === 'version' ? ICONS.version : ICONS[item.level] ?? ICONS.info;
+    item.type === 'version'
+      ? ICONS.version
+      : item.type === 'skill-suggestion'
+        ? ICONS['skill-suggestion']
+        : ICONS[item.level] ?? ICONS.info;
   const handleDownload = (event: React.MouseEvent) => {
     event.preventDefault();
     if (item.downloadUrl) {
@@ -126,6 +148,7 @@ function Item({
     'announcement-panel__item',
     `announcement-panel__item--${item.level}`,
     item.type === 'version' ? 'announcement-panel__item--version' : '',
+    item.type === 'skill-suggestion' ? 'announcement-panel__item--skill' : '',
     item.isRead ? 'is-read' : '',
   ]
     .filter(Boolean)
@@ -176,6 +199,14 @@ function Item({
               onClick={handleDownload}
             >
               立即下载 ↓
+            </button>
+          ) : item.type === 'skill-suggestion' && onNavigateToSkills ? (
+            <button
+              type="button"
+              className="announcement-panel__item-primary"
+              onClick={onNavigateToSkills}
+            >
+              去审批 →
             </button>
           ) : item.link ? (
             <a
