@@ -103,6 +103,11 @@ class ChatService:
                 rerank_api_key=knowledge.rerank_api_key,
                 rerank_api_base=knowledge.rerank_api_base,
                 rerank_top_n=knowledge.rerank_top_n,
+                vlm_model=knowledge.vlm_model,
+                vlm_api_key=knowledge.vlm_api_key,
+                vlm_api_base=knowledge.vlm_api_base,
+                vlm_timeout=knowledge.vlm_timeout,
+                vlm_max_dim=knowledge.vlm_max_dim,
             )
         self.knowledge = knowledge_service
         self.projects = ProjectStore(session_manager.workspace)
@@ -167,6 +172,11 @@ class ChatService:
             rerank_api_key=config.rerank_api_key,
             rerank_api_base=config.rerank_api_base,
             rerank_top_n=config.rerank_top_n,
+            vlm_model=config.vlm_model,
+            vlm_api_key=config.vlm_api_key,
+            vlm_api_base=config.vlm_api_base,
+            vlm_timeout=config.vlm_timeout,
+            vlm_max_dim=config.vlm_max_dim,
         )
 
     def _schedule_knowledge_task(self, coro: Any) -> None:

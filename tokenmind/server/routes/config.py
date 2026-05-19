@@ -142,6 +142,11 @@ class KnowledgeConfigUpdate(BaseModel):
     rerank_api_key: str | None = None
     rerank_api_base: str | None = None
     rerank_top_n: int | None = None
+    vlm_model: str | None = None
+    vlm_api_key: str | None = None
+    vlm_api_base: str | None = None
+    vlm_timeout: int | None = None
+    vlm_max_dim: int | None = None
 
 
 class ToolsConfigUpdate(BaseModel):
@@ -614,6 +619,16 @@ async def update_tools_config(update: ToolsConfigUpdate):
                 knowledge.rerank_api_base = update.knowledge.rerank_api_base or None
             if "rerank_top_n" in update.knowledge.model_fields_set:
                 knowledge.rerank_top_n = update.knowledge.rerank_top_n
+            if "vlm_model" in update.knowledge.model_fields_set:
+                knowledge.vlm_model = update.knowledge.vlm_model or ""
+            if "vlm_api_key" in update.knowledge.model_fields_set:
+                knowledge.vlm_api_key = update.knowledge.vlm_api_key or ""
+            if "vlm_api_base" in update.knowledge.model_fields_set:
+                knowledge.vlm_api_base = update.knowledge.vlm_api_base or None
+            if "vlm_timeout" in update.knowledge.model_fields_set:
+                knowledge.vlm_timeout = update.knowledge.vlm_timeout
+            if "vlm_max_dim" in update.knowledge.model_fields_set:
+                knowledge.vlm_max_dim = update.knowledge.vlm_max_dim
 
         save_config(config)
 

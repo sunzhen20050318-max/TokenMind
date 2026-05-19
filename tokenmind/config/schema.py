@@ -162,6 +162,15 @@ class KnowledgeConfig(Base):
     rerank_api_key: str = ""
     rerank_api_base: str | None = None
     rerank_top_n: int = 12
+    # Optional vision-language model for richer document parsing. When the
+    # model is configured, complex PDF pages and embedded Office images get
+    # captioned by the VLM during ingestion; otherwise the knowledge base
+    # falls back to plain text extraction.
+    vlm_model: str = ""
+    vlm_api_key: str = ""
+    vlm_api_base: str | None = None
+    vlm_timeout: int = 30
+    vlm_max_dim: int = 1280
 
 
 class TemplatesConfig(Base):

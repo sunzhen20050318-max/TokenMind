@@ -167,6 +167,11 @@ class AgentLoop:
             rerank_api_key=self.knowledge_config.rerank_api_key,
             rerank_api_base=self.knowledge_config.rerank_api_base,
             rerank_top_n=self.knowledge_config.rerank_top_n,
+            vlm_model=self.knowledge_config.vlm_model,
+            vlm_api_key=self.knowledge_config.vlm_api_key,
+            vlm_api_base=self.knowledge_config.vlm_api_base,
+            vlm_timeout=self.knowledge_config.vlm_timeout,
+            vlm_max_dim=self.knowledge_config.vlm_max_dim,
         )
         self.knowledge.set_wiki_llm(provider=provider, model=self.model)
         self.template_renderer = TemplateRenderer()
@@ -408,6 +413,11 @@ class AgentLoop:
             rerank_api_key=cfg.tools.knowledge.rerank_api_key,
             rerank_api_base=cfg.tools.knowledge.rerank_api_base,
             rerank_top_n=cfg.tools.knowledge.rerank_top_n,
+            vlm_model=cfg.tools.knowledge.vlm_model,
+            vlm_api_key=cfg.tools.knowledge.vlm_api_key,
+            vlm_api_base=cfg.tools.knowledge.vlm_api_base,
+            vlm_timeout=cfg.tools.knowledge.vlm_timeout,
+            vlm_max_dim=cfg.tools.knowledge.vlm_max_dim,
         )
         self.templates_config = cfg.templates
         self.memory_consolidator.templates_config = cfg.templates
