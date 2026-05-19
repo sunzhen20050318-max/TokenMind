@@ -61,11 +61,6 @@ def get_bridge_install_dir() -> Path:
     return get_data_dir() / "bridge"
 
 
-def get_browser_runtime_install_dir() -> Path:
-    """Return the shared agent-browser runtime installation directory."""
-    return get_data_dir() / "browser_runtime"
-
-
 def get_legacy_sessions_dir() -> Path:
     """Return the legacy global session directory used for migration fallback."""
     return get_legacy_app_dir() / "sessions"

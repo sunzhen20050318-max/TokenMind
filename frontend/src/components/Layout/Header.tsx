@@ -5,11 +5,6 @@ import { getUnreadBellCount } from '../../services/updates';
 import type { VersionInfo } from '../../types/updates';
 import './header.css';
 
-// Connection status used to render a "已连接 / 未连接" badge in the header.
-// Removed at the user's request — the bell + ? buttons now occupy the header
-// alone. The /api/status ping was only for that badge; App.tsx keeps its own
-// poll going for the version-mismatch reload, so dropping this here is safe.
-
 interface HeaderProps {
   versionInfo: VersionInfo | null;
   onUpdatesChange: () => void;
