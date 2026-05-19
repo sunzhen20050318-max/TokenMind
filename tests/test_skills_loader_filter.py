@@ -109,3 +109,14 @@ def test_disabled_default_is_empty(tmp_path: Path) -> None:
 
     loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
     assert {s["name"] for s in loader.list_skills(filter_unavailable=False)} == {"alpha"}
+
+
+def test_office_artifact_skills_are_builtin_and_discoverable(tmp_path: Path) -> None:
+    loader = SkillsLoader(tmp_path / "workspace")
+
+    names = {skill["name"] for skill in loader.list_all_skills()}
+
+    assert {"documents", "presentations", "spreadsheets"} <= names
+    assert "Create, edit, redline" in (loader.get_skill_metadata("documents") or {}).get("description", "")
+    assert ".pptx" in (loader.get_skill_metadata("presentations") or {}).get("description", "").lower()
+    assert "spreadsheet files" in (loader.get_skill_metadata("spreadsheets") or {}).get("description", "")

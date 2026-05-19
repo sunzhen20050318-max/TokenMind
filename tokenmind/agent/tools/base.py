@@ -66,6 +66,18 @@ class Tool(ABC):
         """
         pass
 
+    def is_available(self) -> bool:
+        """Whether the tool should appear in the LLM's tool list right now.
+
+        Defaults to ``True``. Tools whose availability depends on session
+        state (e.g. wiki tools need an active Wiki KB) override this and
+        check that state. ``ToolRegistry.get_definitions()`` skips tools
+        whose ``is_available()`` returns ``False``, so the LLM never sees
+        them in its tool schema — but ``execute()`` is still callable as
+        a defensive fallback in case stale schema slips through.
+        """
+        return True
+
     def cast_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """Apply safe schema-driven casts before validation."""
         schema = self.parameters or {}

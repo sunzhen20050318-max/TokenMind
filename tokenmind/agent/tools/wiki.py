@@ -19,6 +19,11 @@ class _BaseWikiTool(Tool):
     def __init__(self, get_active_kb: ActiveKbResolver):
         self._get_active = get_active_kb
 
+    def is_available(self) -> bool:
+        """Hide the wiki tools from the LLM's tool list when no Wiki KB is
+        active. ``ToolRegistry.get_definitions()`` filters on this."""
+        return self._get_active() is not None
+
     def _resolve(self) -> tuple[Path, str] | None:
         active = self._get_active()
         if not active:

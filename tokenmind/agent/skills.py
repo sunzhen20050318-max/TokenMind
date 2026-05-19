@@ -1,10 +1,21 @@
 """Skills loader for agent capabilities."""
 
+import importlib.util
 import json
 import os
 import re
 import shutil
+from functools import lru_cache
 from pathlib import Path
+
+
+@lru_cache(maxsize=128)
+def _has_python_package(name: str) -> bool:
+    """Cached check: is ``name`` importable in the current interpreter?"""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
 
 # Default builtin skills directory (relative to this file)
 BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills"
@@ -187,6 +198,9 @@ class SkillsLoader:
         for env in requires.get("env", []):
             if not os.environ.get(env):
                 missing.append(f"ENV: {env}")
+        for pkg in requires.get("python", []):
+            if not _has_python_package(pkg):
+                missing.append(f"pip: {pkg}")
         return ", ".join(missing)
 
     def _get_skill_description(self, name: str) -> str:
@@ -250,13 +264,22 @@ class SkillsLoader:
             return {}
 
     def _check_requirements(self, skill_meta: dict) -> bool:
-        """Check if skill requirements are met (bins, env vars)."""
+        """Check if skill requirements are met (bins, env vars, python packages).
+
+        ``requires.python`` lets a skill declare importable module names. We
+        check via ``importlib.util.find_spec`` (cached) so failed imports
+        from missing optional deps show up the same way missing CLIs do —
+        as a ``<requires>pip: X</requires>`` annotation in the skill list.
+        """
         requires = skill_meta.get("requires", {})
         for b in requires.get("bins", []):
             if not shutil.which(b):
                 return False
         for env in requires.get("env", []):
             if not os.environ.get(env):
+                return False
+        for pkg in requires.get("python", []):
+            if not _has_python_package(pkg):
                 return False
         return True
 
