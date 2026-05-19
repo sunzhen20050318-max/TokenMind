@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { UploadProgress } from '../../types';
 import type { KnowledgeBase } from '../../types/knowledge';
-import { ActiveWikiSelector } from './ActiveWikiSelector';
+import { KnowledgeMenu } from './KnowledgeMenu';
 import { hasFileTransfer } from './inputAreaDrag';
 import './inputArea.css';
 
@@ -223,7 +223,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
   }, [pendingMessages.length]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const knowledgeRef = useRef<HTMLDivElement>(null);
   const dragDepthRef = useRef(0);
   // Connection-down keeps the textarea fully usable (so the user isn't
   // trapped while we silently reconnect) but blocks send — sending would
@@ -233,7 +232,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
     !disabled &&
     !connectionDown &&
     !isUploading;
-  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const effectiveDragActive = isDragActive || externalDragActive;
   const showLocalDropIndicator = isDragActive && !externalDragActive;
@@ -263,11 +261,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const reasoningPlaceholder =
     reasoningSelectOptions.find((option) => option.value === activeReasoning)?.label || '关闭';
 
-  const linkedKnowledgeBases = useMemo(
-    () => knowledgeOptions.filter((option) => linkedKnowledgeBaseIds.includes(option.id)),
-    [knowledgeOptions, linkedKnowledgeBaseIds]
-  );
-
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (canSubmit) {
@@ -276,10 +269,11 @@ export const InputArea: React.FC<InputAreaProps> = ({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      handleSubmit(event);
-    }
+    if (event.key !== 'Enter') return;
+    if (event.nativeEvent.isComposing) return;
+    if (event.shiftKey) return;
+    event.preventDefault();
+    handleSubmit(event);
   };
 
   useEffect(() => {
@@ -300,28 +294,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
     const length = textareaRef.current.value.length;
     textareaRef.current.setSelectionRange(length, length);
   }, [focusSignal]);
-
-  useEffect(() => {
-    if (!knowledgeOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!knowledgeRef.current?.contains(event.target as Node)) {
-        setKnowledgeOpen(false);
-      }
-    };
-
-    window.addEventListener('mousedown', handlePointerDown);
-    return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [knowledgeOpen]);
-
-  const toggleKnowledgeBase = (knowledgeBaseId: string) => {
-    const nextIds = linkedKnowledgeBaseIds.includes(knowledgeBaseId)
-      ? linkedKnowledgeBaseIds.filter((id) => id !== knowledgeBaseId)
-      : [...linkedKnowledgeBaseIds, knowledgeBaseId];
-    onUpdateLinkedKnowledgeBases?.(nextIds);
-  };
 
   const resetDragState = () => {
     dragDepthRef.current = 0;
@@ -544,57 +516,15 @@ export const InputArea: React.FC<InputAreaProps> = ({
               </svg>
             </button>
 
-            <div className="composer__knowledge" ref={knowledgeRef}>
-              <button
-                type="button"
-                className={`composer__knowledge-trigger ${knowledgeOpen ? 'is-open' : ''}`}
-                onClick={() => setKnowledgeOpen((state) => !state)}
-              >
-                {linkedKnowledgeBases.length > 0 ? '已链接 RAG 知识库' : '链接 RAG 知识库'}
-              </button>
-
-              {knowledgeOpen ? (
-                <div className="composer__knowledge-menu">
-                  <div className="composer__knowledge-menu-head">
-                    <strong>选择当前会话要参考的知识库</strong>
-                    <span>可多选</span>
-                  </div>
-                  {knowledgeOptions.length === 0 ? (
-                    <div className="composer__knowledge-empty">
-                      还没有知识库。先去左侧知识库页面创建一个。
-                    </div>
-                  ) : (
-                    <div className="composer__knowledge-options">
-                      {knowledgeOptions.map((item) => {
-                        const selected = linkedKnowledgeBaseIds.includes(item.id);
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            className={`composer__knowledge-option ${selected ? 'is-selected' : ''}`}
-                            onClick={() => toggleKnowledgeBase(item.id)}
-                          >
-                            <div>
-                              <strong>{item.name}</strong>
-                              <p>{item.description || '未填写简介'}</p>
-                            </div>
-                            <span>{selected ? '已链接' : '链接'}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            {onSetActiveWikiKb && (
-              <ActiveWikiSelector
-                availableWikiKbs={availableWikiKbs}
-                activeKbId={activeWikiKbId}
-                onChange={onSetActiveWikiKb}
-              />
-            )}
+            <KnowledgeMenu
+              ragOptions={knowledgeOptions}
+              linkedRagIds={linkedKnowledgeBaseIds}
+              onUpdateLinkedRag={(ids) => onUpdateLinkedKnowledgeBases?.(ids)}
+              wikiOptions={availableWikiKbs}
+              activeWikiId={activeWikiKbId}
+              onSetActiveWiki={(id) => onSetActiveWikiKb?.(id)}
+              disabled={!!disabled || !!isUploading}
+            />
           </div>
 
           <div className="composer__footer-right">

@@ -22,6 +22,7 @@ import './chatWindow.css';
 
 interface ChatWindowProps {
   sessionId: string;
+  onNavigateToSettings?: () => void;
 }
 
 interface VisibleMessageEntry {
@@ -245,7 +246,7 @@ function getGreeting(): string {
   return '晚上好，现在想处理什么？';
 }
 
-export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
+export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToSettings }) => {
   const {
     messages,
     isLoading,
@@ -316,7 +317,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   }, [sessionId, setSessionExecTrusted]);
   const prevMessagesLenRef = useRef<number>(0);
   const dragDepthRef = useRef(0);
-  const [draftMessage, setDraftMessage] = useState('');
+  const draftStorageKey = (sid: string) => `tokenmind:draft:${sid}`;
+  const [draftMessage, setDraftMessage] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem(draftStorageKey(sessionId)) || '';
+  });
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<Array<{ id: string; file: File }>>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -324,12 +329,32 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [reasoningEffort, setReasoningEffort] = useState<string>('');
   const [isSurfaceDragActive, setIsSurfaceDragActive] = useState(false);
 
+  // Switching sessions: restore that session's draft (or empty), and reset
+  // attachment / upload state so per-session UI starts clean.
   useEffect(() => {
-    setDraftMessage('');
+    const stored =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem(draftStorageKey(sessionId)) || ''
+        : '';
+    setDraftMessage(stored);
     setPendingFiles([]);
     setUploadProgress(null);
     setInputFocusSignal((signal) => signal + 1);
   }, [sessionId]);
+
+  // Persist draft (debounced) — survives refresh, navigation, and tab close.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const key = draftStorageKey(sessionId);
+    const tid = window.setTimeout(() => {
+      if (draftMessage) {
+        window.localStorage.setItem(key, draftMessage);
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    }, 250);
+    return () => window.clearTimeout(tid);
+  }, [sessionId, draftMessage]);
 
   useEffect(() => {
     void loadKnowledgeBases();
@@ -609,6 +634,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     configured: provider.configured,
   }));
 
+  const needsProviderSetup =
+    modelProvidersStatus === 'ready' && !modelProviders.some((p) => p.configured);
+
   const renderedThread = useMemo(() => {
     const nodes: React.ReactNode[] = [];
     let pendingTurnKey: string | null = null;
@@ -781,6 +809,23 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             <div className="chat-composer-dock__reconnecting" role="status">
               <span className="chat-composer-dock__reconnecting-dot" aria-hidden />
               连接中…消息会在连接恢复后发送
+            </div>
+          ) : null}
+          {needsProviderSetup ? (
+            <div className="chat-composer-dock__setup" role="status">
+              <span className="chat-composer-dock__setup-icon" aria-hidden>⚙</span>
+              <span className="chat-composer-dock__setup-text">
+                还没有配置任何模型,发送消息会失败。
+              </span>
+              {onNavigateToSettings ? (
+                <button
+                  type="button"
+                  className="chat-composer-dock__setup-cta"
+                  onClick={onNavigateToSettings}
+                >
+                  去设置中心 →
+                </button>
+              ) : null}
             </div>
           ) : null}
           <InputArea

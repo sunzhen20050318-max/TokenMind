@@ -1,0 +1,174 @@
+.cmdk__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 2100;
+  animation: cmdk-backdrop-in 0.14s ease-out;
+}
+
+.cmdk {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(560px, 70vh);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1c1d21 0%, #16181c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  animation: cmdk-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.cmdk__input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cmdk__icon {
+  color: rgba(255, 255, 255, 0.45);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.cmdk__input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.cmdk__input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.cmdk__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.cmdk__group {
+  margin-bottom: 6px;
+}
+
+.cmdk__group:last-child {
+  margin-bottom: 0;
+}
+
+.cmdk__group-label {
+  padding: 8px 10px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.cmdk__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.cmdk__row.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f5f6fb;
+}
+
+.cmdk__row-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmdk__row-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.cmdk__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+}
+
+.cmdk__footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.cmdk__kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  margin: 0 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@keyframes cmdk-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes cmdk-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 560px) {
+  .cmdk__backdrop {
+    padding-top: 8vh;
+  }
+  .cmdk {
+    width: calc(100vw - 16px);
+  }
+}
