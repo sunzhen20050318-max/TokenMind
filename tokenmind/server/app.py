@@ -242,11 +242,27 @@ class ChatService:
             return suffix
         return name
 
+    # OS-specific files we should never surface to the user as "uploads":
+    # macOS Finder metadata + Windows Explorer thumbnail caches.
+    _UPLOAD_IGNORED_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", "ehthumbs.db"})
+
+    @classmethod
+    def _is_ignored_upload_path(cls, path: Path) -> bool:
+        if path.name in cls._UPLOAD_IGNORED_NAMES:
+            return True
+        # Any dotfile (or file inside a dot-named directory) is system noise
+        # in the context of user-visible uploads.
+        return any(part.startswith(".") for part in path.parts)
+
     def _iter_upload_files(self) -> list[Path]:
         uploads_root = self.uploads_dir
         if not uploads_root.exists():
             return []
-        return [path for path in uploads_root.rglob("*") if path.is_file()]
+        return [
+            path
+            for path in uploads_root.rglob("*")
+            if path.is_file() and not self._is_ignored_upload_path(path.relative_to(uploads_root))
+        ]
 
     def _current_upload_usage_bytes(self) -> int:
         total = 0
