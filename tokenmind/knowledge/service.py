@@ -33,6 +33,7 @@ TEXT_SUFFIXES = {
     ".txt",
     ".md",
     ".markdown",
+    ".rst",
     ".json",
     ".yaml",
     ".yml",
@@ -1117,7 +1118,6 @@ class KnowledgeService:
     def _wiki_process_document(
         self, kb: KnowledgeBaseRecord, document_id: str, *, force: bool = False
     ) -> KnowledgeDocumentRecord:
-        from tokenmind.knowledge.wiki_extractors import extract_text
         from tokenmind.knowledge.wiki_ingest import compile_source_page_template
         from tokenmind.knowledge.wiki_paths import safe_wiki_filename
 
@@ -1167,7 +1167,10 @@ class KnowledgeService:
             error_message=None,
         )
         try:
-            text = extract_text(path)
+            # Route through the shared structured parser so wiki ingestion
+            # gets the same docx-table / pptx-slide / xlsx-sheet preservation
+            # and optional VLM captioning that the RAG path uses.
+            text = self._extract_text(path)
         except Exception as exc:
             logger.exception("Failed to extract wiki document {}", document_id)
             return save_state(

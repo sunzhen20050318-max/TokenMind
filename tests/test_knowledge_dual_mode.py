@@ -229,10 +229,10 @@ def test_api_create_wiki_kb(tmp_path):
 
 
 def test_extract_text_reads_markdown(tmp_path):
-    from tokenmind.knowledge.wiki_extractors import extract_text
+    from tokenmind.knowledge.parsers import extract_document_text
     f = tmp_path / "x.md"
     f.write_text("# Hello", encoding="utf-8")
-    assert "Hello" in extract_text(f)
+    assert "Hello" in extract_document_text(f)
 
 
 def test_upload_to_wiki_kb_lands_in_raw_files(tmp_path):
