@@ -23,4 +23,6 @@ The skill format and metadata structure follow OpenClaw's conventions to maintai
 | `tmux` | Remote-control tmux sessions |
 | `clawhub` | Search and install skills from ClawHub registry |
 | `skill-creator` | Create new skills |
-| `frontend-webapp-builder` | Build polished, engineering-grade frontend pages and app surfaces |
+| `documents` | Create, edit, redline, and visually verify DOCX documents |
+| `presentations` | Build and polish editable PowerPoint/PPTX decks |
+| `spreadsheets` | Create, edit, analyze, visualize, and verify spreadsheet workbooks |
