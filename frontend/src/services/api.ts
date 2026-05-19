@@ -973,6 +973,19 @@ export const api = {
     return res.json();
   },
 
+  async addUrlSource(id: string, url: string): Promise<{ document: KnowledgeDocument }> {
+    const res = await fetch(`${API_BASE}/knowledge/${encodeURIComponent(id)}/sources/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      throw new Error(detail?.detail || `Failed to add URL source: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
   async uploadKnowledgeDocuments(
     id: string,
     files: File[],

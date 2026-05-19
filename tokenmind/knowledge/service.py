@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import uuid
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
@@ -93,6 +94,41 @@ class KnowledgeService:
         self._ensure_index()
         self._wiki_llm_provider = None
         self._wiki_llm_model: str | None = None
+
+    def _cascade_cleanup_after_source_removal(
+        self, kb_root: Path, deleted_source_page_id: str
+    ) -> dict[str, int]:
+        """Walk all entity/topic pages and either drop them entirely (if they
+        only listed the deleted source) or strip the deleted source's
+        contributions (frontmatter `sources:` entry, `## 来源` line, and any
+        `## 新增信息(来自 [[deleted_id]] ...)` section).
+
+        Idempotent: safe to call twice; second run is a no-op.
+        """
+        stats = {"deleted": 0, "updated": 0}
+        for sub in ("entities", "topics"):
+            d = kb_root / "wiki" / sub
+            if not d.is_dir():
+                continue
+            for page in d.glob("*.md"):
+                try:
+                    body = page.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                sources = _parse_frontmatter_sources(body)
+                if deleted_source_page_id not in sources:
+                    continue
+                remaining = [s for s in sources if s != deleted_source_page_id]
+                if not remaining:
+                    page.unlink()
+                    stats["deleted"] += 1
+                    continue
+                new_body = _strip_source_contributions(
+                    body, deleted_source_page_id, remaining
+                )
+                page.write_text(new_body, encoding="utf-8")
+                stats["updated"] += 1
+        return stats
 
     def _wiki_cache_hit(self, kb_root: Path, document_id: str) -> str | None:
         """Return the source-page relative path if this document's SHA has a
@@ -922,6 +958,77 @@ class KnowledgeService:
             self._save()
             return document
 
+    def register_url_source(
+        self,
+        knowledge_base_id: str,
+        url: str,
+    ) -> KnowledgeDocumentRecord:
+        """Fetch a URL via the matching adapter (currently: WeChat) and
+        register the resulting markdown as a wiki source. Only valid on
+        wiki-type knowledge bases."""
+        kb = self.get_knowledge_base(knowledge_base_id)
+        if kb.type != "wiki":
+            raise ValueError("URL sources are only supported for wiki knowledge bases")
+
+        from tokenmind.knowledge.adapters import (
+            WechatFetchError,
+            fetch_wechat_article,
+            is_wechat_url,
+        )
+
+        if not is_wechat_url(url):
+            raise ValueError(
+                "Currently only mp.weixin.qq.com URLs are supported as wiki sources"
+            )
+
+        try:
+            article = fetch_wechat_article(url)
+        except WechatFetchError as exc:
+            raise ValueError(f"Failed to fetch WeChat article: {exc}") from exc
+
+        from tokenmind.knowledge.wiki_paths import get_kb_root, safe_wiki_filename
+
+        kb_root = Path(kb.root_path or get_kb_root(self.root.parent, kb.id))
+        raw_dir = kb_root / "raw" / "wechat"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        slug = safe_wiki_filename(article.title or "wechat-article")[:60].strip("-") or "wechat-article"
+        target = raw_dir / f"{date_prefix}-{slug}.md"
+        if target.exists():
+            target = raw_dir / f"{date_prefix}-{slug}-{uuid.uuid4().hex[:6]}.md"
+
+        # Prepend a tiny header so the editor LLM can see provenance.
+        header = (
+            f"<!-- source: {url} -->\n"
+            f"<!-- fetched_at: {utc_now_iso()} -->\n\n"
+        )
+        target.write_text(header + article.markdown, encoding="utf-8")
+
+        import hashlib
+        sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+        document = KnowledgeDocumentRecord(
+            id=f"doc_{uuid.uuid4().hex[:10]}",
+            knowledge_base_id=kb.id,
+            name=article.title or target.stem,
+            path=str(target),
+            file_type="md",
+            size=target.stat().st_size,
+            status="processing",
+            processing_stage="queued",
+            processing_progress=5,
+            chunk_count=0,
+            created_at=utc_now_iso(),
+            updated_at=utc_now_iso(),
+        )
+        with self._state_lock:
+            self._reload()
+            self._state["documents"].append(document.model_dump())
+            self._update_wiki_cache(kb_root, sha256=sha256, document=document)
+            self._update_knowledge_base_counts(kb.id)
+            self._save()
+        logger.info("registered WeChat article {} → {}", url, target.name)
+        return document
+
     def _wiki_register_source(
         self,
         kb: KnowledgeBaseRecord,
@@ -1370,12 +1477,32 @@ class KnowledgeService:
         cache["updated_at"] = utc_now_iso()
         cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
+        cascade_stats = {"deleted": 0, "updated": 0}
+        if source_page_id:
+            cascade_stats = self._cascade_cleanup_after_source_removal(
+                kb_root, source_page_id
+            )
+            if cascade_stats["deleted"] or cascade_stats["updated"]:
+                logger.info(
+                    "wiki cascade cleanup for {}: deleted={} updated={}",
+                    source_page_id,
+                    cascade_stats["deleted"],
+                    cascade_stats["updated"],
+                )
+
         try:
             build_graph_data(kb_root, persist=True)
         except Exception as exc:
             logger.warning(f"graph rebuild after delete failed: {exc}")
 
-        return {"success": True, "document_id": document_id}
+        # Re-scan counts so the popover shows fresh numbers immediately.
+        self.refresh_knowledge_base_counts(kb.id)
+
+        return {
+            "success": True,
+            "document_id": document_id,
+            "cascade": cascade_stats,
+        }
 
     def retrieve_for_session(
         self,
@@ -1475,3 +1602,66 @@ class KnowledgeService:
             "knowledge_base": knowledge_base.model_dump(),
             "documents": [item.model_dump() for item in self.list_documents(knowledge_base_id)],
         }
+
+
+# ---- module-level helpers for cascade cleanup --------------------------------
+
+_FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
+_SOURCES_BLOCK_RE = re.compile(
+    r"^sources:\s*\n((?:[ \t]+- .+\n?)+)",
+    re.MULTILINE,
+)
+
+
+def _parse_frontmatter_sources(body: str) -> list[str]:
+    """Return the list of page ids listed under `sources:` in the frontmatter,
+    or [] if no frontmatter or no sources block."""
+    fm_match = _FRONTMATTER_RE.match(body)
+    if not fm_match:
+        return []
+    src_match = _SOURCES_BLOCK_RE.search(fm_match.group(1))
+    if not src_match:
+        return []
+    return [
+        line.strip().lstrip("-").strip()
+        for line in src_match.group(1).strip().splitlines()
+        if line.strip().lstrip("-").strip()
+    ]
+
+
+def _strip_source_contributions(
+    body: str, deleted_id: str, remaining_sources: list[str]
+) -> str:
+    """Surgically remove every trace of `deleted_id` from an entity/topic
+    page that still has other sources. Returns the rewritten body.
+
+    Touches:
+      - frontmatter `sources:` block (rewritten with remaining ids)
+      - `## 来源` list items matching `- [[deleted_id]]`
+      - any `## 新增信息(来自 [[deleted_id]] ...)` body section, taken out
+        whole (heading + content) until the next `## ` heading or EOF
+    """
+    new_block = "sources:\n" + "\n".join(f"  - {s}" for s in remaining_sources) + "\n"
+    body = _SOURCES_BLOCK_RE.sub(lambda _: new_block, body, count=1)
+
+    # Drop the source list item line in any `## 来源` (or similar) section.
+    body = re.sub(
+        rf"^- \[\[{re.escape(deleted_id)}\]\]\s*\n",
+        "",
+        body,
+        flags=re.MULTILINE,
+    )
+
+    # Strip the `## 新增信息(来自 [[deleted_id]]...)` block, whole. Matches
+    # both half-width () and full-width （）parentheses since the LLM is
+    # inconsistent. Section ends at the next `## ` heading or end of file.
+    section_re = re.compile(
+        rf"\n## 新增信息[(（]\s*来自 \[\[{re.escape(deleted_id)}\]\][^\n]*\n"
+        r"(?:(?!\n## )[\s\S])*",
+        re.MULTILINE,
+    )
+    body = section_re.sub("", body)
+
+    # Collapse any 3+ consecutive blank lines that the surgery may have left.
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    return body

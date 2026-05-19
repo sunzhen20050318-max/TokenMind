@@ -165,6 +165,29 @@ async def upload_knowledge_documents(
         raise HTTPException(status_code=500, detail=f"Failed to upload knowledge documents: {exc}") from exc
 
 
+class AddUrlSourcePayload(BaseModel):
+    url: str
+
+
+@router.post("/{knowledge_base_id}/sources/url")
+async def add_url_source(
+    knowledge_base_id: str,
+    payload: AddUrlSourcePayload,
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    """Fetch a public URL (currently: mp.weixin.qq.com) and register it
+    as a wiki source. The same background compile pipeline as file
+    uploads picks it up."""
+    try:
+        return await service.add_url_source(knowledge_base_id, payload.url)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to add URL source: {exc}") from exc
+
+
 @router.delete("/{knowledge_base_id}/documents/{document_id}")
 async def delete_knowledge_document(
     knowledge_base_id: str,

@@ -1272,6 +1272,18 @@ class ChatService:
         self.knowledge.refresh_knowledge_base_counts(kb_id)
         return result
 
+    async def add_url_source(
+        self, knowledge_base_id: str, url: str
+    ) -> dict[str, Any]:
+        """Fetch a URL (currently: WeChat 公众号) and register it as a
+        wiki source. Schedules the same compile pipeline as a file upload."""
+        self._sync_knowledge_config()
+        document = await asyncio.to_thread(
+            self.knowledge.register_url_source, knowledge_base_id, url
+        )
+        self._schedule_knowledge_task(self._process_knowledge_document(document.id))
+        return {"document": document.model_dump()}
+
     async def recompile_wiki_sources(self, kb_id: str) -> dict[str, Any]:
         """Re-run the wiki ingest pipeline (including LLM compile) for every
         source document already registered in this KB. Runs each document in a

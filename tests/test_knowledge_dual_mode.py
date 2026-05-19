@@ -635,6 +635,91 @@ def test_delete_wiki_document_removes_source_page_and_cache_entry(tmp_path):
     assert not any(e.get("document_id") == doc.id for e in cache["sources"].values())
 
 
+def test_delete_wiki_document_cascade_removes_orphan_entities(tmp_path):
+    """When a deleted source is the only source of an entity/topic, that
+    entity/topic page is dropped entirely."""
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("w", "", type="wiki")
+    src = tmp_path / "lone.md"
+    src.write_text("hello", encoding="utf-8")
+    doc = service.register_document_upload(kb.id, src, "lone.md")
+    service.process_document(doc.id)
+
+    kb_root = tmp_path / "knowledge" / kb.id
+    # Manufacture a fake entity page that lists this source as its only source
+    cache = json.loads((kb_root / ".wiki-cache.json").read_text())
+    source_page_id = next(
+        e["source_page_id"]
+        for e in cache["sources"].values()
+        if e.get("document_id") == doc.id
+    )
+    (kb_root / "wiki" / "entities" / "LoneEntity.md").write_text(
+        f"---\n"
+        f"id: page_lone1\n"
+        f"type: entity\n"
+        f"title: LoneEntity\n"
+        f"sources:\n  - {source_page_id}\n"
+        f"---\n\n# LoneEntity\n\n## 来源\n- [[{source_page_id}]]\n",
+        encoding="utf-8",
+    )
+
+    service.delete_document(kb.id, doc.id)
+    assert not (kb_root / "wiki" / "entities" / "LoneEntity.md").exists(), (
+        "lone-source entity should be deleted"
+    )
+
+
+def test_delete_wiki_document_cascade_strips_shared_entity(tmp_path):
+    """When a deleted source is one of several sources of an entity, the
+    entity page survives but the deleted source's traces (frontmatter
+    sources entry, ## 来源 list item, ## 新增信息 section) are stripped."""
+    import json as _json
+    service = KnowledgeService(tmp_path)
+    kb = service.create_knowledge_base("w", "", type="wiki")
+    src1 = tmp_path / "first.md"
+    src1.write_text("hello", encoding="utf-8")
+    doc1 = service.register_document_upload(kb.id, src1, "first.md")
+    service.process_document(doc1.id)
+
+    kb_root = tmp_path / "knowledge" / kb.id
+    cache = _json.loads((kb_root / ".wiki-cache.json").read_text())
+    src1_page_id = next(
+        e["source_page_id"]
+        for e in cache["sources"].values()
+        if e.get("document_id") == doc1.id
+    )
+    other_page_id = "page_other999"
+
+    (kb_root / "wiki" / "entities" / "Shared.md").write_text(
+        f"---\n"
+        f"id: page_shared1\n"
+        f"type: entity\n"
+        f"title: Shared\n"
+        f"sources:\n"
+        f"  - {src1_page_id}\n"
+        f"  - {other_page_id}\n"
+        f"---\n\n"
+        f"# Shared\n\n"
+        f"## 内容\n核心内容\n\n"
+        f"## 来源\n"
+        f"- [[{src1_page_id}]]\n"
+        f"- [[{other_page_id}]]\n\n"
+        f"## 新增信息(来自 [[{src1_page_id}]] · 2026-01-02)\n\n"
+        f"first 的补充。\n",
+        encoding="utf-8",
+    )
+
+    service.delete_document(kb.id, doc1.id)
+    surviving = (kb_root / "wiki" / "entities" / "Shared.md").read_text()
+    assert surviving, "shared entity should still exist"
+    assert src1_page_id not in surviving, (
+        f"deleted source id should be gone, got:\n{surviving}"
+    )
+    assert other_page_id in surviving
+    assert "first 的补充" not in surviving
+    assert "核心内容" in surviving
+
+
 def test_api_read_wiki_page_returns_content(tmp_path):
     from pathlib import Path as _P
     app = _make_kb_app(tmp_path)
