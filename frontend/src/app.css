@@ -25,6 +25,12 @@
      app-shell background as a vertical strip between the sidebar and
      the main content. */
   grid-template-columns: auto minmax(0, 1fr);
+  /* Pin the single row to the container's height. Without this it
+     defaults to ``auto``, which sizes to the cells' max-content — the
+     sidebar with its full session list / expanded projects would grow
+     past 100vh, then ``overflow: hidden`` below clips the bottom of the
+     sidebar (where the 设置中心 button lives) off-screen. */
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   overflow: hidden;
