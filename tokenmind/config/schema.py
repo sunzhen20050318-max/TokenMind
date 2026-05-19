@@ -97,19 +97,11 @@ class CreativeConfig(Base):
     video: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
 
 
-class HeartbeatConfig(Base):
-    """Heartbeat service configuration."""
-
-    enabled: bool = True
-    interval_s: int = 30 * 60  # 30 minutes
-
-
 class GatewayConfig(Base):
     """Gateway/server configuration."""
 
     host: str = "0.0.0.0"
-    port: int = 18790
-    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    port: int = 18888
 
 
 class WebSearchConfig(Base):

@@ -168,19 +168,11 @@ class ChannelsConfigUpdate(BaseModel):
     send_tool_hints: bool | None = None
 
 
-class HeartbeatConfigUpdate(BaseModel):
-    """Partial update for heartbeat configuration."""
-
-    enabled: bool | None = None
-    interval_s: int | None = None
-
-
 class GatewayConfigUpdate(BaseModel):
     """Partial update for gateway configuration."""
 
     host: str | None = None
     port: int | None = None
-    heartbeat: HeartbeatConfigUpdate | None = None
 
 
 class RuntimeConfigUpdate(BaseModel):
@@ -354,7 +346,6 @@ def _build_config_response() -> ConfigResponse:
         "gateway": {
             "host": config.gateway.host,
             "port": config.gateway.port,
-            "heartbeat": config.gateway.heartbeat.model_dump(),
         },
     }
     templates_dict = config.templates.model_dump()
@@ -660,11 +651,6 @@ async def update_runtime_config(update: RuntimeConfigUpdate):
                 config.gateway.host = update.gateway.host
             if "port" in update.gateway.model_fields_set:
                 config.gateway.port = update.gateway.port
-            if update.gateway.heartbeat is not None:
-                if "enabled" in update.gateway.heartbeat.model_fields_set:
-                    config.gateway.heartbeat.enabled = update.gateway.heartbeat.enabled
-                if "interval_s" in update.gateway.heartbeat.model_fields_set:
-                    config.gateway.heartbeat.interval_s = update.gateway.heartbeat.interval_s
 
         save_config(config)
 

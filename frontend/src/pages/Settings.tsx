@@ -187,7 +187,7 @@ const LEGACY_SECTION_META = [
   { id: 'models', title: '模型', copy: '管理提供商、API Key 和默认模型。' },
   { id: 'tools', title: '工具', copy: '管理搜索、代理、命令执行和安全边界。' },
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。' },
-  { id: 'runtime', title: '运行时', copy: '管理渠道进度、网关和心跳设置。' },
+  { id: 'runtime', title: '服务', copy: 'Web 服务监听地址 / 端口与外部渠道消息行为。' },
 ] as const;
 
 const LEGACY_SEARCH_PROVIDER_OPTIONS = ['brave', 'tavily', 'duckduckgo', 'searxng', 'jina'];
@@ -208,7 +208,7 @@ const SECTION_META = [
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。', group: 'core' },
   { id: 'channels', title: '外部渠道', copy: '接入飞书、钉钉、企业微信等中国主流应用。', group: 'core' },
   { id: 'skills', title: '技能', copy: '启用或停用已安装的智能体技能。', group: 'core' },
-  { id: 'runtime', title: '运行时', copy: '管理进度推送、网关和心跳设置。', group: 'core' },
+  { id: 'runtime', title: '服务', copy: 'Web 服务监听地址 / 端口与外部渠道消息行为。', group: 'core' },
   { id: 'memory', title: '记忆中心', copy: '查看长期记忆、当前上下文和近期归档。', group: 'workspace' },
   // 'automation' 仍然保留在 SECTION_META 里，让 SettingsModal initialSection
   // 能定位到 renderAutomationCenter；但下方左侧 nav 渲染时会过滤掉它，因为
@@ -5045,8 +5045,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="settings-section">
         <div className="settings-mcp-toolbar">
           <div className="settings-mcp-toolbar__text">
-            <h3>运行时与渠道</h3>
-            <p>控制 Web 服务监听、心跳，以及外部渠道能看到的中间过程。</p>
+            <h3>服务</h3>
+            <p>
+              Web 服务监听地址 / 端口与外部渠道消息行为。修改 host/port 后需要重启 TokenMind 才完全生效。
+            </p>
           </div>
           <div className="settings-mcp-toolbar__actions">
             <button
@@ -5060,16 +5062,110 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        <div className="settings-grid">
+        <div className="settings-grid one">
           <div className="settings-panel">
             <div className="settings-panel-header">
-              <h3>渠道行为</h3>
-              <p>控制外部渠道是否看到中间过程。</p>
+              <h3>Web 服务</h3>
+              <p>
+                启动 <code>tokenmind web</code> 时如果没有显式传 <code>--port</code>，会使用这里配置的端口。
+              </p>
+            </div>
+            <div className="settings-grid">
+              <Field
+                label="Host"
+                copy={
+                  runtimeDraft.gateway.host === '0.0.0.0'
+                    ? '0.0.0.0：监听所有网络接口，同 LAN 内手机 / 平板可以访问。'
+                    : runtimeDraft.gateway.host === '127.0.0.1'
+                      ? '127.0.0.1：仅本机访问，最安全。'
+                      : 'Web 服务监听地址。'
+                }
+              >
+                <div className="settings-input-with-suggestions">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setRuntimeDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              gateway: { ...current.gateway, host: event.target.value },
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder="0.0.0.0"
+                    type="text"
+                    value={runtimeDraft.gateway.host}
+                  />
+                  <div className="settings-suggestion-row">
+                    <button
+                      type="button"
+                      className="settings-chip"
+                      onClick={() =>
+                        setRuntimeDraft((current) =>
+                          current
+                            ? { ...current, gateway: { ...current.gateway, host: '0.0.0.0' } }
+                            : current,
+                        )
+                      }
+                      disabled={runtimeDraft.gateway.host === '0.0.0.0'}
+                    >
+                      0.0.0.0
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-chip"
+                      onClick={() =>
+                        setRuntimeDraft((current) =>
+                          current
+                            ? { ...current, gateway: { ...current.gateway, host: '127.0.0.1' } }
+                            : current,
+                        )
+                      }
+                      disabled={runtimeDraft.gateway.host === '127.0.0.1'}
+                    >
+                      127.0.0.1
+                    </button>
+                  </div>
+                </div>
+              </Field>
+              <Field label="Port" copy="Web 服务监听端口。默认 18888。">
+                <input
+                  className="settings-input"
+                  min={1}
+                  max={65535}
+                  onChange={(event) =>
+                    setRuntimeDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            gateway: {
+                              ...current.gateway,
+                              port: Math.min(65535, Math.max(1, Number(event.target.value) || 1)),
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={runtimeDraft.gateway.port}
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="settings-panel">
+            <div className="settings-panel-header">
+              <h3>外部渠道消息</h3>
+              <p>
+                控制 TokenMind 接入的外部渠道（Telegram / 飞书 / 钉钉等）能看到助手的哪些中间过程。
+              </p>
             </div>
             <div className="settings-grid one">
               <ToggleRow
                 title="发送进度消息"
-                copy="在渠道中同步助手的中间文本进度。"
+                copy="把助手生成过程中的中间文本同步到外部渠道，关闭则只发最终答复。"
                 value={runtimeDraft.channels.send_progress}
                 onToggle={() =>
                   setRuntimeDraft((current) =>
@@ -5081,13 +5177,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             send_progress: !current.channels.send_progress,
                           },
                         }
-                      : current
+                      : current,
                   )
                 }
               />
               <ToggleRow
-                title="发送工具提示"
-                copy="在渠道中展示工具调用提示。"
+                title="发送工具调用提示"
+                copy="在外部渠道里展示助手正在调用什么工具（如「正在搜索网页」）。"
                 value={runtimeDraft.channels.send_tool_hints}
                 onToggle={() =>
                   setRuntimeDraft((current) =>
@@ -5099,111 +5195,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             send_tool_hints: !current.channels.send_tool_hints,
                           },
                         }
-                      : current
+                      : current,
                   )
                 }
               />
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>网关与心跳</h3>
-              <p>host、port 和心跳参数通常需要在重启服务后完全生效。</p>
-            </div>
-            <div className="settings-grid">
-              <Field label="Host" copy="Web 服务监听地址。">
-                <input
-                  className="settings-input"
-                  onChange={(event) =>
-                    setRuntimeDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            gateway: {
-                              ...current.gateway,
-                              host: event.target.value,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="text"
-                  value={runtimeDraft.gateway.host}
-                />
-              </Field>
-              <Field label="Port" copy="Web 服务端口。">
-                <input
-                  className="settings-input"
-                  min={1}
-                  onChange={(event) =>
-                    setRuntimeDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            gateway: {
-                              ...current.gateway,
-                              port: Number(event.target.value) || 1,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="number"
-                  value={runtimeDraft.gateway.port}
-                />
-              </Field>
-            </div>
-            <div className="settings-grid one">
-              <ToggleRow
-                title="启用心跳"
-                copy="按固定周期执行心跳任务。"
-                value={runtimeDraft.gateway.heartbeat.enabled}
-                onToggle={() =>
-                  setRuntimeDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          gateway: {
-                            ...current.gateway,
-                            heartbeat: {
-                              ...current.gateway.heartbeat,
-                              enabled: !current.gateway.heartbeat.enabled,
-                            },
-                          },
-                        }
-                      : current
-                  )
-                }
-              />
-              <Field label="心跳间隔（秒）" copy="心跳任务触发间隔。">
-                <input
-                  className="settings-input"
-                  min={1}
-                  onChange={(event) =>
-                    setRuntimeDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            gateway: {
-                              ...current.gateway,
-                              heartbeat: {
-                                ...current.gateway.heartbeat,
-                                interval_s: Number(event.target.value) || 1,
-                              },
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="number"
-                  value={runtimeDraft.gateway.heartbeat.interval_s}
-                />
-              </Field>
             </div>
           </div>
         </div>
-
       </div>
     );
   };

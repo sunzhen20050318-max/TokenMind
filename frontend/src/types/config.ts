@@ -168,10 +168,6 @@ export interface RuntimeSettings {
   gateway: {
     host: string;
     port: number;
-    heartbeat: {
-      enabled: boolean;
-      interval_s: number;
-    };
   };
 }
 
@@ -268,10 +264,6 @@ export interface RuntimeSettingsUpdate {
   gateway?: {
     host?: string;
     port?: number;
-    heartbeat?: {
-      enabled?: boolean;
-      interval_s?: number;
-    };
   };
 }
 

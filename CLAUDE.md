@@ -105,7 +105,7 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 
 - `KnowledgeService`: vector backends (qdrant default, sqlite fallback)
 - Flow: `add_document()` → async `process_document()` (chunk → embed → store) → `retrieve_for_session()` (hybrid retrieval with rerank)
-- Supported formats: pdf, docx, pptx, xlsx, md, txt, images
+- Supported formats: pdf, docx, doc, pptx, ppt, md/txt and other UTF-8 text. PDF goes through pymupdf (fitz); docx/pptx through python-docx / python-pptx with table + slide structure preserved; legacy `.doc`/`.ppt` are converted by local LibreOffice (`soffice`). Optional VLM config in `KnowledgeConfig.vlm_*` captions complex PDF pages and embedded Office images via an OpenAI-compatible vision model. Spreadsheet formats (xlsx/xls) intentionally not supported — cell-format losses make text extraction unreliable for retrieval.
 
 ### Skills (`tokenmind/skills/`)
 
@@ -139,7 +139,6 @@ Core data flow: `Channel/WebUI → MessageBus → AgentLoop → Provider + Tools
 
 - `tokenmind/audit.py` — `AuditLogger` records tool execution, approvals, and high-risk actions
 - `tokenmind/security/network.py` — SSRF/private-IP guards (`validate_url_target`, `validate_resolved_url`, `contains_internal_url`); use these whenever a tool fetches user-supplied URLs or runs shell commands containing URLs
-- `tokenmind/heartbeat/service.py` — `HeartbeatService` background task driven by `templates/HEARTBEAT.md`
 - `tokenmind/desktop/launcher.py` — desktop launcher entry point (port discovery + browser open) used by packaged Windows builds
 
 ### Frontend (`frontend/`)
@@ -158,7 +157,7 @@ All Pydantic models with camelCase/snake_case alias support (`Base.model_config`
 - `ProvidersConfig`: per-provider api_key, api_base, extra_headers, default_model (one field per registered provider preset: `custom`, `anthropic`, `openai`, `openrouter`, `deepseek`, `zhipu`, `dashscope`, `ollama`, `gemini`, `moonshot`, `minimax`, `mimo`, `siliconflow`)
 - `ToolsConfig`: exec (confirm_high_risk, approval_timeout_s), uploads (max_file_mb, retention_days), knowledge (vector_backend, chunk_size), mcp_servers
 - `CreativeConfig`: per-capability provider/model for image, music, music_cover, tts, voice_clone, voice_design, video
-- `HeartbeatConfig`: enables and tunes the background heartbeat agent
+- `GatewayConfig`: web server `host` (default `0.0.0.0`) and `port` (default `18888`)
 - `MCPServerConfig`: type (auto-detected), command/args/env (stdio), url/headers (HTTP), tool_timeout, enabled_tools
 
 Config file lives at `~/.tokenmind/config.json` by default; override with `tokenmind --config <path>` or `TOKENMIND_CONFIG`.

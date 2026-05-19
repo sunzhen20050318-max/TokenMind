@@ -1,6 +1,6 @@
 """Unit tests for the rich knowledge-base document parsers.
 
-We build the test fixtures (DOCX / PPTX / XLSX) in-memory with the same
+We build the test fixtures (DOCX / PPTX) in-memory with the same
 libraries the parser uses so we don't need to ship binary artifacts in
 the repo. The VLM path is exercised by monkey-patching the captioning
 helper instead of calling a real API.
@@ -57,22 +57,6 @@ def _build_pptx(path: Path) -> None:
     prs.save(str(path))
 
 
-def _build_xlsx(path: Path) -> None:
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Q1"
-    ws.append(["Metric", "Value"])
-    ws.append(["ARR", "$12M"])
-    ws.append(["Customers", 132])
-
-    ws2 = wb.create_sheet("Q2")
-    ws2.append(["Metric", "Value"])
-    ws2.append(["ARR", "$15M"])
-    wb.save(str(path))
-
-
 # ---------------------------------------------------------------------------
 # DOCX
 # ---------------------------------------------------------------------------
@@ -123,22 +107,6 @@ def test_parse_pptx_one_page_per_slide(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# XLSX
-# ---------------------------------------------------------------------------
-
-def test_parse_xlsx_groups_by_sheet(tmp_path):
-    path = tmp_path / "metrics.xlsx"
-    _build_xlsx(path)
-
-    doc = parsers.parse_xlsx(path)
-    text = doc.as_text()
-    assert "--- Sheet: Q1 ---" in text
-    assert "Metric | Value" in text
-    assert "ARR | $12M" in text
-    assert "--- Sheet: Q2 ---" in text
-
-
-# ---------------------------------------------------------------------------
 # Dispatch + fallback
 # ---------------------------------------------------------------------------
 
@@ -164,8 +132,10 @@ def test_can_parse_recognises_office_suffixes():
     assert parsers.can_parse(".doc")
     assert parsers.can_parse(".pptx")
     assert parsers.can_parse(".ppt")
-    assert parsers.can_parse(".xlsx")
-    assert parsers.can_parse(".xls")
+    # Spreadsheet formats were intentionally dropped — the cell-format /
+    # number-format round-trip losses made extracted text unreliable.
+    assert not parsers.can_parse(".xlsx")
+    assert not parsers.can_parse(".xls")
     assert not parsers.can_parse(".txt")
     assert not parsers.can_parse(".md")
 
@@ -323,29 +293,3 @@ def test_caption_images_batch_single_worker_falls_back_to_sequential():
         )
     assert results == {"a": ("ok", 3), "b": ("ok", 3)}
     assert mock.call_count == 2
-
-
-def test_parse_xlsx_handles_merged_cells_dates_and_int_floats(tmp_path):
-    """Verify the xlsx accuracy improvements: merged header forward-fill,
-    datetime → ``YYYY-MM-DD`` for date-only values, and ``12.0`` → ``12``."""
-    from datetime import datetime
-
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "对账"
-    ws.append(["2024 销售对比", None, None, "备注"])
-    ws.merge_cells("A1:C1")
-    ws.append(["品类", "Q1", "Q2", "上半年"])
-    ws.append(["电子产品", 320.0, 410.0, 730])
-    ws.append(["更新于", datetime(2024, 6, 30), None, None])
-    path = tmp_path / "metrics.xlsx"
-    wb.save(str(path))
-
-    out = parsers.parse_xlsx(path).as_text()
-    assert "2024 销售对比 | 2024 销售对比 | 2024 销售对比 | 备注" in out
-    assert "电子产品 | 320 | 410 | 730" in out  # 320.0 → 320
-    assert "更新于 | 2024-06-30" in out  # date-only no 00:00:00 tail
-    # Trailing empty columns trimmed off the date row.
-    assert "更新于 | 2024-06-30 | |" not in out

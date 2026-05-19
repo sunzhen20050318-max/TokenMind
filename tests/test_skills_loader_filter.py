@@ -116,7 +116,8 @@ def test_office_artifact_skills_are_builtin_and_discoverable(tmp_path: Path) -> 
 
     names = {skill["name"] for skill in loader.list_all_skills()}
 
-    assert {"documents", "presentations", "spreadsheets"} <= names
+    # spreadsheets skill was intentionally dropped; only docx + pptx remain.
+    assert {"documents", "presentations"} <= names
+    assert "spreadsheets" not in names
     assert "Create, edit, redline" in (loader.get_skill_metadata("documents") or {}).get("description", "")
     assert ".pptx" in (loader.get_skill_metadata("presentations") or {}).get("description", "").lower()
-    assert "spreadsheet files" in (loader.get_skill_metadata("spreadsheets") or {}).get("description", "")

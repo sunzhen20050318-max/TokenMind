@@ -608,93 +608,15 @@ def parse_pptx(path: Path, vlm: VLMConfig | None = None) -> ParsedDocument:
 
 
 # ---------------------------------------------------------------------------
-# XLSX
-# ---------------------------------------------------------------------------
-
-def _format_xlsx_cell(value: Any) -> str:
-    """Render a cell value as a tidy string for LLM consumption."""
-    from datetime import date, datetime, time
-
-    if value is None:
-        return ""
-    if isinstance(value, datetime):
-        # Drop the trailing 00:00:00 for date-only cells so headers like
-        # "2024-01-15" don't read as "2024-01-15 00:00:00".
-        if value.hour == 0 and value.minute == 0 and value.second == 0:
-            return value.strftime("%Y-%m-%d")
-        return value.strftime("%Y-%m-%d %H:%M:%S")
-    if isinstance(value, date):
-        return value.strftime("%Y-%m-%d")
-    if isinstance(value, time):
-        return value.strftime("%H:%M:%S")
-    if isinstance(value, float) and value.is_integer():
-        # 12.0 -> "12" so integers stored as floats don't read ugly.
-        return str(int(value))
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    return str(value)
-
-
-def parse_xlsx(path: Path) -> ParsedDocument:
-    from openpyxl import load_workbook
-
-    # read_only=False so we can see ws.merged_cells.ranges and forward-fill
-    # merged header values into the rows below — the read_only iterator
-    # otherwise returns ``None`` for every cell except the top-left of each
-    # merge, which silently corrupts wide multi-row headers. For typical
-    # knowledge-base spreadsheets (under tens of MB) the memory cost is
-    # acceptable; very large workbooks degrade ungracefully but still parse.
-    wb = load_workbook(filename=str(path), data_only=True, read_only=False)
-    result = ParsedDocument(file_name=path.name, file_type="xlsx")
-    try:
-        for sheet_index, sheet_name in enumerate(wb.sheetnames):
-            ws = wb[sheet_name]
-
-            # Build a (row, col) -> top-left value map so we can fill in the
-            # cells that openpyxl reports as None inside a merged range.
-            merge_fill: dict[tuple[int, int], Any] = {}
-            for merge_range in ws.merged_cells.ranges:
-                anchor_value = ws.cell(merge_range.min_row, merge_range.min_col).value
-                for r in range(merge_range.min_row, merge_range.max_row + 1):
-                    for c in range(merge_range.min_col, merge_range.max_col + 1):
-                        merge_fill[(r, c)] = anchor_value
-
-            lines: list[str] = []
-            for row_idx, row in enumerate(ws.iter_rows(values_only=False), start=1):
-                cells: list[str] = []
-                for col_idx, cell in enumerate(row, start=1):
-                    val = cell.value
-                    if val is None and (row_idx, col_idx) in merge_fill:
-                        val = merge_fill[(row_idx, col_idx)]
-                    cells.append(_format_xlsx_cell(val))
-                # Trim trailing empty cells so a sparse row doesn't render as
-                # "x | | | | | | |".
-                while cells and not cells[-1].strip():
-                    cells.pop()
-                if cells:
-                    lines.append(" | ".join(cells))
-            if not lines:
-                continue
-            body = "\n".join(lines)
-            result.pages.append(
-                ParsedPage(
-                    page_num=sheet_index + 1,
-                    content=f"--- Sheet: {sheet_name} ---\n{body}",
-                    method="xlsx",
-                )
-            )
-    finally:
-        wb.close()
-    return result
-
-
-# ---------------------------------------------------------------------------
 # Top-level dispatch
 # ---------------------------------------------------------------------------
 
 # Extensions we have first-class structured parsers for. Everything else
-# (txt, md, json, …) falls back to plain UTF-8 reading.
-_RICH_SUFFIXES = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls"}
+# (txt, md, json, …) falls back to plain UTF-8 reading. Spreadsheet formats
+# (.xlsx / .xls) were intentionally dropped — the cell-format / number-format
+# round-trip losses make extracted text unreliable for retrieval, and the
+# bundled `spreadsheets` skill that created them was removed alongside this.
+_RICH_SUFFIXES = {".pdf", ".docx", ".doc", ".pptx", ".ppt"}
 
 
 def can_parse(suffix: str) -> bool:
@@ -723,16 +645,6 @@ def extract_document_text(path: Path, vlm: VLMConfig | None = None) -> str:
             return parse_pptx(converted, vlm).as_text()
         finally:
             _cleanup_legacy_conversion(converted)
-    if suffix in {".xlsx", ".xls"}:
-        # ``.xls`` is the old OLE binary format that openpyxl can't read; do a
-        # soffice conversion first.
-        if suffix == ".xls":
-            converted = _convert_legacy_to_modern(path, ".xlsx")
-            try:
-                return parse_xlsx(converted).as_text()
-            finally:
-                _cleanup_legacy_conversion(converted)
-        return parse_xlsx(path).as_text()
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
