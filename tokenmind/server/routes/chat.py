@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from pydantic import BaseModel
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+
+from tokenmind.server.attachments import (
+    MissingSofficeError,
+    OfficeConversionError,
+    convert_office_to_pdf,
+    is_office_file,
+)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -145,6 +153,57 @@ async def download_attachment(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.api_route("/attachments/{attachment_id}/preview", methods=["GET", "HEAD"])
+async def preview_attachment(
+    attachment_id: str,
+    service=Depends(get_chat_service),
+):
+    """Preview-friendly variant of attachment download.
+
+    For native preview formats (PDF, image, audio, video, text) this serves
+    the original file inline — same effect as ``?disposition=inline`` on the
+    download endpoint.
+
+    For Office formats (.docx / .xlsx / .pptx and friends) this lazily
+    converts the file to PDF via soffice on first call, caches the result
+    next to the source, and returns the PDF. The frontend's PDF viewer
+    handles both the original-PDF case and the converted-from-Office case
+    identically.
+
+    Errors:
+      * ``503`` — soffice not installed (helpful message in ``detail``)
+      * ``502`` — soffice ran but failed to produce a PDF
+      * ``504`` — conversion timed out
+    """
+    try:
+        attachment = service.resolve_attachment(attachment_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    source_path = Path(attachment["storage_path"])
+    name = attachment.get("name") or source_path.name
+
+    if not is_office_file(name):
+        # Non-office: serve as-is for inline preview.
+        mime = attachment.get("mime_type") or "application/octet-stream"
+        return FileResponse(source_path, media_type=mime)
+
+    try:
+        pdf_path = convert_office_to_pdf(source_path)
+    except MissingSofficeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except OfficeConversionError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except TimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Attachment file missing on disk")
+
+    return FileResponse(pdf_path, media_type="application/pdf")
 
 
 @router.post("/attachments/{attachment_id}/retain", response_model=RetainAttachmentResponse)

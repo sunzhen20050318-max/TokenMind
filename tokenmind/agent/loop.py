@@ -235,11 +235,18 @@ class AgentLoop:
         self.tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir, extra_allowed_dirs=extra_read))
         for cls in (WriteFileTool, EditFileTool, ListDirTool):
             self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
+        # Inject LibreOffice's install dir into the shell's PATH when present
+        # but not already on PATH — covers macOS DMG installs (soffice lives
+        # in /Applications/LibreOffice.app/...) and Windows MSI installs
+        # (Program Files\LibreOffice\program\). Without this, the LLM has
+        # to know the full path to call ``soffice`` in an exec command.
+        from tokenmind.utils.office import augmented_path_append
+        exec_path_append = augmented_path_append(self.exec_config.path_append or "")
         self.tools.register(ExecTool(
             working_dir=str(self.workspace),
             timeout=self.exec_config.timeout,
             restrict_to_workspace=self.restrict_to_workspace,
-            path_append=self.exec_config.path_append,
+            path_append=exec_path_append,
         ))
         self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
         self.tools.register(WebFetchTool(proxy=self.web_proxy))

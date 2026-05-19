@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import secrets
 import shutil
+import subprocess
+import tempfile
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,6 +20,123 @@ from fastapi import HTTPException
 from tokenmind.utils.helpers import safe_filename
 
 AttachmentDownloader = Callable[[str], tuple[bytes, str | None]]
+
+
+# Office formats that need soffice (LibreOffice) headless conversion before
+# they can be previewed in a browser. The browser cannot render these
+# natively; we convert to PDF on first preview request and cache the result.
+OFFICE_EXTENSIONS: frozenset[str] = frozenset({
+    ".doc", ".docx",
+    ".xls", ".xlsx",
+    ".ppt", ".pptx",
+    ".odt", ".ods", ".odp",
+    ".rtf",
+})
+
+
+class MissingSofficeError(RuntimeError):
+    """Raised when soffice (LibreOffice) is required but not installed."""
+
+
+class OfficeConversionError(RuntimeError):
+    """Raised when soffice runs but fails to produce a usable PDF."""
+
+
+def is_office_file(name_or_path: str | Path) -> bool:
+    """True if the filename has an Office / OpenOffice extension."""
+    return Path(name_or_path).suffix.lower() in OFFICE_EXTENSIONS
+
+
+def _find_soffice() -> str:
+    """Locate the soffice binary; raise MissingSofficeError if absent."""
+    from tokenmind.utils.office import find_soffice
+    found = find_soffice()
+    if found:
+        return found
+    raise MissingSofficeError(
+        "soffice (LibreOffice) is required to preview Office files. "
+        "Install via 'brew install libreoffice' (macOS), "
+        "'apt install libreoffice' (Debian/Ubuntu), or download from "
+        "https://www.libreoffice.org/download/ (Windows)."
+    )
+
+
+def convert_office_to_pdf(
+    source: Path,
+    *,
+    cache_path: Path | None = None,
+    timeout_s: int = 60,
+) -> Path:
+    """Convert an Office file to PDF using soffice headless.
+
+    The result is cached at ``cache_path`` (default: ``<source>.preview.pdf``).
+    If the cache is newer than the source, it is returned without reconversion.
+
+    Raises:
+      * :class:`MissingSofficeError` — soffice not on PATH.
+      * :class:`OfficeConversionError` — soffice ran but produced no output.
+      * :class:`FileNotFoundError` — ``source`` does not exist.
+      * :class:`TimeoutError` — soffice exceeded ``timeout_s``.
+    """
+    if not source.is_file():
+        raise FileNotFoundError(source)
+
+    pdf_path = cache_path or source.with_suffix(source.suffix + ".preview.pdf")
+    # Cache hit: regenerate only if source is newer (or PDF missing).
+    if pdf_path.is_file() and pdf_path.stat().st_mtime >= source.stat().st_mtime:
+        return pdf_path
+
+    soffice = _find_soffice()
+
+    # Run soffice in an isolated user profile to avoid lock contention when
+    # multiple conversions overlap. Use a private temp dir for output so we
+    # can rename the result deterministically to ``pdf_path``.
+    with tempfile.TemporaryDirectory(prefix="soffice_profile_") as profile, \
+         tempfile.TemporaryDirectory(prefix="soffice_out_") as out_dir:
+        env = {**os.environ}
+        # ``Path.as_uri()`` is cross-platform — emits ``file:///C:/...`` on
+        # Windows and ``file:///tmp/...`` on Unix. Hardcoding ``file://`` +
+        # raw path breaks on Windows.
+        profile_uri = Path(profile).as_uri()
+        cmd = [
+            soffice,
+            f"-env:UserInstallation={profile_uri}",
+            "--headless",
+            "--norestore",
+            "--nodefault",
+            "--nolockcheck",
+            "--convert-to", "pdf",
+            "--outdir", out_dir,
+            str(source),
+        ]
+        try:
+            proc = subprocess.run(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TimeoutError(f"soffice conversion exceeded {timeout_s}s") from exc
+
+        if proc.returncode != 0:
+            raise OfficeConversionError(
+                f"soffice exited {proc.returncode}: {proc.stderr.strip()[:400]}"
+            )
+
+        produced = Path(out_dir) / (source.stem + ".pdf")
+        if not produced.is_file():
+            raise OfficeConversionError(
+                f"soffice produced no PDF at {produced}. "
+                f"stderr: {proc.stderr.strip()[:200]}"
+            )
+
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(produced), pdf_path)
+
+    return pdf_path
 
 
 def categorize_attachment(filename: str, mime_type: str | None) -> tuple[str, bool]:

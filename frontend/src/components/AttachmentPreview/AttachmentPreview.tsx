@@ -56,6 +56,7 @@ function subtitleFor(attachment: Attachment, kind: PreviewKind): string {
       pdf: 'PDF',
       audio: '音频',
       video: '视频',
+      office: 'Office',
       unsupported: '附件',
     };
     parts.push(map[kind]);
@@ -95,6 +96,16 @@ export function AttachmentPreview() {
     return `${api.getAttachmentUrl(attachment.id)}?disposition=inline`;
   }, [attachment, href]);
 
+  // Office files (docx/xlsx/pptx/...) go through the /preview endpoint
+  // which lazily converts them to PDF via soffice. For other kinds the
+  // existing inline URL is used.
+  const previewHref = useMemo(() => {
+    if (!attachment?.id) return inlineHref;
+    return api.getAttachmentPreviewUrl(attachment.id);
+  }, [attachment, inlineHref]);
+
+  const [officeState, setOfficeState] = useState<'idle' | 'loading' | 'ready' | 'missing-soffice' | 'failed'>('idle');
+
   const kind = useMemo<PreviewKind>(() => {
     if (!attachment) return 'unsupported';
     return resolvePreviewKind({
@@ -113,7 +124,34 @@ export function AttachmentPreview() {
     setTextLoading(false);
     setViewMode(kind === 'markdown' ? 'rendered' : 'source');
     setCopied(false);
+    setOfficeState('idle');
   }, [attachment?.id, attachment?.path, kind]);
+
+  // For office files, do a HEAD probe against the /preview endpoint before
+  // pointing an iframe at it. That way we surface a friendly "需要装
+  // LibreOffice" message instead of an empty iframe when the backend
+  // returns 503 / 502 / 504.
+  useEffect(() => {
+    if (!attachment || kind !== 'office' || !attachment.id) return;
+    let cancelled = false;
+    setOfficeState('loading');
+    (async () => {
+      try {
+        const response = await fetch(api.getAttachmentPreviewUrl(attachment.id!), { method: 'HEAD' });
+        if (cancelled) return;
+        if (response.ok) {
+          setOfficeState('ready');
+        } else if (response.status === 503) {
+          setOfficeState('missing-soffice');
+        } else {
+          setOfficeState('failed');
+        }
+      } catch {
+        if (!cancelled) setOfficeState('failed');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [attachment, kind]);
 
   // Fetch text/markdown content on demand
   useEffect(() => {
@@ -315,8 +353,19 @@ export function AttachmentPreview() {
                   download={attachment.name}
                   target="_blank"
                   rel="noreferrer"
+                  // For office files the iframe shows a *converted* PDF — to
+                  // avoid confusion with Chrome's PDF toolbar download (which
+                  // would download the PDF, not the source), label this button
+                  // with the original extension.
+                  title={
+                    kind === 'office'
+                      ? `下载源文件 (.${extractExtension(attachment.name)})`
+                      : '下载'
+                  }
                 >
-                  下载
+                  {kind === 'office'
+                    ? `下载源文件 (.${extractExtension(attachment.name) || 'xlsx'})`
+                    : '下载'}
                 </a>
               ) : null}
               <button
@@ -349,6 +398,30 @@ export function AttachmentPreview() {
                 src={inlineHref ? `${inlineHref}#toolbar=1&navpanes=0&view=FitH` : undefined}
                 title={attachment.name}
               />
+            ) : kind === 'office' ? (
+              officeState === 'loading' || officeState === 'idle' ? (
+                <div className="attachment-preview__loading">正在准备 Office 预览…</div>
+              ) : officeState === 'ready' ? (
+                <iframe
+                  className="attachment-preview__iframe"
+                  src={previewHref ? `${previewHref}#toolbar=1&navpanes=0&view=FitH` : undefined}
+                  title={attachment.name}
+                />
+              ) : officeState === 'missing-soffice' ? (
+                <div className="attachment-preview__fallback">
+                  <strong>需要安装 LibreOffice 才能预览 Office 文件</strong>
+                  <p>
+                    安装方式: <code>brew install libreoffice</code>(macOS) 或 <code>apt install libreoffice</code>(Linux),
+                    装好后刷新页面即可。
+                  </p>
+                  <p>暂时可以点右上角"下载"用本地 Office 应用打开。</p>
+                </div>
+              ) : (
+                <div className="attachment-preview__fallback">
+                  <strong>预览生成失败</strong>
+                  <p>转换过程出错,点右上角"下载"用本地应用打开。</p>
+                </div>
+              )
             ) : kind === 'audio' ? (
               <div className="attachment-preview__media">
                 <audio controls src={inlineHref ?? undefined} style={{ width: '100%' }} />

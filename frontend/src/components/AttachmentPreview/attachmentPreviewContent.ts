@@ -5,7 +5,33 @@ export type PreviewKind =
   | 'pdf'
   | 'audio'
   | 'video'
+  | 'office'
   | 'unsupported';
+
+/**
+ * Office formats that the backend can convert to PDF on demand via
+ * LibreOffice. Frontend uses the dedicated ``/preview`` endpoint for
+ * these (instead of ``?disposition=inline``).
+ */
+const OFFICE_EXTENSIONS = new Set([
+  'doc', 'docx',
+  'xls', 'xlsx',
+  'ppt', 'pptx',
+  'odt', 'ods', 'odp',
+  'rtf',
+]);
+
+const OFFICE_MIME_PREFIXES = [
+  'application/vnd.openxmlformats-officedocument.',
+  'application/vnd.oasis.opendocument.',
+];
+const OFFICE_EXTRA_MIMES = new Set([
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/rtf',
+  'text/rtf',
+]);
 
 const TEXT_MIME_PREFIXES = ['text/'];
 const MARKDOWN_MIMES = new Set(['text/markdown', 'text/x-markdown']);
@@ -58,6 +84,13 @@ export function resolvePreviewKind(options: {
   }
   if (MARKDOWN_MIMES.has(mime) || MARKDOWN_EXTENSIONS.has(ext)) {
     return 'markdown';
+  }
+  if (
+    OFFICE_EXTENSIONS.has(ext) ||
+    OFFICE_EXTRA_MIMES.has(mime) ||
+    OFFICE_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix))
+  ) {
+    return 'office';
   }
   if (
     TEXT_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix)) ||

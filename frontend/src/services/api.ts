@@ -271,6 +271,17 @@ export const api = {
     return `${API_BASE}/chat/attachments/${encodeURIComponent(attachmentId)}`;
   },
 
+  /**
+   * URL for in-browser preview of an attachment. For Office files
+   * (.docx / .xlsx / .pptx / .doc / .xls / .ppt / .odt / .ods / .odp / .rtf)
+   * the backend lazily converts to PDF via LibreOffice on first request;
+   * for native preview formats (image / pdf / text / audio / video) it
+   * serves the original file inline. May return 503 if soffice is missing.
+   */
+  getAttachmentPreviewUrl(attachmentId: string): string {
+    return `${API_BASE}/chat/attachments/${encodeURIComponent(attachmentId)}/preview`;
+  },
+
   async generateMusic(payload: MusicGenerateRequest): Promise<MusicGenerateResponse> {
     const res = await fetch(`${API_BASE}/creative/music/generate`, {
       method: 'POST',
