@@ -117,6 +117,7 @@ export interface KnowledgeSettings {
   vlm_api_base: string | null;
   vlm_timeout: number;
   vlm_max_dim: number;
+  vlm_max_workers: number;
 }
 
 export interface McpServerSettings {
@@ -253,6 +254,7 @@ export interface ToolsSettingsUpdate {
     vlm_api_base?: string | null;
     vlm_timeout?: number;
     vlm_max_dim?: number;
+    vlm_max_workers?: number;
   };
   audit_enabled?: boolean;
   restrict_to_workspace?: boolean;

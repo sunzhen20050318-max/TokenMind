@@ -870,6 +870,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               vlm_api_base: null as string | null,
               vlm_timeout: 30,
               vlm_max_dim: 1280,
+              vlm_max_workers: 8,
             },
             data.tools.knowledge,
           ),
@@ -1559,6 +1560,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           vlm_api_base: toolsDraft.knowledge.vlm_api_base || '',
           vlm_timeout: toolsDraft.knowledge.vlm_timeout,
           vlm_max_dim: toolsDraft.knowledge.vlm_max_dim,
+          vlm_max_workers: toolsDraft.knowledge.vlm_max_workers,
         },
       });
 
@@ -1625,6 +1627,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           vlm_api_base: toolsDraft.knowledge.vlm_api_base || '',
           vlm_timeout: toolsDraft.knowledge.vlm_timeout,
           vlm_max_dim: toolsDraft.knowledge.vlm_max_dim,
+          vlm_max_workers: toolsDraft.knowledge.vlm_max_workers,
         },
       });
       setToolsDraft((current) =>
@@ -2510,6 +2513,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         }
                         type="number"
                         value={toolsDraft.knowledge.vlm_max_dim}
+                      />
+                    </Field>
+                    <Field
+                      label="并发线程数"
+                      copy="解析一个文档时同时跑多少个 VLM 调用。值越大单个文档越快,但峰值 API 花费也更高。"
+                    >
+                      <input
+                        className="settings-input"
+                        min={1}
+                        onChange={(event) =>
+                          setKnowledgeField({
+                            vlm_max_workers: Number(event.target.value) || 1,
+                          })
+                        }
+                        type="number"
+                        value={toolsDraft.knowledge.vlm_max_workers}
                       />
                     </Field>
                   </>
