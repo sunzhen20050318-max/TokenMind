@@ -829,7 +829,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     'search' | 'exec' | 'audit' | 'uploads' | 'knowledge' | null
   >(null);
   const [editingKnowledgeModelKind, setEditingKnowledgeModelKind] = useState<
-    'embedding' | 'rerank' | null
+    'embedding' | 'rerank' | 'vlm' | null
   >(null);
   const [channelCatalog, setChannelCatalog] = useState<ChannelCatalogEntry[] | null>(null);
   const [channelLoading, setChannelLoading] = useState(false);
@@ -1537,6 +1537,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             : {}),
           rerank_api_base: toolsDraft.knowledge.rerank_api_base || '',
           rerank_top_n: toolsDraft.knowledge.rerank_top_n,
+          vlm_model: toolsDraft.knowledge.vlm_model,
+          ...(toolsDraft.knowledge.vlm_api_key.trim()
+            ? { vlm_api_key: toolsDraft.knowledge.vlm_api_key.trim() }
+            : {}),
+          vlm_api_base: toolsDraft.knowledge.vlm_api_base || '',
+          vlm_timeout: toolsDraft.knowledge.vlm_timeout,
+          vlm_max_dim: toolsDraft.knowledge.vlm_max_dim,
         },
       });
 
@@ -1558,6 +1565,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 ...response.tools.knowledge,
                 embedding_api_key: '',
                 rerank_api_key: '',
+                vlm_api_key: '',
               },
             }
           : current
@@ -1575,9 +1583,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSavingSection('knowledge-models');
     setNotice(null);
     try {
-      // Partial update: only the embedding/rerank model fields. The backend
-      // looks at model_fields_set so chunking, vector_backend, top_k stay
-      // untouched.
+      // Partial update: only the embedding/rerank/vlm model fields. The
+      // backend looks at model_fields_set so chunking, vector_backend, top_k
+      // stay untouched.
       const response = await api.updateToolsConfig({
         knowledge: {
           embedding_model: toolsDraft.knowledge.embedding_model,
@@ -1591,6 +1599,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             : {}),
           rerank_api_base: toolsDraft.knowledge.rerank_api_base || '',
           rerank_top_n: toolsDraft.knowledge.rerank_top_n,
+          vlm_model: toolsDraft.knowledge.vlm_model,
+          ...(toolsDraft.knowledge.vlm_api_key.trim()
+            ? { vlm_api_key: toolsDraft.knowledge.vlm_api_key.trim() }
+            : {}),
+          vlm_api_base: toolsDraft.knowledge.vlm_api_base || '',
+          vlm_timeout: toolsDraft.knowledge.vlm_timeout,
+          vlm_max_dim: toolsDraft.knowledge.vlm_max_dim,
         },
       });
       setToolsDraft((current) =>
@@ -1604,6 +1619,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 // the input field empty so the placeholder reads cleanly.
                 embedding_api_key: '',
                 rerank_api_key: '',
+                vlm_api_key: '',
               },
             }
           : current,
@@ -2262,19 +2278,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="settings-panel">
           <div className="settings-panel-header">
             <h3>知识库模型</h3>
-            <p>用于把上传的文档向量化(Embedding)以及对召回结果重排(Rerank,可选)。</p>
+            <p>用于把上传的文档向量化(Embedding)、对召回结果重排(Rerank,可选)以及解析文档时调用视觉模型理解图表/扫描页(VLM,可选)。</p>
           </div>
           <div className="settings-provider-grid">
-            {(['embedding', 'rerank'] as const).map((kind) => {
+            {(['embedding', 'rerank', 'vlm'] as const).map((kind) => {
               const isEmbedding = kind === 'embedding';
+              const isVlm = kind === 'vlm';
               const model = isEmbedding
                 ? toolsDraft.knowledge.embedding_model
-                : toolsDraft.knowledge.rerank_model;
+                : isVlm
+                  ? toolsDraft.knowledge.vlm_model
+                  : toolsDraft.knowledge.rerank_model;
               const endpoint = isEmbedding
                 ? toolsDraft.knowledge.embedding_api_base
-                : toolsDraft.knowledge.rerank_api_base;
+                : isVlm
+                  ? toolsDraft.knowledge.vlm_api_base
+                  : toolsDraft.knowledge.rerank_api_base;
               const configured = Boolean(model.trim());
               const editing = editingKnowledgeModelKind === kind;
+              const label = isEmbedding ? 'Embedding' : isVlm ? 'VLM (视觉解析)' : 'Rerank';
 
               return (
                 <div
@@ -2285,9 +2307,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="settings-provider-head">
                     <div>
-                      <div className="settings-provider-name">
-                        {isEmbedding ? 'Embedding' : 'Rerank'}
-                      </div>
+                      <div className="settings-provider-name">{label}</div>
                       <div className="settings-badges">
                         <span className="settings-badge">
                           {configured ? '已配置' : '未配置'}
@@ -2330,20 +2350,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const renderKnowledgeModelEditor = () => {
     if (!editingKnowledgeModelKind || !toolsDraft) return null;
-    const isEmbedding = editingKnowledgeModelKind === 'embedding';
+    const kind = editingKnowledgeModelKind;
     const close = () => setEditingKnowledgeModelKind(null);
+
+    const meta = {
+      embedding: {
+        title: 'Embedding 模型',
+        intro: '把上传的文档切成片段后用这个模型转成向量,留空则只走关键词检索。',
+        modelCopy: '推荐 text-embedding-3-small / bge-large-zh 等。',
+        modelPlaceholder: 'text-embedding-3-small',
+        modelField: 'embedding_model' as const,
+        apiKeyField: 'embedding_api_key' as const,
+        apiBaseField: 'embedding_api_base' as const,
+      },
+      rerank: {
+        title: 'Rerank 模型',
+        intro: '对召回的候选片段做二次排序,提升命中质量。留空则关闭 rerank。',
+        modelCopy: '推荐 bge-reranker-v2-m3 / cohere rerank 等。',
+        modelPlaceholder: 'bge-reranker-v2-m3',
+        modelField: 'rerank_model' as const,
+        apiKeyField: 'rerank_api_key' as const,
+        apiBaseField: 'rerank_api_base' as const,
+      },
+      vlm: {
+        title: 'VLM 视觉解析模型',
+        intro: '配置后,解析 PDF 扫描页与 Office 文档内嵌图片时会调用该 VLM 生成图文描述;留空则跳过视觉解析,仅做文本提取。',
+        modelCopy: '推荐 Qwen2.5-VL / GPT-4o-mini / Gemini 1.5 Flash 等多模态模型。',
+        modelPlaceholder: 'Qwen/Qwen2.5-VL-7B-Instruct',
+        modelField: 'vlm_model' as const,
+        apiKeyField: 'vlm_api_key' as const,
+        apiBaseField: 'vlm_api_base' as const,
+      },
+    }[kind];
+
+    const setKnowledgeField = (updates: Partial<typeof toolsDraft.knowledge>) =>
+      setToolsDraft((current) =>
+        current
+          ? { ...current, knowledge: { ...current.knowledge, ...updates } }
+          : current,
+      );
+
     return (
       <>
         <div className="settings-provider-editor-backdrop" onClick={close} />
         <aside className="settings-provider-editor">
           <div className="settings-provider-editor-head">
             <div>
-              <h3>{isEmbedding ? 'Embedding 模型' : 'Rerank 模型'}</h3>
-              <p>
-                {isEmbedding
-                  ? '把上传的文档切成片段后用这个模型转成向量,留空则只走关键词检索。'
-                  : '对召回的候选片段做二次排序,提升命中质量。留空则关闭 rerank。'}
-              </p>
+              <h3>{meta.title}</h3>
+              <p>{meta.intro}</p>
             </div>
             <button
               aria-label="关闭"
@@ -2357,38 +2411,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="settings-provider-editor-body">
             <div className="settings-panel">
               <div className="settings-grid one">
-                <Field
-                  label="模型"
-                  copy={
-                    isEmbedding
-                      ? '推荐 text-embedding-3-small / bge-large-zh 等。'
-                      : '推荐 bge-reranker-v2-m3 / cohere rerank 等。'
-                  }
-                >
+                <Field label="模型" copy={meta.modelCopy}>
                   <input
                     className="settings-input"
                     onChange={(event) =>
-                      setToolsDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              knowledge: {
-                                ...current.knowledge,
-                                ...(isEmbedding
-                                  ? { embedding_model: event.target.value }
-                                  : { rerank_model: event.target.value }),
-                              },
-                            }
-                          : current,
-                      )
+                      setKnowledgeField({ [meta.modelField]: event.target.value } as any)
                     }
-                    placeholder={isEmbedding ? 'text-embedding-3-small' : 'bge-reranker-v2-m3'}
+                    placeholder={meta.modelPlaceholder}
                     type="text"
-                    value={
-                      isEmbedding
-                        ? toolsDraft.knowledge.embedding_model
-                        : toolsDraft.knowledge.rerank_model
-                    }
+                    value={toolsDraft.knowledge[meta.modelField]}
                   />
                 </Field>
                 <Field label="API Key">
@@ -2396,78 +2427,73 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     autoComplete="off"
                     className="settings-input"
                     onChange={(event) =>
-                      setToolsDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              knowledge: {
-                                ...current.knowledge,
-                                ...(isEmbedding
-                                  ? { embedding_api_key: event.target.value }
-                                  : { rerank_api_key: event.target.value }),
-                              },
-                            }
-                          : current,
-                      )
+                      setKnowledgeField({ [meta.apiKeyField]: event.target.value } as any)
                     }
                     placeholder="sk-..."
                     type="password"
-                    value={
-                      isEmbedding
-                        ? toolsDraft.knowledge.embedding_api_key
-                        : toolsDraft.knowledge.rerank_api_key
-                    }
+                    value={toolsDraft.knowledge[meta.apiKeyField]}
                   />
                 </Field>
                 <Field label="Base URL(可选)" copy="兼容 OpenAI 协议的网关地址。">
                   <input
                     className="settings-input"
                     onChange={(event) =>
-                      setToolsDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              knowledge: {
-                                ...current.knowledge,
-                                ...(isEmbedding
-                                  ? { embedding_api_base: event.target.value || null }
-                                  : { rerank_api_base: event.target.value || null }),
-                              },
-                            }
-                          : current,
-                      )
+                      setKnowledgeField({
+                        [meta.apiBaseField]: event.target.value || null,
+                      } as any)
                     }
                     placeholder="https://api.openai.com/v1"
                     type="text"
-                    value={
-                      (isEmbedding
-                        ? toolsDraft.knowledge.embedding_api_base
-                        : toolsDraft.knowledge.rerank_api_base) ?? ''
-                    }
+                    value={toolsDraft.knowledge[meta.apiBaseField] ?? ''}
                   />
                 </Field>
-                {!isEmbedding ? (
+                {kind === 'rerank' ? (
                   <Field label="重排条数" copy="对召回的前 N 个候选做 rerank。">
                     <input
                       className="settings-input"
                       min={1}
                       onChange={(event) =>
-                        setToolsDraft((current) =>
-                          current
-                            ? {
-                                ...current,
-                                knowledge: {
-                                  ...current.knowledge,
-                                  rerank_top_n: Number(event.target.value) || 1,
-                                },
-                              }
-                            : current,
-                        )
+                        setKnowledgeField({
+                          rerank_top_n: Number(event.target.value) || 1,
+                        })
                       }
                       type="number"
                       value={toolsDraft.knowledge.rerank_top_n}
                     />
                   </Field>
+                ) : null}
+                {kind === 'vlm' ? (
+                  <>
+                    <Field label="请求超时 (秒)" copy="单次 VLM 调用的最长等待时间。">
+                      <input
+                        className="settings-input"
+                        min={5}
+                        onChange={(event) =>
+                          setKnowledgeField({
+                            vlm_timeout: Number(event.target.value) || 30,
+                          })
+                        }
+                        type="number"
+                        value={toolsDraft.knowledge.vlm_timeout}
+                      />
+                    </Field>
+                    <Field
+                      label="图片最大边长 (px)"
+                      copy="上传给 VLM 前会等比缩放到这个尺寸,降低 token 消耗。"
+                    >
+                      <input
+                        className="settings-input"
+                        min={256}
+                        onChange={(event) =>
+                          setKnowledgeField({
+                            vlm_max_dim: Number(event.target.value) || 1280,
+                          })
+                        }
+                        type="number"
+                        value={toolsDraft.knowledge.vlm_max_dim}
+                      />
+                    </Field>
+                  </>
                 ) : null}
               </div>
               <div className="settings-actions">
