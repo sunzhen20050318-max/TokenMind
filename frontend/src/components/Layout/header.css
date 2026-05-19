@@ -2,36 +2,20 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 18px;
-  padding: 12px 24px 0;
+  /* Symmetric vertical padding so the bell + ? sit visually centered
+     against the header's natural height. The earlier 12/0 split + the
+     status indicator's margin-top: 2px combined to push the buttons
+     slightly off-center; both are now gone. */
+  padding: 10px 24px;
   background: transparent;
+  min-height: 48px;
 }
 
-.shell-header__status {
+.shell-header__actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-  color: #84868f;
-  font-size: 12px;
-  font-weight: 500;
+  gap: 6px;
   flex: 0 0 auto;
-}
-
-.shell-header__status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #676973;
-}
-
-.shell-header__status-dot.is-online {
-  background: #f3f4f6;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
-}
-
-.shell-header__status-dot.is-offline {
-  background: #7a7d86;
 }
 
 .shell-header__bell-wrapper {
@@ -39,25 +23,89 @@
   flex: 0 0 auto;
 }
 
+.shell-header__contact,
 .shell-header__bell {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.55);
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   position: relative;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
+.shell-header__contact {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.shell-header__contact:hover,
+.shell-header__contact.is-open,
 .shell-header__bell:hover,
 .shell-header__bell.is-open {
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.shell-header__contact-wrapper {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.shell-header__contact-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 240px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #1c1d21 0%, #16181c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  animation: shell-header-popover-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shell-header__contact-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.shell-header__contact-email {
+  display: inline-block;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  text-decoration: none;
+  word-break: break-all;
+  transition: color 0.12s ease;
+}
+
+.shell-header__contact-email:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+@keyframes shell-header-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .shell-header__bell-badge {
