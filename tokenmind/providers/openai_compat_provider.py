@@ -285,15 +285,40 @@ class OpenAICompatProvider(LLMProvider):
             resolved = resolved.split("/", 1)[1]
         return resolved
 
-    def _requires_reasoning_echo(self, resolved_model: str) -> bool:
-        if not self.spec or self.spec.name != "deepseek":
+    def _requires_reasoning_echo(self, messages: list[dict[str, Any]]) -> bool:
+        """True if this provider rejects history that mixes thinking and
+        non-thinking turns.
+
+        - **MiMo** (RL / VL-RL): strict — *every* assistant turn must carry
+          `reasoning_content`. Trigger cleanup unconditionally. If the user
+          had a non-thinking conversation before switching to MiMo, the
+          legacy turns get stripped (better than a hard 400).
+        - **DeepSeek** (R1 / reasoner / V4): triggers cleanup only once a
+          thinking response has been produced in this session. Mixing chat
+          and reasoner models in one session is supported as long as the
+          legacy turns precede the first thinking turn.
+        """
+        if not self.spec:
             return False
-        model_lower = resolved_model.lower()
-        return any(marker in model_lower for marker in ("reasoner", "thinking", "v4"))
+        if self.spec.name == "mimo":
+            return True
+        if self.spec.name == "deepseek":
+            return any(m.get("reasoning_content") for m in messages)
+        return False
 
     @staticmethod
-    def _drop_legacy_tool_turns_without_reasoning(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Remove old assistant/tool turns that DeepSeek thinking mode cannot replay."""
+    def _drop_legacy_tool_turns_without_reasoning(
+        messages: list[dict[str, Any]],
+        strict: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Remove assistant/tool turns that a thinking-mode API will reject.
+
+        - ``strict=False`` (DeepSeek): drop only ``assistant+tool_calls`` turns
+          that lack ``reasoning_content`` (plus their tool results). Plain
+          assistant text turns are kept as-is.
+        - ``strict=True`` (MiMo): drop *every* assistant turn that lacks
+          ``reasoning_content`` — MiMo rejects mixed histories outright.
+        """
         repaired: list[dict[str, Any]] = []
         skip_tool_ids: set[str] = set()
         dropped = 0
@@ -303,19 +328,22 @@ class OpenAICompatProvider(LLMProvider):
                 dropped += 1
                 continue
 
-            if msg.get("role") == "assistant" and msg.get("tool_calls") and not msg.get("reasoning_content"):
-                for tool_call in msg.get("tool_calls") or []:
-                    if isinstance(tool_call, dict) and tool_call.get("id"):
-                        skip_tool_ids.add(str(tool_call["id"]))
-                dropped += 1
-                continue
+            if msg.get("role") == "assistant" and not msg.get("reasoning_content"):
+                has_tool_calls = bool(msg.get("tool_calls"))
+                if has_tool_calls or strict:
+                    for tool_call in msg.get("tool_calls") or []:
+                        if isinstance(tool_call, dict) and tool_call.get("id"):
+                            skip_tool_ids.add(str(tool_call["id"]))
+                    dropped += 1
+                    continue
 
             repaired.append(msg)
 
         if dropped:
             logger.warning(
-                "Dropped {} legacy DeepSeek thinking message(s) without reasoning_content",
+                "Dropped {} legacy thinking-mode message(s) without reasoning_content (strict={})",
                 dropped,
+                strict,
             )
         return repaired
 
@@ -387,8 +415,9 @@ class OpenAICompatProvider(LLMProvider):
         resolved_model = self._resolve_model(model or self.default_model)
         if self._supports_cache_control(resolved_model):
             messages, tools = self._apply_cache_control(messages, tools)
-        if self._requires_reasoning_echo(resolved_model):
-            messages = self._drop_legacy_tool_turns_without_reasoning(messages)
+        if self._requires_reasoning_echo(messages):
+            strict = bool(self.spec and self.spec.name == "mimo")
+            messages = self._drop_legacy_tool_turns_without_reasoning(messages, strict=strict)
 
         kwargs: dict[str, Any] = {
             "model": resolved_model,
