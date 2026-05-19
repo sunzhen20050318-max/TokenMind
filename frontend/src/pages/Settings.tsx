@@ -807,6 +807,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageQuery, setStorageQuery] = useState('');
   const [storageFilterMode, setStorageFilterMode] = useState<StorageFilterMode>('all');
+  const [storageDetailsOpen, setStorageDetailsOpen] = useState(false);
   const [storageActionPath, setStorageActionPath] = useState<string | null>(null);
   const [taskName, setTaskName] = useState('');
   const [taskMessage, setTaskMessage] = useState('');
@@ -4586,103 +4587,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return <div className="settings-empty">当前还没有可展示的记忆数据。</div>;
     }
 
+    const editorLines = memoryDraft ? memoryDraft.split('\n').length : 0;
+
     return (
-      <div className="settings-section settings-memory-section settings-memory-section--v2">
-        <div className="settings-metrics">
-          <Metric label="长期记忆字数" value={`${longTermMeta.words} 词`} />
-          <Metric label="当前上下文条目" value={`${memoryOverview.current_context.items.length} 条`} />
-          <Metric label="近期归档条目" value={`${memoryOverview.archive.total} 条`} />
+      <div className="settings-section settings-memory-v3">
+        <header className="settings-memory-v3__head">
+          <div>
+            <h3>长期记忆</h3>
+            <p>跨会话持续生效的事实、偏好与背景。改完点保存才会落盘。</p>
+          </div>
+          <div className="settings-memory-v3__head-actions">
+            <button
+              className="settings-button-secondary"
+              onClick={() => void loadMemoryOverview('', true)}
+              type="button"
+            >
+              刷新
+            </button>
+            <button
+              className="settings-button"
+              disabled={!memoryDraftDirty || memorySaving || !memoryOverview.long_term.editable}
+              onClick={() => void handleSaveLongTermMemory()}
+              type="button"
+            >
+              {memorySaving ? '保存中' : '保存'}
+            </button>
+          </div>
+        </header>
+
+        <div className="settings-memory-v3__editor-shell">
+          <textarea
+            className="settings-memory-v3__editor"
+            onChange={(event) => setMemoryDraft(event.target.value)}
+            placeholder="这里还没有长期记忆。你可以记录固定偏好、工作背景和重要事实。"
+            spellCheck={false}
+            value={memoryDraft}
+          />
+          <div className="settings-memory-v3__statusbar">
+            <span className={`settings-memory-v3__dot ${memoryDraftDirty ? 'is-dirty' : 'is-clean'}`} aria-hidden />
+            <span className="settings-memory-v3__statuslabel">
+              {memoryDraftDirty ? '有未保存修改' : '已同步'}
+            </span>
+            <span className="settings-memory-v3__sep">·</span>
+            <span>{formatTimestamp(memoryOverview.long_term.updated_at)}</span>
+            <span className="settings-memory-v3__sep">·</span>
+            <span>{memoryDraft.length} 字 · {editorLines} 行</span>
+            {!memoryOverview.long_term.editable ? (
+              <>
+                <span className="settings-memory-v3__sep">·</span>
+                <span className="settings-memory-v3__readonly">只读</span>
+              </>
+            ) : null}
+          </div>
         </div>
 
-        <div className="settings-memory-top">
-          <section className="settings-panel settings-memory-editor-card">
-            <div className="settings-panel-header settings-panel-header--split">
-              <div>
-                <h3>长期记忆</h3>
-                <p>保留真正会跨会话持续生效的事实、偏好和背景，让 TokenMind 长期理解你的工作方式。</p>
-              </div>
-              <div className="settings-memory-actions">
-                <button
-                  className="settings-button-secondary"
-                  onClick={() => void loadMemoryOverview('', true)}
-                  type="button"
-                >
-                  刷新
-                </button>
-                <button
-                  className="settings-button"
-                  disabled={!memoryDraftDirty || memorySaving || !memoryOverview.long_term.editable}
-                  onClick={() => void handleSaveLongTermMemory()}
-                  type="button"
-                >
-                  {memorySaving ? '保存中' : '保存长期记忆'}
-                </button>
-              </div>
-            </div>
-
-            <div className="settings-memory-editor-shell">
-              <textarea
-                className="settings-textarea settings-memory-editor settings-memory-editor--rich"
-                onChange={(event) => setMemoryDraft(event.target.value)}
-                placeholder="这里还没有长期记忆。你可以记录固定偏好、工作背景和重要事实。"
-                spellCheck={false}
-                value={memoryDraft}
-              />
-            </div>
-
-            <div className="settings-memory-editor-footer">
-              <span className={`settings-badge ${memoryDraftDirty ? 'active' : ''}`}>
-                {memoryDraftDirty ? '有未保存修改' : '内容已同步'}
-              </span>
-              <span className="settings-inline-note">
-                {memoryOverview.long_term.editable ? '当前可编辑' : '当前不可编辑'}
-              </span>
-              <span className="settings-inline-note">最后更新 {formatTimestamp(memoryOverview.long_term.updated_at)}</span>
-            </div>
-          </section>
-
-          <aside className="settings-panel settings-memory-summary-panel settings-memory-summary-panel--v2">
-            <div className="settings-panel-header">
-              <h3>记忆状态</h3>
-              <p>快速确认当前长期记忆的保存状态、规模和更新时间。</p>
-            </div>
-            <div className="settings-memory-stat-grid settings-memory-stat-grid--stacked">
-              <div className="settings-memory-stat-card">
-                <span>保存状态</span>
-                <strong>{memoryDraftDirty ? '有未保存修改' : '已同步'}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>可编辑</span>
-                <strong>{memoryOverview.long_term.editable ? '是' : '否'}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>字符数</span>
-                <strong>{memoryDraft.length}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>最后更新</span>
-                <strong>{formatTimestamp(memoryOverview.long_term.updated_at)}</strong>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <section className="settings-panel settings-memory-context-wide">
-          <div className="settings-panel-header">
-            <h3>当前上下文</h3>
-            <p>这里显示当前会话里仍在参与推理的上下文，让你一眼知道模型此刻还“带着什么”在思考。</p>
+        <section className="settings-memory-v3__block">
+          <div className="settings-memory-v3__block-head">
+            <h4>当前上下文</h4>
+            <span className="settings-memory-v3__count">
+              {memoryOverview.current_context.items.length} 条
+            </span>
           </div>
           {memoryOverview.current_context.items.length === 0 ? (
             <div className="settings-empty">
-              还没有活动会话内容。开始一段对话后，这里会显示当前真正参与推理的内容。
+              还没有活动会话内容。开始一段对话后，这里会显示当前仍在参与推理的近期消息。
             </div>
           ) : (
-            <div className="settings-memory-context-grid">
+            <div className="settings-memory-v3__list">
               {memoryOverview.current_context.items.slice(-6).map((item, index) => (
-                <article className="settings-memory-card settings-memory-card--context" key={`${item.timestamp || index}-${index}`}>
-                  <div className="settings-memory-card__head">
-                    <span className="settings-badge active">{memoryRoleLabel(item.role)}</span>
-                    <span className="settings-inline-note">{formatTimestamp(item.timestamp)}</span>
+                <article className="settings-memory-v3__item" key={`${item.timestamp || index}-${index}`}>
+                  <div className="settings-memory-v3__item-meta">
+                    <span className={`settings-memory-v3__tag settings-memory-v3__tag--${item.role}`}>
+                      {memoryRoleLabel(item.role)}
+                    </span>
+                    <span className="settings-memory-v3__time">{formatTimestamp(item.timestamp)}</span>
                   </div>
                   <SettingsMarkdown className="settings-markdown--compact" content={item.content} />
                 </article>
@@ -4691,20 +4669,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </section>
 
-        <section className="settings-panel settings-memory-archive-card">
-          <div className="settings-panel-header">
-            <h3>近期归档</h3>
-            <p>已经从主上下文移出的历史片段会显示在这里，适合回看、核对和搜索，不会打扰当前工作流。</p>
-          </div>
-          <div className="settings-memory-toolbar">
+        <section className="settings-memory-v3__block">
+          <div className="settings-memory-v3__block-head settings-memory-v3__block-head--with-search">
+            <h4>近期归档</h4>
             <input
-              className="settings-input"
+              className="settings-memory-v3__search"
               onChange={(event) => setMemoryArchiveQuery(event.target.value)}
               placeholder="搜索归档内容"
-              type="text"
+              type="search"
               value={memoryArchiveQuery}
             />
-            <span className="settings-badge">{memoryOverview.archive.total} 条</span>
+            <span className="settings-memory-v3__count">{memoryOverview.archive.total} 条</span>
           </div>
 
           {memoryOverview.archive.items.length === 0 ? (
@@ -4714,12 +4689,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : '还没有近期归档内容。对话足够长之后，这里会出现整理过的历史片段。'}
             </div>
           ) : (
-            <div className="settings-memory-card-list settings-memory-card-list--archive">
+            <div className="settings-memory-v3__list">
               {memoryOverview.archive.items.slice(0, 6).map((item) => (
-                <article className="settings-memory-card settings-memory-card--archive" key={item.id}>
-                  <div className="settings-memory-card__head">
-                    <span className="settings-badge active">归档片段</span>
-                    <span className="settings-inline-note">{formatTimestamp(item.timestamp)}</span>
+                <article className="settings-memory-v3__item" key={item.id}>
+                  <div className="settings-memory-v3__item-meta">
+                    <span className="settings-memory-v3__tag">归档</span>
+                    <span className="settings-memory-v3__time">{formatTimestamp(item.timestamp)}</span>
                   </div>
                   <SettingsMarkdown className="settings-markdown--compact" content={item.content} />
                 </article>
@@ -4891,148 +4866,171 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return <div className="settings-empty">当前还没有可展示的文件数据。</div>;
     }
 
-    return (
-      <div className="settings-section settings-storage-section">
-        <div className="settings-metrics">
-          <Metric label="已用空间" value={formatBytes(storageOverview.summary.used_bytes)} />
-          <Metric label="总配额" value={formatBytes(storageOverview.summary.quota_bytes)} />
-          <Metric label="待清理文件" value={`${storageOverview.summary.stale_unreferenced_file_count} 个`} />
-        </div>
+    const cleanupBusy = storageActionPath === '__cleanup__';
 
-        <div className="settings-grid">
-          <section className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>存储概览</h3>
-              <p>上传的文件会保存在工作区，并按当前策略自动清理。你可以先看空间，再决定是否需要手动整理。</p>
-            </div>
-            <div className="settings-usage-row">
-              <strong>{storageUsagePercent}%</strong>
-              <span>
-                {formatBytes(storageOverview.summary.used_bytes)} / {formatBytes(storageOverview.summary.quota_bytes)}
+    return (
+      <div className="settings-section settings-storage-v3">
+        <header className="settings-storage-v3__statusbar">
+          <div className="settings-storage-v3__usage">
+            <div className="settings-storage-v3__usage-line">
+              <strong>{formatBytes(storageOverview.summary.used_bytes)}</strong>
+              <span className="settings-storage-v3__usage-quota">
+                / {formatBytes(storageOverview.summary.quota_bytes)}
               </span>
+              <span className="settings-storage-v3__usage-percent">{storageUsagePercent}%</span>
             </div>
-            <div className="settings-usage-bar">
-              <div className="settings-usage-fill" style={{ width: `${storageUsagePercent}%` }} />
+            <div className="settings-storage-v3__usage-bar">
+              <div
+                className="settings-storage-v3__usage-fill"
+                style={{ width: `${storageUsagePercent}%` }}
+              />
             </div>
-            <div className="settings-memory-stat-grid settings-memory-stat-grid--stacked">
-              <div className="settings-memory-stat-card">
-                <span>单文件上限</span>
-                <strong>{formatBytes(storageOverview.summary.max_file_bytes)}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>保留天数</span>
-                <strong>{storageOverview.summary.retention_days} 天</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>清理间隔</span>
-                <strong>{storageOverview.summary.cleanup_interval_hours} 小时</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>剩余空间</span>
-                <strong>{formatBytes(storageOverview.summary.available_bytes)}</strong>
-              </div>
+          </div>
+
+          <div className="settings-storage-v3__facts">
+            <div className="settings-storage-v3__fact">
+              <span>{storageOverview.files.length}</span>
+              <small>个文件</small>
             </div>
-            <div className="settings-actions">
+            <div className="settings-storage-v3__fact">
+              <span>{storageOverview.summary.unreferenced_file_count}</span>
+              <small>未引用</small>
+            </div>
+            <div className="settings-storage-v3__fact">
+              <span>{storageOverview.summary.retention_days}</span>
+              <small>天保留</small>
+            </div>
+          </div>
+
+          <div className="settings-storage-v3__head-actions">
+            <button
+              className="settings-button-secondary"
+              onClick={() => setStorageDetailsOpen((v) => !v)}
+              type="button"
+            >
+              {storageDetailsOpen ? '收起详情' : '更多详情'}
+            </button>
+            <button
+              className="settings-button"
+              disabled={cleanupBusy}
+              onClick={() => void handleCleanupStorage()}
+              type="button"
+            >
+              {cleanupBusy ? '正在清理' : '清理过期'}
+            </button>
+          </div>
+        </header>
+
+        {storageDetailsOpen ? (
+          <section className="settings-storage-v3__details">
+            <div className="settings-storage-v3__detail-row">
+              <span>单文件上限</span>
+              <strong>{formatBytes(storageOverview.summary.max_file_bytes)}</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>检查间隔</span>
+              <strong>每 {storageOverview.summary.cleanup_interval_hours} 小时</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>已引用文件</span>
+              <strong>{storageOverview.summary.referenced_file_count} 个</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>待清理孤立</span>
+              <strong>{storageOverview.summary.stale_unreferenced_file_count} 个</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>剩余可用</span>
+              <strong>{formatBytes(storageOverview.summary.available_bytes)}</strong>
+            </div>
+          </section>
+        ) : null}
+
+        <div className="settings-storage-v3__toolbar">
+          <div className="settings-storage-v3__filters">
+            {(
+              [
+                ['all', '全部'],
+                ['referenced', '已引用'],
+                ['orphan', '未引用'],
+              ] as const
+            ).map(([value, label]) => (
               <button
-                className="settings-button"
-                disabled={storageActionPath === '__cleanup__'}
-                onClick={() => void handleCleanupStorage()}
+                key={value}
+                className={`settings-storage-v3__filter ${storageFilterMode === value ? 'is-active' : ''}`}
+                onClick={() => setStorageFilterMode(value)}
                 type="button"
               >
-                {storageActionPath === '__cleanup__' ? '正在清理' : '立即清理过期文件'}
+                {label}
               </button>
-            </div>
-          </section>
+            ))}
+          </div>
+          <input
+            className="settings-storage-v3__search"
+            onChange={(event) => setStorageQuery(event.target.value)}
+            placeholder="搜索文件名 / 路径 / 会话"
+            type="search"
+            value={storageQuery}
+          />
+          <span className="settings-storage-v3__count">{filteredStorageFiles.length} 个结果</span>
+        </div>
 
-          <section className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>文件列表</h3>
-              <p>可以按引用状态查看文件。删除按钮始终保留；如果文件还被会话引用，点击后会直接告诉你原因。</p>
-            </div>
-            <div className="settings-memory-toolbar">
-              <input
-                className="settings-input"
-                onChange={(event) => setStorageQuery(event.target.value)}
-                placeholder="搜索文件名、路径或会话"
-                type="text"
-                value={storageQuery}
-              />
-              <div className="settings-filter-group">
-                {[
-                  ['all', '全部'],
-                  ['referenced', '已引用'],
-                  ['orphan', '未引用'],
-                ].map(([value, label]) => (
+        {filteredStorageFiles.length === 0 ? (
+          <div className="settings-empty">
+            {storageQuery.trim() || storageFilterMode !== 'all'
+              ? '没有匹配当前筛选条件的文件。'
+              : '工作区还没有上传文件。'}
+          </div>
+        ) : (
+          <div className="settings-storage-v3__list">
+            {filteredStorageFiles.slice(0, 30).map((file) => (
+              <article className="settings-storage-v3__row" key={file.path}>
+                <div className="settings-storage-v3__row-main">
+                  <div className="settings-storage-v3__row-name">{file.name}</div>
+                  <div className="settings-storage-v3__row-path">{file.path}</div>
+                  <div className="settings-storage-v3__row-chips">
+                    <span className="settings-storage-v3__chip">{badgeLabel(file)}</span>
+                    <span
+                      className={`settings-storage-v3__chip ${file.referenced ? 'is-referenced' : 'is-orphan'}`}
+                    >
+                      {file.referenced ? `已引用 ${file.reference_count}` : '未引用'}
+                    </span>
+                    <span className="settings-storage-v3__chip">{formatBytes(file.size)}</span>
+                    <span className="settings-storage-v3__chip">
+                      {formatTimestamp(file.modified_at)}
+                    </span>
+                  </div>
+                  {file.referenced_by.length > 0 ? (
+                    <div className="settings-storage-v3__refs">
+                      {file.referenced_by.map((reference) => (
+                        <button
+                          key={`${file.path}-${reference.session_id}`}
+                          className="settings-storage-v3__ref"
+                          onClick={() => navigateToSession(reference.session_id)}
+                          title={`跳转到会话 ${reference.title}`}
+                          type="button"
+                        >
+                          {truncateMiddle(reference.title, 26)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="settings-storage-v3__row-actions">
                   <button
-                    key={value}
-                    className={`settings-filter-button ${storageFilterMode === value ? 'active' : ''}`}
-                    onClick={() => setStorageFilterMode(value as StorageFilterMode)}
+                    className="settings-button-danger"
+                    disabled={!file.can_delete || storageActionPath === file.path}
+                    onClick={() => void handleDeleteStoredFile(file)}
+                    title={file.can_delete ? '删除文件' : '该文件仍被会话引用，需先解除引用'}
                     type="button"
                   >
-                    {label}
+                    {storageActionPath === file.path ? '删除中' : '删除'}
                   </button>
-                ))}
-              </div>
-            </div>
-
-            {filteredStorageFiles.length === 0 ? (
-              <div className="settings-empty">当前筛选条件下没有文件。</div>
-            ) : (
-              <div className="settings-file-list">
-                {filteredStorageFiles.slice(0, 12).map((file) => (
-                  <article className="settings-file-card settings-file-card--refined" key={file.path}>
-                    <div className="settings-list-head">
-                      <div>
-                        <div className="settings-provider-name" title={file.name}>
-                          {truncateMiddle(file.name, 36)}
-                        </div>
-                        <div className="settings-badges">
-                          <span className="settings-badge">{badgeLabel(file)}</span>
-                          <span className={`settings-badge ${file.referenced ? 'active' : ''}`}>
-                            {file.referenced ? `已引用 ${file.reference_count} 次` : '未引用'}
-                          </span>
-                          <span className="settings-badge">{formatBytes(file.size)}</span>
-                        </div>
-                      </div>
-                      <button
-                        className="settings-button-danger"
-                        disabled={storageActionPath === file.path}
-                        onClick={() => void handleDeleteStoredFile(file)}
-                        title="删除文件"
-                        type="button"
-                      >
-                        {storageActionPath === file.path ? '删除中' : '删除'}
-                      </button>
-                    </div>
-                    <div className="settings-file-path" title={file.path}>
-                      {truncateMiddle(file.path, 72)}
-                    </div>
-                    <div className="settings-job-facts">
-                      <span>更新于 {formatTimestamp(file.modified_at)}</span>
-                      <span>{file.can_delete ? '可直接删除' : '仍被会话引用，需先解除引用'}</span>
-                    </div>
-                    {file.referenced_by.length > 0 ? (
-                      <div className="settings-reference-list">
-                        {file.referenced_by.map((reference) => (
-                          <button
-                            key={`${file.path}-${reference.session_id}`}
-                            className="settings-reference-pill"
-                            onClick={() => {
-                              navigateToSession(reference.session_id);
-                            }}
-                            type="button"
-                          >
-                            {truncateMiddle(reference.title, 26)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
