@@ -45,9 +45,17 @@ export const WikiKbDetail: React.FC<WikiKbDetailProps> = ({
     }
   }, [kb.id]);
 
+  // Reload the pages list whenever the set of documents OR their statuses
+  // change — a delete may have cascaded into removed entity/topic pages,
+  // and a finished compile changes a doc's updated_at without touching the
+  // doc count.
+  const documentsSignature = documents
+    .map((d) => `${d.id}:${d.status}:${d.updated_at}`)
+    .join('|');
+
   useEffect(() => {
     void loadPages();
-  }, [loadPages]);
+  }, [loadPages, documentsSignature]);
 
   const handleRecompile = useCallback(async () => {
     if (recompiling || documents.length === 0) return;

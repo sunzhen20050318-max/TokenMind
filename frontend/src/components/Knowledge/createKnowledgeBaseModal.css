@@ -59,6 +59,22 @@
   color: rgba(255, 255, 255, 0.95);
 }
 
+.kb-modal__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.kb-modal__hint code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: rgba(255, 255, 255, 0.78);
+}
+
 .kb-modal__field {
   display: flex;
   flex-direction: column;
@@ -136,6 +152,33 @@
 .kb-modal__button.is-secondary:hover {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.95);
+}
+
+.kb-modal__button.is-danger {
+  background: #d96b6b;
+  border-color: #d96b6b;
+  color: #ffffff;
+}
+
+.kb-modal__button.is-danger:hover:not(:disabled) {
+  background: #e57b7b;
+  border-color: #e57b7b;
+}
+
+.kb-modal__message {
+  font-size: 13px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.kb-modal__message strong {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+.kb-modal__message em {
+  font-style: normal;
+  color: rgba(255, 200, 200, 0.92);
 }
 
 @keyframes kb-modal-backdrop-in {

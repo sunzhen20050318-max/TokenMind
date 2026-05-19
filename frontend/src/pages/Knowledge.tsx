@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
+import { AddUrlSourceModal } from '../components/Knowledge/AddUrlSourceModal';
+import { ConfirmModal } from '../components/Knowledge/ConfirmModal';
 import { CreateKnowledgeBaseModal } from '../components/Knowledge/CreateKnowledgeBaseModal';
+import { RenameKnowledgeBaseModal } from '../components/Knowledge/RenameKnowledgeBaseModal';
 import { WikiKbDetail } from '../components/Knowledge/WikiKbDetail';
+import { CardGridSkeleton, ListSkeleton } from '../components/Skeleton/Skeleton';
 import { isWikiKb } from '../types/knowledge';
 import type { KnowledgeBase, KnowledgeDetailResponse } from '../types/knowledge';
 import type { UploadProgress } from '../types';
@@ -89,6 +93,7 @@ interface KnowledgePageProps {
 export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadPollRef = useRef(0);
+  const progressTickerRef = useRef<number | null>(null);
   const [items, setItems] = useState<KnowledgeBase[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<KnowledgeDetailResponse | null>(null);
@@ -96,6 +101,11 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showAddUrlFor, setShowAddUrlFor] = useState<string | null>(null);
+  const [renameDialog, setRenameDialog] = useState<{ id: string; name: string } | null>(null);
+  const [deleteKbDialog, setDeleteKbDialog] = useState<{ id: string; name: string } | null>(null);
+  const [deleteDocDialog, setDeleteDocDialog] = useState<{ id: string; name: string } | null>(null);
+  const [infoPopoverOpen, setInfoPopoverOpen] = useState(false);
   const [updatingBaseId, setUpdatingBaseId] = useState<string | null>(null);
   const [renamingBaseId, setRenamingBaseId] = useState<string | null>(null);
   const [deletingBaseId, setDeletingBaseId] = useState<string | null>(null);
@@ -150,6 +160,17 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
     void loadDetail(selectedId);
   }, [loadDetail, selectedId]);
 
+  // Stop any running progress ticker on unmount so an unmounted component
+  // doesn't keep calling setUploadProgress.
+  useEffect(() => {
+    return () => {
+      if (progressTickerRef.current !== null) {
+        window.clearInterval(progressTickerRef.current);
+        progressTickerRef.current = null;
+      }
+    };
+  }, []);
+
   const summary = useMemo(() => {
     const documentCount = items.reduce((sum, item) => sum + item.document_count, 0);
     const enabledCount = items.filter((item) => item.enabled).length;
@@ -169,15 +190,10 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
     await loadOverview();
   };
 
-  const handleRenameKnowledgeBase = async (knowledgeBaseId: string, currentName: string) => {
-    const nextName = window.prompt('重命名知识库', currentName)?.trim();
-    if (!nextName || nextName === currentName.trim()) {
-      return;
-    }
-
+  const submitRenameKnowledgeBase = async (knowledgeBaseId: string, nextName: string) => {
+    setRenamingBaseId(knowledgeBaseId);
+    setError(null);
     try {
-      setRenamingBaseId(knowledgeBaseId);
-      setError(null);
       const payload = await api.updateKnowledgeBase(knowledgeBaseId, { name: nextName });
       setItems((current) =>
         current.map((item) =>
@@ -190,30 +206,21 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
           knowledge_base: { ...detail.knowledge_base, name: payload.knowledge_base.name },
         });
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '重命名知识库失败');
     } finally {
       setRenamingBaseId(null);
     }
   };
 
-  const handleDeleteKnowledgeBase = async (knowledgeBaseId: string, name: string) => {
-    const confirmed = window.confirm(`确定删除知识库“${name}”吗？其中所有资料和索引都会被移除。`);
-    if (!confirmed) {
-      return;
-    }
-
+  const submitDeleteKnowledgeBase = async (knowledgeBaseId: string) => {
+    setDeletingBaseId(knowledgeBaseId);
+    setError(null);
     try {
-      setDeletingBaseId(knowledgeBaseId);
-      setError(null);
       await api.deleteKnowledgeBase(knowledgeBaseId);
       if (selectedId === knowledgeBaseId) {
         setSelectedId(null);
         setDetail(null);
       }
       await loadOverview();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '删除知识库失败');
     } finally {
       setDeletingBaseId(null);
     }
@@ -262,11 +269,48 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
   void uploadPhase;
   void uploadStageLabel;
 
+  const stopProgressTicker = useCallback(() => {
+    if (progressTickerRef.current !== null) {
+      window.clearInterval(progressTickerRef.current);
+      progressTickerRef.current = null;
+    }
+  }, []);
+
+  const startProgressTicker = useCallback(
+    (runId: number) => {
+      stopProgressTicker();
+      const startedAt = Date.now();
+      // Asymptote: visual percent approaches 89% as elapsed time grows.
+      // Pacing constant 90s → at 30s ≈ 58%, 60s ≈ 67%, 90s ≈ 73%, 180s ≈ 84%.
+      // The bar never hits 100% on time alone — only the actual ready signal
+      // from the backend can push to 100%, even if compile takes 10 min.
+      const tick = () => {
+        if (uploadPollRef.current !== runId) {
+          stopProgressTicker();
+          return;
+        }
+        const elapsed = Date.now() - startedAt;
+        const fraction = 1 - Math.exp(-elapsed / 90_000);
+        const target = Math.min(89, Math.round(45 + 44 * fraction));
+        setUploadProgress((prev) => {
+          if (!prev) return { loaded: target, total: 100, percent: target };
+          if (prev.percent >= 100) return prev; // backend ready already
+          if (target <= prev.percent) return prev; // monotonic
+          return { ...prev, loaded: target, total: 100, percent: target };
+        });
+      };
+      tick();
+      progressTickerRef.current = window.setInterval(tick, 240);
+    },
+    [stopProgressTicker],
+  );
+
   const trackProcessingProgress = useCallback(
     async (knowledgeBaseId: string, documentIds: string[]) => {
       const runId = ++uploadPollRef.current;
       setUploadPhase('processing');
       setUploadStageLabel('正在准备入库');
+      startProgressTicker(runId);
 
       while (uploadPollRef.current === runId) {
         const payload = await refreshDetail(knowledgeBaseId);
@@ -277,22 +321,24 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
 
         setUploadingCount(summary.totalCount);
         setUploadStageLabel(summary.stageLabel);
-        setUploadProgress({
-          loaded: summary.averageProgress,
-          total: 100,
-          percent: Math.max(45, Math.min(100, 45 + Math.round(summary.averageProgress * 0.55))),
-        });
+        // Visual percent is driven by the time-based ticker. Polling here
+        // only handles the stage label and detecting the terminal state.
 
         const allFinished = summary.readyCount + summary.failedCount === summary.totalCount;
         if (allFinished) {
+          stopProgressTicker();
+          setUploadProgress((prev) =>
+            prev ? { ...prev, loaded: 100, total: 100, percent: 100 } : null,
+          );
           if (summary.failedCount > 0) {
-            setError('部分知识库资料处理失败，请在资料列表中查看详情。');
+            setError('部分知识库资料处理失败,请在资料列表中查看详情。');
           }
           break;
         }
 
         await new Promise((resolve) => window.setTimeout(resolve, 700));
       }
+      stopProgressTicker();
 
       if (uploadPollRef.current === runId) {
         await loadOverview();
@@ -307,7 +353,7 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
         }, 350);
       }
     },
-    [loadOverview, refreshDetail]
+    [loadOverview, refreshDetail, startProgressTicker, stopProgressTicker]
   );
 
   const runUploadWithPipelineProgress = useCallback(
@@ -339,7 +385,8 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
           response.documents.map((document) => document.id)
         );
       } catch (err) {
-        setError(err instanceof Error ? err.message : '涓婁紶璧勬枡澶辫触');
+        setError(err instanceof Error ? err.message : '上传资料失败');
+        stopProgressTicker();
         setIsUploadingDocuments(false);
         setUploadingCount(0);
         setUploadPhase(null);
@@ -347,20 +394,43 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
         setUploadProgress(null);
       }
     },
-    [loadOverview, selectedId, trackProcessingProgress]
+    [loadOverview, selectedId, stopProgressTicker, trackProcessingProgress]
   );
 
-  const handleDeleteDocument = async (documentId: string) => {
-    if (!selectedId) {
-      return;
-    }
+  const handleUrlSourceAdded = async (knowledgeBaseId: string, documentId: string) => {
     try {
       setError(null);
-      await api.deleteKnowledgeDocument(selectedId, documentId);
-      await Promise.all([loadOverview(), loadDetail(selectedId)]);
+      // Drive the same progress UI as a file upload. The fetch is already
+      // done at this point, so we skip the "uploading" phase and jump
+      // straight into "processing" to track the LLM compile.
+      setIsUploadingDocuments(true);
+      setUploadingCount(1);
+      setUploadPhase('processing');
+      setUploadStageLabel('正在准备入库');
+      setUploadProgress({ loaded: 5, total: 100, percent: 45 });
+      await loadDetail(knowledgeBaseId);
+      await trackProcessingProgress(knowledgeBaseId, [documentId]);
+      await loadOverview();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除资料失败');
+      setError(err instanceof Error ? err.message : '添加 URL 素材失败');
+      stopProgressTicker();
+      setIsUploadingDocuments(false);
+      setUploadingCount(0);
+      setUploadPhase(null);
+      setUploadStageLabel('');
+      setUploadProgress(null);
     }
+  };
+
+  const requestDeleteDocument = (documentId: string, documentName: string) => {
+    setDeleteDocDialog({ id: documentId, name: documentName });
+  };
+
+  const submitDeleteDocument = async (documentId: string) => {
+    if (!selectedId) return;
+    setError(null);
+    await api.deleteKnowledgeDocument(selectedId, documentId);
+    await Promise.all([loadOverview(), loadDetail(selectedId)]);
   };
 
   const handleToggleEnabled = async (knowledgeBaseId: string, enabled: boolean) => {
@@ -387,26 +457,16 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
   };
 
   return (
-    <section className="knowledge-page">
-      <header className="knowledge-page__header">
-        <div>
-          <div className="knowledge-page__eyebrow">工作区</div>
-          <h1>知识库</h1>
-          <p>先浏览所有知识库总览，再进入具体知识库管理其中的资料。只有启用中的知识库，才能在对话中被链接使用。</p>
-        </div>
-
-        <div className="knowledge-page__header-actions">
-          {selectedId ? (
-            <button
-              type="button"
-              className="knowledge-page__button knowledge-page__button--ghost"
-              onClick={() => setSelectedId(null)}
-            >
-              返回总览
-            </button>
-          ) : null}
-        </div>
-      </header>
+    <section className={`knowledge-page ${selectedId ? 'knowledge-page--detail' : ''}`}>
+      {!selectedId ? (
+        <header className="knowledge-page__header">
+          <div>
+            <div className="knowledge-page__eyebrow">工作区</div>
+            <h1>知识库</h1>
+            <p>先浏览所有知识库总览,再进入具体知识库管理其中的资料。只有启用中的知识库,才能在对话中被链接使用。</p>
+          </div>
+        </header>
+      ) : null}
 
       {error ? <div className="knowledge-page__error">{error}</div> : null}
 
@@ -449,7 +509,7 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
               </div>
 
               {loading ? (
-                <div className="knowledge-page__empty">正在加载知识库…</div>
+                <CardGridSkeleton count={6} />
               ) : items.length === 0 ? (
                 <div className="knowledge-page__empty">
                   还没有知识库。先创建一个库，再往里面添加 PDF、Markdown、表格、图片或演示文档。
@@ -514,95 +574,170 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
           </div>
         </>
       ) : (
-        <section className="knowledge-page__detail">
+        <section className="kb-detail">
           {detailLoading && !detail ? (
-            <div className="knowledge-page__empty">正在加载知识库详情…</div>
+            <div style={{ padding: '24px' }}>
+              <ListSkeleton count={5} />
+            </div>
           ) : detail ? (
             (() => {
               const kb = detail.knowledge_base;
               const wiki = isWikiKb(kb);
               return (
-            <>
-              <div className="knowledge-page__detail-head">
-                <div>
-                  <div className="knowledge-page__eyebrow">
-                    知识库详情
-                    <span className={`knowledge-page__type-badge knowledge-page__type-badge--${kb.type}`}>
+                <>
+                  <header className="kb-detail__topbar">
+                    <button
+                      type="button"
+                      className="kb-detail__back"
+                      onClick={() => {
+                        setSelectedId(null);
+                        setInfoPopoverOpen(false);
+                      }}
+                      aria-label="返回总览"
+                    >
+                      ←
+                    </button>
+                    <span
+                      className={`knowledge-page__type-badge knowledge-page__type-badge--${kb.type}`}
+                    >
                       {wiki ? 'Wiki' : 'RAG'}
                     </span>
-                  </div>
-                  <h2>{kb.name}</h2>
-                  <p>{kb.description || '这个知识库还没有简介。'}</p>
-                </div>
-                <div className="knowledge-page__detail-meta">
-                  {wiki ? (
-                    <>
-                      <span>{kb.source_count} 份素材</span>
-                      <span>{kb.page_count} 页</span>
-                      <span>{kb.entity_count + kb.topic_count} 概念</span>
-                    </>
-                  ) : (
-                    <span>{detail.documents.length} 份资料</span>
-                  )}
-                  <span>{formatDate(kb.updated_at)}</span>
-                </div>
-              </div>
-
-              <div className="knowledge-page__header-actions knowledge-page__header-actions--detail">
-                <button
-                  type="button"
-                  className="knowledge-page__button knowledge-page__button--ghost"
-                  onClick={() => void handleRenameKnowledgeBase(kb.id, kb.name)}
-                  disabled={renamingBaseId === kb.id || deletingBaseId === kb.id}
-                >
-                  重命名
-                </button>
-                <button
-                  type="button"
-                  className="knowledge-page__button knowledge-page__button--ghost is-danger"
-                  onClick={() => void handleDeleteKnowledgeBase(kb.id, kb.name)}
-                  disabled={deletingBaseId === kb.id || renamingBaseId === kb.id}
-                >
-                  删除知识库
-                </button>
-              </div>
-
-              <div className="knowledge-page__detail-layout">
-                <article className="knowledge-panel">
-                  <div className="knowledge-panel__head">
-                    <div>
-                      <h3>{wiki ? 'Wiki 内容' : '资料列表'}</h3>
-                      <p>
-                        {wiki
-                          ? '上传素材后，LLM 会把它编译成相互链接的 Markdown 页面。对话时模型用工具浏览，你可以在这里查看页面与图谱。'
-                          : '一个知识库里可以放不同格式的资料，启用后会统一参与当前会话的检索参考。'}
-                      </p>
+                    <div className="kb-detail__title-wrap">
+                      <h1 className="kb-detail__title">{kb.name}</h1>
+                      {kb.description ? (
+                        <p className="kb-detail__desc">{kb.description}</p>
+                      ) : null}
                     </div>
-                    <div className="knowledge-panel__actions">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        className="knowledge-panel__file-input"
-                        onChange={(event) => {
-                          void runUploadWithPipelineProgress(event.target.files);
-                          event.target.value = '';
-                        }}
-                      />
+                    <div className="kb-detail__actions">
                       <button
                         type="button"
-                        className="knowledge-page__button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploadingDocuments}
+                        className="kb-detail__icon-button"
+                        onClick={() => setRenameDialog({ id: kb.id, name: kb.name })}
+                        disabled={renamingBaseId === kb.id || deletingBaseId === kb.id}
+                        title="重命名"
                       >
-                        上传资料
+                        重命名
                       </button>
+                      <button
+                        type="button"
+                        className="kb-detail__icon-button is-danger"
+                        onClick={() => setDeleteKbDialog({ id: kb.id, name: kb.name })}
+                        disabled={deletingBaseId === kb.id || renamingBaseId === kb.id}
+                        title="删除知识库"
+                      >
+                        删除
+                      </button>
+                      <div className="kb-detail__info-anchor">
+                        <button
+                          type="button"
+                          className={`kb-detail__icon-button ${infoPopoverOpen ? 'is-active' : ''}`}
+                          onClick={() => setInfoPopoverOpen((v) => !v)}
+                          aria-haspopup="dialog"
+                          aria-expanded={infoPopoverOpen}
+                          title="知识库状态"
+                        >
+                          状态 ⓘ
+                        </button>
+                        {infoPopoverOpen ? (
+                          <>
+                            <div
+                              className="kb-detail__info-veil"
+                              onClick={() => setInfoPopoverOpen(false)}
+                            />
+                            <div
+                              className="kb-detail__info-popover"
+                              role="dialog"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <div className="kb-detail__info-row">
+                                <span>知识库状态</span>
+                                <strong>{kb.status}</strong>
+                              </div>
+                              <div className="kb-detail__info-row">
+                                <span>{wiki ? '激活权限' : '链接权限'}</span>
+                                <strong>{kb.enabled ? '已启用' : '未启用'}</strong>
+                              </div>
+                              {wiki ? (
+                                <>
+                                  <div className="kb-detail__info-row">
+                                    <span>素材 / 页面</span>
+                                    <strong>
+                                      {kb.source_count} / {kb.page_count}
+                                    </strong>
+                                  </div>
+                                  <div className="kb-detail__info-row">
+                                    <span>实体 / 主题</span>
+                                    <strong>
+                                      {kb.entity_count} / {kb.topic_count}
+                                    </strong>
+                                  </div>
+                                  <div className="kb-detail__info-row">
+                                    <span>页面链接</span>
+                                    <strong>{kb.link_count}</strong>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="kb-detail__info-row">
+                                  <span>资料数量</span>
+                                  <strong>{detail.documents.length}</strong>
+                                </div>
+                              )}
+                              <div className="kb-detail__info-row">
+                                <span>最后更新</span>
+                                <strong>{formatDate(kb.updated_at)}</strong>
+                              </div>
+                              <button
+                                type="button"
+                                className={`kb-detail__toggle ${kb.enabled ? 'is-on' : ''}`}
+                                onClick={() =>
+                                  void handleToggleEnabled(kb.id, !kb.enabled)
+                                }
+                                disabled={updatingBaseId === kb.id}
+                              >
+                                {kb.enabled ? '停用知识库' : '启用知识库'}
+                              </button>
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
                     </div>
+                  </header>
+
+                  <div className="kb-detail__toolbar">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="knowledge-panel__file-input"
+                      onChange={(event) => {
+                        void runUploadWithPipelineProgress(event.target.files);
+                        event.target.value = '';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="kb-detail__primary-button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingDocuments}
+                    >
+                      上传资料
+                    </button>
+                    {wiki ? (
+                      <button
+                        type="button"
+                        className="kb-detail__secondary-button"
+                        onClick={() => setShowAddUrlFor(kb.id)}
+                        disabled={isUploadingDocuments}
+                        title="抓取微信公众号文章"
+                      >
+                        + 链接抓取
+                      </button>
+                    ) : null}
                   </div>
 
                   {isUploadingDocuments && uploadProgress ? (
-                    <div className="knowledge-upload-progress">
-                      <div className="knowledge-upload-progress__meta">
+                    <div className="kb-detail__progress">
+                      <div className="kb-detail__progress-meta">
                         <span>
                           {wiki ? '正在编译 ' : '正在上传 '}
                           {uploadingCount} 份资料 · {formatFileSize(uploadProgress.loaded)} /{' '}
@@ -610,122 +745,57 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                         </span>
                         <strong>{uploadProgress.percent}%</strong>
                       </div>
-                      <div className="knowledge-upload-progress__track">
+                      <div className="kb-detail__progress-track">
                         <div
-                          className="knowledge-upload-progress__fill"
+                          className="kb-detail__progress-fill"
                           style={{ width: `${uploadProgress.percent}%` }}
                         />
                       </div>
                     </div>
                   ) : null}
 
-                  {wiki ? (
-                    <WikiKbDetail
-                      kb={kb}
-                      documents={detail.documents}
-                      onDeleteDocument={(documentId) => void handleDeleteDocument(documentId)}
-                    />
-                  ) : detail.documents.length === 0 ? (
-                    <div className="knowledge-page__empty is-inline">
-                      这个知识库里还没有资料。先上传几份资料，后面聊天时就能通过“链接知识库”手动调用它。
-                    </div>
-                  ) : (
-                    <div className="knowledge-document-list">
-                      {detail.documents.map((document) => (
-                        <div key={document.id} className="knowledge-document">
-                          <div className="knowledge-document__top">
-                            <div className="knowledge-document__main">
-                              <strong>{document.name}</strong>
-                              <p>{document.path}</p>
+                  <div className="kb-detail__body">
+                    {wiki ? (
+                      <WikiKbDetail
+                        kb={kb}
+                        documents={detail.documents}
+                        onDeleteDocument={(documentId) => {
+                          const doc = detail.documents.find((d) => d.id === documentId);
+                          requestDeleteDocument(documentId, doc?.name ?? '该素材');
+                        }}
+                      />
+                    ) : detail.documents.length === 0 ? (
+                      <div className="knowledge-page__empty is-inline">
+                        这个知识库里还没有资料。先上传几份资料,后面聊天时就能通过"链接知识库"手动调用它。
+                      </div>
+                    ) : (
+                      <div className="knowledge-document-list">
+                        {detail.documents.map((document) => (
+                          <div key={document.id} className="knowledge-document">
+                            <div className="knowledge-document__top">
+                              <div className="knowledge-document__main">
+                                <strong>{document.name}</strong>
+                                <p>{document.path}</p>
+                              </div>
+                              <button
+                                type="button"
+                                className="knowledge-document__delete"
+                                onClick={() => requestDeleteDocument(document.id, document.name)}
+                              >
+                                删除
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              className="knowledge-document__delete"
-                              onClick={() => {
-                                void handleDeleteDocument(document.id);
-                              }}
-                            >
-                              删除
-                            </button>
+                            <div className="knowledge-document__meta">
+                              <span>{document.file_type.toUpperCase() || 'FILE'}</span>
+                              <span>{document.chunk_count} chunks</span>
+                              <span>{document.status}</span>
+                            </div>
                           </div>
-                          <div className="knowledge-document__meta">
-                            <span>{document.file_type.toUpperCase() || 'FILE'}</span>
-                            <span>{document.chunk_count} chunks</span>
-                            <span>{document.status}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </article>
-
-                <div className="knowledge-page__sidebar">
-                  <aside className="knowledge-panel knowledge-panel--side">
-                    <div className="knowledge-panel__head">
-                      <div>
-                        <h3>当前状态</h3>
-                        <p>
-                          {wiki
-                            ? '激活后，LLM 在对话里可以用 wiki 工具浏览这里的页面和图谱。'
-                            : '这里帮助你快速判断这个知识库是否已经准备好被聊天会话链接使用。'}
-                        </p>
+                        ))}
                       </div>
-                    </div>
-
-                    <div className="knowledge-state-list">
-                      <div className="knowledge-state-list__row">
-                        <span>知识库状态</span>
-                        <strong>{kb.status}</strong>
-                      </div>
-                      <div className="knowledge-state-list__row">
-                        <span>{wiki ? '激活权限' : '链接权限'}</span>
-                        <strong>{kb.enabled ? '已启用' : '未启用'}</strong>
-                      </div>
-                      {wiki ? (
-                        <>
-                          <div className="knowledge-state-list__row">
-                            <span>素材数量</span>
-                            <strong>{kb.source_count}</strong>
-                          </div>
-                          <div className="knowledge-state-list__row">
-                            <span>Wiki 页面</span>
-                            <strong>{kb.page_count}</strong>
-                          </div>
-                          <div className="knowledge-state-list__row">
-                            <span>实体 / 主题</span>
-                            <strong>
-                              {kb.entity_count} / {kb.topic_count}
-                            </strong>
-                          </div>
-                          <div className="knowledge-state-list__row">
-                            <span>页面链接</span>
-                            <strong>{kb.link_count}</strong>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="knowledge-state-list__row">
-                          <span>资料数量</span>
-                          <strong>{detail.documents.length}</strong>
-                        </div>
-                      )}
-                      <div className="knowledge-state-list__row">
-                        <span>最后更新</span>
-                        <strong>{formatDate(kb.updated_at)}</strong>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      className={`knowledge-page__button knowledge-page__button--toggle ${kb.enabled ? 'is-on' : ''}`}
-                      onClick={() => void handleToggleEnabled(kb.id, !kb.enabled)}
-                      disabled={updatingBaseId === kb.id}
-                    >
-                      {kb.enabled ? '停用当前知识库' : '启用当前知识库'}
-                    </button>
-                  </aside>
-                </div>
-              </div>
-            </>
+                    )}
+                  </div>
+                </>
               );
             })()
           ) : null}
@@ -736,6 +806,58 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
         <CreateKnowledgeBaseModal
           onClose={() => setShowCreate(false)}
           onCreated={handleCreated}
+        />
+      ) : null}
+
+      {showAddUrlFor ? (
+        <AddUrlSourceModal
+          knowledgeBaseId={showAddUrlFor}
+          onClose={() => setShowAddUrlFor(null)}
+          onAdded={(doc) => {
+            void handleUrlSourceAdded(showAddUrlFor, doc.id);
+          }}
+        />
+      ) : null}
+
+      {renameDialog ? (
+        <RenameKnowledgeBaseModal
+          currentName={renameDialog.name}
+          onClose={() => setRenameDialog(null)}
+          onSubmit={(nextName) => submitRenameKnowledgeBase(renameDialog.id, nextName)}
+        />
+      ) : null}
+
+      {deleteKbDialog ? (
+        <ConfirmModal
+          title="删除知识库"
+          danger
+          confirmLabel="确认删除"
+          message={
+            <>
+              确认删除知识库 <strong>{deleteKbDialog.name}</strong>?
+              <br />
+              <em>其中所有资料、Wiki 页面和索引都会被一并移除,无法恢复。</em>
+            </>
+          }
+          onClose={() => setDeleteKbDialog(null)}
+          onConfirm={() => submitDeleteKnowledgeBase(deleteKbDialog.id)}
+        />
+      ) : null}
+
+      {deleteDocDialog ? (
+        <ConfirmModal
+          title="删除资料"
+          danger
+          confirmLabel="确认删除"
+          message={
+            <>
+              确认从当前知识库中删除 <strong>{deleteDocDialog.name}</strong>?
+              <br />
+              <em>该素材的源页面、对应实体/主题(若仅此素材引用)将一同清理,无法恢复。</em>
+            </>
+          }
+          onClose={() => setDeleteDocDialog(null)}
+          onConfirm={() => submitDeleteDocument(deleteDocDialog.id)}
         />
       ) : null}
     </section>
