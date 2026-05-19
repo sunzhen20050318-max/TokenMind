@@ -285,7 +285,12 @@ class OpenAICompatProvider(LLMProvider):
             resolved = resolved.split("/", 1)[1]
         return resolved
 
-    def _requires_reasoning_echo(self, messages: list[dict[str, Any]]) -> bool:
+    # DeepSeek thinking-mode model name fragments. The chat model
+    # (``deepseek-chat`` / V3) tolerates mixed history, so we only trigger
+    # the cleanup for the reasoner variants.
+    _DEEPSEEK_THINKING_PATTERNS = ("r1", "reasoner", "v4")
+
+    def _requires_reasoning_echo(self, resolved_model: str) -> bool:
         """True if this provider rejects history that mixes thinking and
         non-thinking turns.
 
@@ -293,17 +298,19 @@ class OpenAICompatProvider(LLMProvider):
           `reasoning_content`. Trigger cleanup unconditionally. If the user
           had a non-thinking conversation before switching to MiMo, the
           legacy turns get stripped (better than a hard 400).
-        - **DeepSeek** (R1 / reasoner / V4): triggers cleanup only once a
-          thinking response has been produced in this session. Mixing chat
-          and reasoner models in one session is supported as long as the
-          legacy turns precede the first thinking turn.
+        - **DeepSeek** (R1 / reasoner / V4): triggers cleanup for the
+          reasoner-family models. ``deepseek-chat`` (V3) is unaffected, so
+          mixing chat and reasoner models in one session is supported —
+          legacy chat-only turns are stripped only when a reasoner model
+          is actually being called.
         """
         if not self.spec:
             return False
         if self.spec.name == "mimo":
             return True
         if self.spec.name == "deepseek":
-            return any(m.get("reasoning_content") for m in messages)
+            name = resolved_model.lower()
+            return any(p in name for p in self._DEEPSEEK_THINKING_PATTERNS)
         return False
 
     @staticmethod
@@ -415,7 +422,7 @@ class OpenAICompatProvider(LLMProvider):
         resolved_model = self._resolve_model(model or self.default_model)
         if self._supports_cache_control(resolved_model):
             messages, tools = self._apply_cache_control(messages, tools)
-        if self._requires_reasoning_echo(messages):
+        if self._requires_reasoning_echo(resolved_model):
             strict = bool(self.spec and self.spec.name == "mimo")
             messages = self._drop_legacy_tool_turns_without_reasoning(messages, strict=strict)
 
