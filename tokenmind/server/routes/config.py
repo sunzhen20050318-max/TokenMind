@@ -147,6 +147,7 @@ class KnowledgeConfigUpdate(BaseModel):
     vlm_api_base: str | None = None
     vlm_timeout: int | None = None
     vlm_max_dim: int | None = None
+    vlm_max_workers: int | None = None
 
 
 class ToolsConfigUpdate(BaseModel):
@@ -629,6 +630,8 @@ async def update_tools_config(update: ToolsConfigUpdate):
                 knowledge.vlm_timeout = update.knowledge.vlm_timeout
             if "vlm_max_dim" in update.knowledge.model_fields_set:
                 knowledge.vlm_max_dim = update.knowledge.vlm_max_dim
+            if "vlm_max_workers" in update.knowledge.model_fields_set:
+                knowledge.vlm_max_workers = update.knowledge.vlm_max_workers
 
         save_config(config)
 

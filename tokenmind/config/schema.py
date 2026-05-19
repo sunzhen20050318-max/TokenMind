@@ -171,6 +171,9 @@ class KnowledgeConfig(Base):
     vlm_api_base: str | None = None
     vlm_timeout: int = 30
     vlm_max_dim: int = 1280
+    # Concurrent VLM HTTP calls per document. Larger values trade higher
+    # peak API spend for faster ingestion on image-heavy files.
+    vlm_max_workers: int = 8
 
 
 class TemplatesConfig(Base):

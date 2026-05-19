@@ -74,6 +74,7 @@ class KnowledgeService:
         vlm_api_base: str | None = None,
         vlm_timeout: int = 30,
         vlm_max_dim: int = 1280,
+        vlm_max_workers: int = 8,
     ):
         self.workspace = workspace
         self.root = workspace / "knowledge"
@@ -96,6 +97,7 @@ class KnowledgeService:
         self.vlm_api_base = vlm_api_base.strip() if vlm_api_base else None
         self.vlm_timeout = vlm_timeout
         self.vlm_max_dim = vlm_max_dim
+        self.vlm_max_workers = vlm_max_workers
         self.collection_name = "knowledge_chunks"
         self._state_lock = threading.RLock()
         self._state = self._load()
@@ -210,6 +212,7 @@ class KnowledgeService:
         vlm_api_base: str | None = None,
         vlm_timeout: int | None = None,
         vlm_max_dim: int | None = None,
+        vlm_max_workers: int | None = None,
     ) -> None:
         if vector_backend is not None:
             self.vector_backend = vector_backend or "sqlite"
@@ -243,6 +246,8 @@ class KnowledgeService:
             self.vlm_timeout = vlm_timeout
         if vlm_max_dim is not None:
             self.vlm_max_dim = vlm_max_dim
+        if vlm_max_workers is not None:
+            self.vlm_max_workers = vlm_max_workers
 
     def _load(self) -> dict:
         if self.metadata_file.exists():
@@ -882,6 +887,7 @@ class KnowledgeService:
             api_base=self.vlm_api_base,
             timeout=self.vlm_timeout,
             max_dim=self.vlm_max_dim,
+            max_workers=self.vlm_max_workers,
         )
 
     def _extract_text(self, path: Path) -> str:

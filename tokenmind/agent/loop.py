@@ -172,6 +172,7 @@ class AgentLoop:
             vlm_api_base=self.knowledge_config.vlm_api_base,
             vlm_timeout=self.knowledge_config.vlm_timeout,
             vlm_max_dim=self.knowledge_config.vlm_max_dim,
+            vlm_max_workers=self.knowledge_config.vlm_max_workers,
         )
         self.knowledge.set_wiki_llm(provider=provider, model=self.model)
         self.template_renderer = TemplateRenderer()
@@ -418,6 +419,7 @@ class AgentLoop:
             vlm_api_base=cfg.tools.knowledge.vlm_api_base,
             vlm_timeout=cfg.tools.knowledge.vlm_timeout,
             vlm_max_dim=cfg.tools.knowledge.vlm_max_dim,
+            vlm_max_workers=cfg.tools.knowledge.vlm_max_workers,
         )
         self.templates_config = cfg.templates
         self.memory_consolidator.templates_config = cfg.templates

@@ -16,13 +16,13 @@ clear error when LibreOffice isn't on the system.
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import io
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from zipfile import ZipFile
 
 from loguru import logger
 
@@ -38,6 +38,9 @@ class VLMConfig:
     api_base: str | None = None
     timeout: int = 30
     max_dim: int = 1280
+    # Max number of concurrent VLM HTTP calls per document. Larger values
+    # accelerate documents with many embedded images but push API spend higher.
+    max_workers: int = 8
 
 
 @dataclass
@@ -66,9 +69,12 @@ class LegacyOfficeConversionError(RuntimeError):
     """Raised when ``.doc`` / ``.ppt`` cannot be converted to the modern format."""
 
 
-# Office images smaller than this byte threshold are ignored (likely icons /
-# bullets / decorative artwork that VLM has nothing meaningful to say about).
-_MIN_OFFICE_IMAGE_BYTES = 5 * 1024  # 5KB
+# Inline DOCX images get a low threshold because diagrams / sparklines that
+# carry real information are often around 1–5KB. Source project value: 1KB.
+_MIN_DOCX_IMAGE_BYTES = 1 * 1024  # 1KB
+# PPTX images get a stricter cutoff — slides contain many decorative icons
+# (bullet glyphs, watermark logos) that would burn VLM tokens for no gain.
+_MIN_PPTX_IMAGE_BYTES = 5 * 1024  # 5KB
 # Approximate per-segment character cap for DOCX paging.
 _DOCX_SEGMENT_CHAR_LIMIT = 1000
 
@@ -159,6 +165,46 @@ def _caption_image(
         return None, 0
 
 
+def _caption_images_batch(
+    tasks: list[tuple[str, bytes, str, bool]],
+    vlm: VLMConfig,
+) -> dict[str, tuple[str | None, int]]:
+    """Fan ``tasks`` out across a thread pool and gather results by task_id.
+
+    Each task is ``(task_id, image_bytes, context_hint, strict_filtering)``.
+    The result dict maps task_id → ``(caption, tokens)`` exactly like the
+    single-shot ``_caption_image`` helper, so callers can stay agnostic to
+    whether captioning ran in parallel or not. Empty input short-circuits
+    without spinning a thread pool.
+    """
+    if not tasks:
+        return {}
+    if vlm.max_workers <= 1 or len(tasks) == 1:
+        return {
+            task_id: _caption_image(
+                blob, vlm, context_hint=ctx, strict_filtering=strict
+            )
+            for task_id, blob, ctx, strict in tasks
+        }
+
+    results: dict[str, tuple[str | None, int]] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=vlm.max_workers) as executor:
+        future_to_id = {
+            executor.submit(
+                _caption_image, blob, vlm, context_hint=ctx, strict_filtering=strict
+            ): task_id
+            for task_id, blob, ctx, strict in tasks
+        }
+        for future in concurrent.futures.as_completed(future_to_id):
+            task_id = future_to_id[future]
+            try:
+                results[task_id] = future.result()
+            except Exception as exc:
+                logger.warning("VLM batch worker failed for {}: {}", task_id, exc)
+                results[task_id] = (None, 0)
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Legacy format conversion via local LibreOffice
 # ---------------------------------------------------------------------------
@@ -215,92 +261,134 @@ def _convert_legacy_to_modern(source: Path, target_ext: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# PDF
+# PDF (pymupdf / fitz backend)
 # ---------------------------------------------------------------------------
 
-def _pdf_page_is_complex(text: str, image_count: int) -> bool:
-    """Heuristic: a page benefits from VLM captioning when it has images and
-    little extractable text. Mirrors smart-document-parser's
-    ``_check_pdf_complexity`` minus the fitz-specific bbox math (we don't
-    have per-image bounding boxes from pypdf)."""
-    text = (text or "").strip()
-    if not text and image_count > 0:
+# Fraction of the page area an image must cover to push the page into the
+# VLM path. Mirrors smart-document-parser-API: large images = likely a
+# chart / diagram that text extraction alone won't surface.
+_PDF_IMAGE_AREA_RATIO = 0.05
+# Below this many characters a page is considered "thin on text"; combined
+# with the presence of any image, that's the cheap path to flag the page.
+_PDF_TEXT_LIGHT_THRESHOLD = 800
+# pymupdf pixmap render DPI when sending the page to a VLM. 100 dpi keeps
+# images compact enough to stay under typical 1MB image-input limits while
+# still letting the VLM read body-text-sized labels.
+_PDF_VLM_RENDER_DPI = 100
+
+
+def _pdf_page_is_complex(page: Any) -> bool:
+    """fitz-backed complexity heuristic: trigger VLM when a page either has
+    no extractable text but contains images, or has thin text and at least
+    one image covering > 5% of the page area. Falls back to "any image with
+    thin text" if bbox lookup fails (some embedded image refs raise inside
+    fitz on damaged PDFs)."""
+    text = (page.get_text() or "").strip()
+    raw_images = page.get_images(full=True)
+    if not raw_images:
+        return False
+    if not text:
         return True
-    if image_count > 0 and len(text) < 800:
+    if len(text) >= _PDF_TEXT_LIGHT_THRESHOLD:
+        return False
+    page_rect = page.rect
+    page_area = float(page_rect.width) * float(page_rect.height)
+    if page_area <= 0:
         return True
+    for img in raw_images:
+        try:
+            rect = page.get_image_bbox(img)
+        except Exception:
+            # Damaged xref → assume worth captioning rather than skipping
+            return True
+        area = float(rect.width) * float(rect.height)
+        if page_area > 0 and (area / page_area) > _PDF_IMAGE_AREA_RATIO:
+            return True
     return False
 
 
-def _render_pdf_page_to_image(path: Path, page_num: int, dpi: int = 100) -> bytes | None:
-    """Render a single PDF page (1-indexed) to PNG bytes via pdf2image.
-    Returns ``None`` when pdf2image / poppler is unavailable."""
+def _render_pdf_page_to_png(page: Any, dpi: int = _PDF_VLM_RENDER_DPI) -> bytes | None:
+    """Render a fitz Page object to PNG bytes via the native pixmap API.
+    Returns None on rendering failures so the caller can fall back to text."""
     try:
-        from pdf2image import convert_from_path
-    except ImportError:
-        logger.warning("pdf2image not available — skipping VLM render")
-        return None
-    try:
-        images = convert_from_path(
-            str(path),
-            dpi=dpi,
-            first_page=page_num,
-            last_page=page_num,
-        )
-        if not images:
-            return None
-        buf = io.BytesIO()
-        images[0].save(buf, format="PNG")
-        return buf.getvalue()
+        pix = page.get_pixmap(dpi=dpi)
+        return pix.tobytes("png")
     except Exception as exc:
-        logger.warning("pdf2image failed on page {} of {}: {}", page_num, path.name, exc)
+        logger.warning("fitz failed to render PDF page: {}", exc)
         return None
 
 
 def parse_pdf(path: Path, vlm: VLMConfig | None = None) -> ParsedDocument:
-    from pypdf import PdfReader
+    """Parse a PDF using pymupdf (fitz). Text-only pages use the native
+    extractor; image-dense / text-light pages get sent to the configured
+    VLM in parallel via ``_caption_images_batch`` when VLM is enabled."""
+    import fitz
 
-    reader = PdfReader(str(path))
-    doc = ParsedDocument(file_name=path.name, file_type="pdf")
+    doc = fitz.open(str(path))
+    try:
+        result = ParsedDocument(file_name=path.name, file_type="pdf")
 
-    for index, page in enumerate(reader.pages):
-        page_num = index + 1
-        raw_text = (page.extract_text() or "").strip()
-        image_count = len(getattr(page, "images", []) or [])
+        # First pass: collect text per page and queue VLM tasks for the
+        # complex ones. We keep the original text so the LLM still sees it
+        # alongside the VLM caption in the final output.
+        text_pages: list[tuple[int, str]] = []
+        vlm_tasks: list[tuple[str, bytes, str, bool]] = []
+        vlm_raw_text: dict[str, str] = {}
 
-        if vlm and _pdf_page_is_complex(raw_text, image_count):
-            png_bytes = _render_pdf_page_to_image(path, page_num)
-            if png_bytes:
-                caption, tokens = _caption_image(
-                    png_bytes,
-                    vlm,
-                    context_hint=raw_text[:200],
-                    strict_filtering=False,
-                )
-                if caption:
-                    content = f"--- Page {page_num} ---\n{caption}"
-                    if raw_text:
-                        content = f"{content}\n\n[原始文本]\n{raw_text}"
-                    doc.pages.append(
-                        ParsedPage(
-                            page_num=page_num,
-                            content=content,
-                            tokens_used=tokens,
-                            method="vlm",
-                        )
-                    )
+        for index, page in enumerate(doc):
+            page_num = index + 1
+            raw_text = (page.get_text() or "").strip()
+
+            if vlm and _pdf_page_is_complex(page):
+                png_bytes = _render_pdf_page_to_png(page)
+                if png_bytes:
+                    task_id = f"page_{page_num}"
+                    vlm_tasks.append((task_id, png_bytes, raw_text[:200], False))
+                    vlm_raw_text[task_id] = raw_text
                     continue
 
-        # Text-only fallback (also the default when no VLM is configured).
-        if raw_text:
-            doc.pages.append(
-                ParsedPage(
+            if raw_text:
+                text_pages.append((page_num, raw_text))
+
+        captions: dict[str, tuple[str | None, int]] = {}
+        if vlm_tasks and vlm:
+            captions = _caption_images_batch(vlm_tasks, vlm)
+
+        # Stitch back together in page order so chunkers preserve sequencing.
+        rendered: dict[int, ParsedPage] = {}
+        for page_num, raw_text in text_pages:
+            rendered[page_num] = ParsedPage(
+                page_num=page_num,
+                content=f"--- Page {page_num} ---\n{raw_text}",
+                method="text",
+            )
+        for task_id, (caption, tokens) in captions.items():
+            page_num = int(task_id.split("_", 1)[1])
+            raw_text = vlm_raw_text.get(task_id, "")
+            if caption:
+                body = caption
+                if raw_text:
+                    body = f"{caption}\n\n[原始文本]\n{raw_text}"
+                rendered[page_num] = ParsedPage(
+                    page_num=page_num,
+                    content=f"--- Page {page_num} ---\n{body}",
+                    tokens_used=tokens,
+                    method="vlm",
+                )
+            elif raw_text:
+                # VLM returned nothing useful — keep the text-only version
+                # rather than dropping the page entirely.
+                rendered[page_num] = ParsedPage(
                     page_num=page_num,
                     content=f"--- Page {page_num} ---\n{raw_text}",
-                    method="text",
+                    method="vlm_failed",
                 )
-            )
 
-    return doc
+        for page_num in sorted(rendered.keys()):
+            result.pages.append(rendered[page_num])
+        return result
+    finally:
+        doc.close()
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +444,7 @@ def parse_docx(path: Path, vlm: VLMConfig | None = None) -> ParsedDocument:
         for part in xml_str.split('embed="')[1:]:
             rid = part.split('"', 1)[0]
             blob = rid_to_blob.get(rid)
-            if not blob or len(blob) < _MIN_OFFICE_IMAGE_BYTES:
+            if not blob or len(blob) < _MIN_DOCX_IMAGE_BYTES:
                 continue
             task_id = f"img_{len(pending_image_caches)}"
             pending_image_caches[task_id] = (ctx_hint, blob)
@@ -393,10 +481,11 @@ def parse_docx(path: Path, vlm: VLMConfig | None = None) -> ParsedDocument:
 
     captions: dict[str, tuple[str | None, int]] = {}
     if pending_image_caches and vlm:
-        for task_id, (ctx_hint, blob) in pending_image_caches.items():
-            captions[task_id] = _caption_image(
-                blob, vlm, context_hint=ctx_hint, strict_filtering=False
-            )
+        tasks = [
+            (task_id, blob, ctx_hint, False)
+            for task_id, (ctx_hint, blob) in pending_image_caches.items()
+        ]
+        captions = _caption_images_batch(tasks, vlm)
 
     chunk: list[str] = []
     chunk_chars = 0
@@ -450,10 +539,16 @@ def parse_pptx(path: Path, vlm: VLMConfig | None = None) -> ParsedDocument:
     prs = Presentation(str(path))
     result = ParsedDocument(file_name=path.name, file_type="pptx")
 
+    # First pass: collect per-slide parts and queue every embedded image so
+    # we can batch-caption them after walking all slides. Each part is either
+    # a literal text string or an {"img": task_id} marker that gets resolved
+    # in the second pass.
+    slide_parts: list[list[Any]] = []
+    image_tasks: list[tuple[str, bytes, str, bool]] = []
+
     for i, slide in enumerate(prs.slides):
         page_num = i + 1
-        parts: list[str] = []
-        pending_images: list[tuple[str, bytes]] = []
+        parts: list[Any] = []
 
         title_shape = slide.shapes.title if slide.shapes.title else None
         if title_shape and title_shape.text:
@@ -472,24 +567,34 @@ def parse_pptx(path: Path, vlm: VLMConfig | None = None) -> ParsedDocument:
                     blob = shape.image.blob
                 except Exception:
                     blob = None
-                if blob and len(blob) >= _MIN_OFFICE_IMAGE_BYTES:
-                    pending_images.append(
-                        (
-                            f"PPT Slide {page_num}: " + " ".join(parts[-3:]),
-                            blob,
-                        )
+                if blob and len(blob) >= _MIN_PPTX_IMAGE_BYTES:
+                    task_id = f"slide{page_num}_img{len(image_tasks)}"
+                    ctx_hint = (
+                        f"PPT Slide {page_num}: "
+                        + " ".join(p for p in parts[-3:] if isinstance(p, str))
                     )
+                    image_tasks.append((task_id, blob, ctx_hint, True))
+                    parts.append({"img": task_id})
+        slide_parts.append(parts)
 
+    captions: dict[str, tuple[str | None, int]] = {}
+    if image_tasks and vlm:
+        captions = _caption_images_batch(image_tasks, vlm)
+
+    # Second pass: stitch captions back into each slide in order.
+    for i, parts in enumerate(slide_parts):
+        page_num = i + 1
+        rendered: list[str] = []
         page_tokens = 0
-        for ctx_hint, blob in pending_images:
-            caption, tokens = _caption_image(
-                blob, vlm, context_hint=ctx_hint, strict_filtering=True
-            ) if vlm else (None, 0)
-            page_tokens += tokens
-            if caption:
-                parts.append(f"\n{caption}\n")
-
-        body = "\n".join(parts)
+        for part in parts:
+            if isinstance(part, str):
+                rendered.append(part)
+            else:
+                caption, tokens = captions.get(part["img"], (None, 0))
+                page_tokens += tokens
+                if caption:
+                    rendered.append(f"\n{caption}\n")
+        body = "\n".join(rendered)
         result.pages.append(
             ParsedPage(
                 page_num=page_num,
@@ -506,20 +611,67 @@ def parse_pptx(path: Path, vlm: VLMConfig | None = None) -> ParsedDocument:
 # XLSX
 # ---------------------------------------------------------------------------
 
+def _format_xlsx_cell(value: Any) -> str:
+    """Render a cell value as a tidy string for LLM consumption."""
+    from datetime import date, datetime, time
+
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        # Drop the trailing 00:00:00 for date-only cells so headers like
+        # "2024-01-15" don't read as "2024-01-15 00:00:00".
+        if value.hour == 0 and value.minute == 0 and value.second == 0:
+            return value.strftime("%Y-%m-%d")
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, time):
+        return value.strftime("%H:%M:%S")
+    if isinstance(value, float) and value.is_integer():
+        # 12.0 -> "12" so integers stored as floats don't read ugly.
+        return str(int(value))
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    return str(value)
+
+
 def parse_xlsx(path: Path) -> ParsedDocument:
     from openpyxl import load_workbook
 
-    wb = load_workbook(filename=str(path), data_only=True, read_only=True)
+    # read_only=False so we can see ws.merged_cells.ranges and forward-fill
+    # merged header values into the rows below — the read_only iterator
+    # otherwise returns ``None`` for every cell except the top-left of each
+    # merge, which silently corrupts wide multi-row headers. For typical
+    # knowledge-base spreadsheets (under tens of MB) the memory cost is
+    # acceptable; very large workbooks degrade ungracefully but still parse.
+    wb = load_workbook(filename=str(path), data_only=True, read_only=False)
     result = ParsedDocument(file_name=path.name, file_type="xlsx")
     try:
         for sheet_index, sheet_name in enumerate(wb.sheetnames):
             ws = wb[sheet_name]
+
+            # Build a (row, col) -> top-left value map so we can fill in the
+            # cells that openpyxl reports as None inside a merged range.
+            merge_fill: dict[tuple[int, int], Any] = {}
+            for merge_range in ws.merged_cells.ranges:
+                anchor_value = ws.cell(merge_range.min_row, merge_range.min_col).value
+                for r in range(merge_range.min_row, merge_range.max_row + 1):
+                    for c in range(merge_range.min_col, merge_range.max_col + 1):
+                        merge_fill[(r, c)] = anchor_value
+
             lines: list[str] = []
-            for row in ws.iter_rows(values_only=True):
-                if not row:
-                    continue
-                cells = [str(c) if c is not None else "" for c in row]
-                if any(cell.strip() for cell in cells):
+            for row_idx, row in enumerate(ws.iter_rows(values_only=False), start=1):
+                cells: list[str] = []
+                for col_idx, cell in enumerate(row, start=1):
+                    val = cell.value
+                    if val is None and (row_idx, col_idx) in merge_fill:
+                        val = merge_fill[(row_idx, col_idx)]
+                    cells.append(_format_xlsx_cell(val))
+                # Trim trailing empty cells so a sparse row doesn't render as
+                # "x | | | | | | |".
+                while cells and not cells[-1].strip():
+                    cells.pop()
+                if cells:
                     lines.append(" | ".join(cells))
             if not lines:
                 continue
