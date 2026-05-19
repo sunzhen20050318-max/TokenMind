@@ -858,6 +858,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               api_key: '',
             },
           },
+          // Fill in defaults for any knowledge field the backend hasn't sent
+          // yet — guards against the user upgrading the frontend before
+          // restarting an older backend. The cast lets TS accept the spread
+          // even though KnowledgeSettings declares vlm_* as required (we're
+          // explicitly defending against a server that hasn't been told yet).
+          knowledge: Object.assign(
+            {
+              vlm_model: '',
+              vlm_api_key: '',
+              vlm_api_base: null as string | null,
+              vlm_timeout: 30,
+              vlm_max_dim: 1280,
+            },
+            data.tools.knowledge,
+          ),
         });
 
         const providerKeys = Object.keys(PROVIDER_META);
@@ -1562,6 +1577,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 },
               },
               knowledge: {
+                // Keep prior values as a fallback so an older backend that
+                // doesn't echo back the vlm_* fields can't strip the
+                // defaults we initialised them with.
+                ...current.knowledge,
                 ...response.tools.knowledge,
                 embedding_api_key: '',
                 rerank_api_key: '',
