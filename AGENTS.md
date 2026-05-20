@@ -173,4 +173,4 @@ Config file lives at `~/.tokenmind/config.json` by default; override with `token
 
 - `hatch_build.py`: custom Hatchling build hook that bundles `frontend/dist/` into `webui/` inside the wheel
 - PyPI readme uses `README_PYPI.md` (not `README.md`)
-- Docker: base `ghcr.io/astral-sh/uv:python3.12-bookworm-slim` with Node.js 20, exposes port 18790, config at `/root/.tokenmind`
+- Docker: base `ghcr.io/astral-sh/uv:python3.12-bookworm-slim` with Node.js 20, exposes port 18888, config at `/root/.tokenmind`

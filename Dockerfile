@@ -33,8 +33,9 @@ WORKDIR /app
 # Create config directory
 RUN mkdir -p /root/.tokenmind
 
-# Gateway default port
-EXPOSE 18790
+# Web UI default port (aligns with `tokenmind web` CLI default and the
+# GatewayConfig schema default in tokenmind/config/schema.py).
+EXPOSE 18888
 
 ENTRYPOINT ["tokenmind"]
 CMD ["status"]
