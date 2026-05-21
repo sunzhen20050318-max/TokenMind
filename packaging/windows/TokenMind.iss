@@ -1,7 +1,7 @@
 #define MyAppName "TokenMind"
 #define MyAppPublisher "TokenMind"
 #ifndef MyAppVersion
-#define MyAppVersion "0.1.11"
+#define MyAppVersion "0.1.12"
 #endif
 
 #define ProjectRoot AddBackslash(SourcePath) + "..\.."
@@ -26,9 +26,15 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+LanguageDetectionMethod=uilanguage
+ShowLanguageDialog=yes
+
+[Languages]
+Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式:"; Flags: checkedonce
 
 [Files]
 Source: "{#AppDist}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -39,4 +45,4 @@ Name: "{autoprograms}\TokenMind"; Filename: "{app}\TokenMind.exe"; IconFilename:
 Name: "{autodesktop}\TokenMind"; Filename: "{app}\TokenMind.exe"; IconFilename: "{app}\tokenmind.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\TokenMind.exe"; Description: "Launch TokenMind"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\TokenMind.exe"; Description: "启动 TokenMind"; Flags: nowait postinstall skipifsilent

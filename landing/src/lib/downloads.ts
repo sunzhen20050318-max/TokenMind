@@ -20,5 +20,5 @@ export const INSTALLERS: InstallerLinks = {
   // to this until the next universal arm64+x64 build lands.
   macos: 'https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMind-0.1.9-x64.dmg',
   windows:
-    'https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMindSetup-0.1.11.exe',
+    'https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMindSetup-0.1.12.exe',
 };
