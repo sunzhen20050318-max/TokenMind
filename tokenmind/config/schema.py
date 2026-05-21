@@ -97,19 +97,11 @@ class CreativeConfig(Base):
     video: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
 
 
-class HeartbeatConfig(Base):
-    """Heartbeat service configuration."""
-
-    enabled: bool = True
-    interval_s: int = 30 * 60  # 30 minutes
-
-
 class GatewayConfig(Base):
     """Gateway/server configuration."""
 
     host: str = "0.0.0.0"
-    port: int = 18790
-    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    port: int = 18888
 
 
 class WebSearchConfig(Base):
@@ -162,6 +154,18 @@ class KnowledgeConfig(Base):
     rerank_api_key: str = ""
     rerank_api_base: str | None = None
     rerank_top_n: int = 12
+    # Optional vision-language model for richer document parsing. When the
+    # model is configured, complex PDF pages and embedded Office images get
+    # captioned by the VLM during ingestion; otherwise the knowledge base
+    # falls back to plain text extraction.
+    vlm_model: str = ""
+    vlm_api_key: str = ""
+    vlm_api_base: str | None = None
+    vlm_timeout: int = 30
+    vlm_max_dim: int = 1280
+    # Concurrent VLM HTTP calls per document. Larger values trade higher
+    # peak API spend for faster ingestion on image-heavy files.
+    vlm_max_workers: int = 8
 
 
 class TemplatesConfig(Base):

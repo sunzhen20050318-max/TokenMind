@@ -87,6 +87,11 @@
 
 .shell-sidebar__top {
   padding: 14px 12px 10px;
+  /* Allow the flex column to shrink __top when needed; we *don't* put
+     overflow-y here because the 更多 popover is position: absolute inside
+     __nav and would be clipped. The variable-height piece (project
+     directory) carries its own internal scroll cap below. */
+  min-height: 0;
 }
 
 .shell-sidebar__brand {
@@ -376,6 +381,11 @@
   gap: 1px;
   margin-top: 2px;
   padding: 0 0 4px 10px;
+  /* Cap so an expanded list with many projects/sessions can't push the
+     设置中心 footer off the bottom of `.app-main` (which clips with
+     overflow: hidden). The directory scrolls internally past the cap. */
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
 }
 
 .shell-sidebar__project-directory-head {
@@ -978,6 +988,9 @@
 .shell-sidebar__footer {
   padding: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
+  /* Always reserve space for the 设置中心 button — never let the flex
+     squeeze push it off-screen when __top is long. */
+  flex-shrink: 0;
 }
 
 .shell-sidebar__collapsed-spacer {

@@ -25,4 +25,3 @@ The skill format and metadata structure follow OpenClaw's conventions to maintai
 | `skill-creator` | Create new skills |
 | `documents` | Create, edit, redline, and visually verify DOCX documents |
 | `presentations` | Build and polish editable PowerPoint/PPTX decks |
-| `spreadsheets` | Create, edit, analyze, visualize, and verify spreadsheet workbooks |

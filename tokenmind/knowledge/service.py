@@ -7,16 +7,13 @@ import shutil
 import sqlite3
 import threading
 import uuid
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from zipfile import ZipFile
 
 import json_repair
 from loguru import logger
 from openai import OpenAI
-from pypdf import PdfReader
 
 from tokenmind.knowledge.chunking import semantic_chunks, simple_chunks
 from tokenmind.knowledge.models import (
@@ -36,6 +33,7 @@ TEXT_SUFFIXES = {
     ".txt",
     ".md",
     ".markdown",
+    ".rst",
     ".json",
     ".yaml",
     ".yml",
@@ -71,6 +69,12 @@ class KnowledgeService:
         rerank_api_key: str = "",
         rerank_api_base: str | None = None,
         rerank_top_n: int = 12,
+        vlm_model: str = "",
+        vlm_api_key: str = "",
+        vlm_api_base: str | None = None,
+        vlm_timeout: int = 30,
+        vlm_max_dim: int = 1280,
+        vlm_max_workers: int = 8,
     ):
         self.workspace = workspace
         self.root = workspace / "knowledge"
@@ -88,6 +92,12 @@ class KnowledgeService:
         self.rerank_api_key = rerank_api_key.strip()
         self.rerank_api_base = rerank_api_base.strip() if rerank_api_base else None
         self.rerank_top_n = rerank_top_n
+        self.vlm_model = vlm_model.strip()
+        self.vlm_api_key = vlm_api_key.strip()
+        self.vlm_api_base = vlm_api_base.strip() if vlm_api_base else None
+        self.vlm_timeout = vlm_timeout
+        self.vlm_max_dim = vlm_max_dim
+        self.vlm_max_workers = vlm_max_workers
         self.collection_name = "knowledge_chunks"
         self._state_lock = threading.RLock()
         self._state = self._load()
@@ -197,6 +207,12 @@ class KnowledgeService:
         rerank_api_key: str | None = None,
         rerank_api_base: str | None = None,
         rerank_top_n: int | None = None,
+        vlm_model: str | None = None,
+        vlm_api_key: str | None = None,
+        vlm_api_base: str | None = None,
+        vlm_timeout: int | None = None,
+        vlm_max_dim: int | None = None,
+        vlm_max_workers: int | None = None,
     ) -> None:
         if vector_backend is not None:
             self.vector_backend = vector_backend or "sqlite"
@@ -220,6 +236,18 @@ class KnowledgeService:
             self.rerank_api_base = rerank_api_base.strip() or None
         if rerank_top_n is not None:
             self.rerank_top_n = rerank_top_n
+        if vlm_model is not None:
+            self.vlm_model = vlm_model.strip()
+        if vlm_api_key is not None:
+            self.vlm_api_key = vlm_api_key.strip()
+        if vlm_api_base is not None:
+            self.vlm_api_base = vlm_api_base.strip() or None
+        if vlm_timeout is not None:
+            self.vlm_timeout = vlm_timeout
+        if vlm_max_dim is not None:
+            self.vlm_max_dim = vlm_max_dim
+        if vlm_max_workers is not None:
+            self.vlm_max_workers = vlm_max_workers
 
     def _load(self) -> dict:
         if self.metadata_file.exists():
@@ -848,61 +876,40 @@ class KnowledgeService:
             self._upsert_qdrant_records(records)
         return len(records)
 
-    def _extract_pdf_text(self, path: Path) -> str:
-        reader = PdfReader(str(path))
-        parts: list[str] = []
-        for page in reader.pages:
-            text = page.extract_text() or ""
-            if text.strip():
-                parts.append(text.strip())
-        return "\n\n".join(parts)
+    def _vlm_config(self) -> "VLMConfig | None":
+        from tokenmind.knowledge.parsers import VLMConfig
 
-    @staticmethod
-    def _extract_zip_xml_text(path: Path, members: list[str]) -> str:
-        chunks: list[str] = []
-        with ZipFile(path) as archive:
-            for member in members:
-                if member not in archive.namelist():
-                    continue
-                with archive.open(member) as handle:
-                    root = ET.fromstring(handle.read())
-                texts = [text.strip() for text in root.itertext() if text and text.strip()]
-                if texts:
-                    chunks.append("\n".join(texts))
-        return "\n\n".join(chunks)
-
-    def _extract_docx_text(self, path: Path) -> str:
-        return self._extract_zip_xml_text(path, ["word/document.xml"])
-
-    def _extract_pptx_text(self, path: Path) -> str:
-        with ZipFile(path) as archive:
-            slide_members = sorted(name for name in archive.namelist() if name.startswith("ppt/slides/slide"))
-        return self._extract_zip_xml_text(path, slide_members)
-
-    def _extract_xlsx_text(self, path: Path) -> str:
-        with ZipFile(path) as archive:
-            members = ["xl/sharedStrings.xml"] + sorted(
-                name for name in archive.namelist() if name.startswith("xl/worksheets/sheet")
-            )
-        return self._extract_zip_xml_text(path, members)
+        if not self.vlm_model or not self.vlm_api_key:
+            return None
+        return VLMConfig(
+            model=self.vlm_model,
+            api_key=self.vlm_api_key,
+            api_base=self.vlm_api_base,
+            timeout=self.vlm_timeout,
+            max_dim=self.vlm_max_dim,
+            max_workers=self.vlm_max_workers,
+        )
 
     def _extract_text(self, path: Path) -> str:
-        suffix = path.suffix.lower()
-        try:
-            if suffix in TEXT_SUFFIXES:
-                return path.read_text(encoding="utf-8", errors="ignore")
-            if suffix == ".pdf":
-                return self._extract_pdf_text(path)
-            if suffix == ".docx":
-                return self._extract_docx_text(path)
-            if suffix in {".pptx", ".ppt"}:
-                return self._extract_pptx_text(path)
-            if suffix in {".xlsx", ".xls"}:
-                return self._extract_xlsx_text(path)
-        except Exception:
-            # Fall back to a best-effort text decode so documents still register.
-            pass
+        from tokenmind.knowledge.parsers import (
+            LegacyOfficeConversionError,
+            can_parse,
+            extract_document_text,
+        )
 
+        suffix = path.suffix.lower()
+        if suffix in TEXT_SUFFIXES:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        if can_parse(suffix):
+            try:
+                return extract_document_text(path, vlm=self._vlm_config())
+            except LegacyOfficeConversionError:
+                # Surface to the caller so the document gets marked failed
+                # with a useful "install LibreOffice" message instead of
+                # silently being indexed with garbage from the fallback.
+                raise
+            except Exception:
+                logger.exception("Rich parser failed for {} — falling back to text", path)
         return path.read_text(encoding="utf-8", errors="ignore")
 
     def _prepare_document_target(self, knowledge_base_id: str, original_name: str, source: Path) -> tuple[Path, str]:
@@ -1117,7 +1124,6 @@ class KnowledgeService:
     def _wiki_process_document(
         self, kb: KnowledgeBaseRecord, document_id: str, *, force: bool = False
     ) -> KnowledgeDocumentRecord:
-        from tokenmind.knowledge.wiki_extractors import extract_text
         from tokenmind.knowledge.wiki_ingest import compile_source_page_template
         from tokenmind.knowledge.wiki_paths import safe_wiki_filename
 
@@ -1167,7 +1173,10 @@ class KnowledgeService:
             error_message=None,
         )
         try:
-            text = extract_text(path)
+            # Route through the shared structured parser so wiki ingestion
+            # gets the same docx-table / pptx-slide / xlsx-sheet preservation
+            # and optional VLM captioning that the RAG path uses.
+            text = self._extract_text(path)
         except Exception as exc:
             logger.exception("Failed to extract wiki document {}", document_id)
             return save_state(

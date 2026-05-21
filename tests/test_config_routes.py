@@ -54,7 +54,7 @@ async def test_get_config_returns_extended_sections(temp_config_path):
     assert response.tools["knowledge"]["vector_backend"] == "qdrant"
     assert response.tools["audit_enabled"] is True
     assert response.tools["mcp_servers"]["docs"]["command"] == "npx"
-    assert response.runtime["gateway"]["heartbeat"]["enabled"] is True
+    assert response.runtime["gateway"]["port"] == 18888
     assert response.templates["response"] == "{{ content }}"
 
 
@@ -145,7 +145,6 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
         ChannelsConfigUpdate,
         ExecToolConfigUpdate,
         GatewayConfigUpdate,
-        HeartbeatConfigUpdate,
         KnowledgeConfigUpdate,
         MCPServerConfigUpdate,
         ProviderConfigUpdate,
@@ -227,7 +226,6 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
             gateway=GatewayConfigUpdate(
                 host="127.0.0.1",
                 port=8080,
-                heartbeat=HeartbeatConfigUpdate(enabled=False, interval_s=120),
             ),
         )
     )
@@ -275,7 +273,8 @@ async def test_update_config_sections_and_mcp_servers(temp_config_path):
     assert config.tools.knowledge.embedding_api_base == "https://embed.example/v1"
     assert config.tools.audit_enabled is False
     assert config.channels.send_progress is False
-    assert config.gateway.heartbeat.interval_s == 120
+    assert config.gateway.host == "127.0.0.1"
+    assert config.gateway.port == 8080
     assert config.templates.response == "{{ content }}"
     assert config.templates.memory_system == "You are {{ role_name }}."
     assert config.templates.memory_prompt == "COUNT={{ message_count }}"

@@ -788,6 +788,47 @@
   background: var(--panel-strong);
 }
 
+/* Compact suggestion chips that sit right under an input (e.g. host quick
+   set buttons). Keeps related actions close to the field they apply to. */
+.settings-input-with-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-soft);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-chip:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-soft);
+}
+
+.settings-chip:disabled {
+  cursor: default;
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--text);
+  opacity: 0.85;
+}
+
 .settings-select option {
   background: var(--panel-strong);
   color: var(--text);
@@ -1997,17 +2038,33 @@
   flex: 1;
 }
 
-/* ───── MCP editor (inline form) ───── */
+/* ───── MCP editor (right-side drawer) ─────
+   Used by both the MCP server editor and the Tools-category editor
+   (search/exec/audit/uploads/knowledge). Slides over the right edge of
+   the Settings page, matching the provider/creative/knowledge-model
+   editors instead of stacking content underneath the card grid. */
+.settings-mcp-editor-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.5);
+}
+
 .settings-mcp-editor {
-  position: relative;
-  margin-top: 22px;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 21;
+  width: min(560px, 100%);
+  height: 100%;
   padding: 24px 26px 26px;
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-  background: rgba(15, 15, 18, 0.95);
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: -24px 0 48px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
 }
 
 .settings-mcp-editor__head {
@@ -2535,5 +2592,510 @@
   .settings-split,
   .settings-mcp-tool-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   Settings → 记忆中心 v3
+   Top header with save/refresh, dominant editor with chip-row
+   status, list sections below.
+   ============================================================ */
+
+.settings-memory-v3 {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-memory-v3__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-memory-v3__head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-memory-v3__head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.settings-memory-v3__head-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.settings-memory-v3__editor-shell {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.settings-memory-v3__editor {
+  width: 100%;
+  min-height: 360px;
+  padding: 18px 20px;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: vertical;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.settings-memory-v3__editor::placeholder {
+  color: var(--soft);
+}
+
+.settings-memory-v3__statusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-memory-v3__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.settings-memory-v3__dot.is-clean {
+  background: rgba(120, 180, 140, 0.85);
+}
+
+.settings-memory-v3__dot.is-dirty {
+  background: rgba(240, 180, 96, 0.9);
+  box-shadow: 0 0 0 3px rgba(240, 180, 96, 0.16);
+}
+
+.settings-memory-v3__statuslabel {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.settings-memory-v3__sep {
+  color: var(--soft);
+}
+
+.settings-memory-v3__readonly {
+  color: rgba(240, 180, 96, 0.9);
+}
+
+.settings-memory-v3__block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.settings-memory-v3__block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-memory-v3__block-head--with-search {
+  flex-wrap: wrap;
+}
+
+.settings-memory-v3__block-head h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-memory-v3__count {
+  color: var(--soft);
+  font-size: 12px;
+}
+
+.settings-memory-v3__search {
+  flex: 1;
+  min-width: 200px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--panel-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  outline: none;
+}
+
+.settings-memory-v3__search:focus {
+  border-color: var(--text);
+}
+
+.settings-memory-v3__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-memory-v3__item {
+  padding: 12px 14px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.settings-memory-v3__item-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-memory-v3__time {
+  color: var(--soft);
+}
+
+.settings-memory-v3__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.settings-memory-v3__tag--user {
+  color: #c4d8f7;
+  border-color: rgba(160, 200, 250, 0.28);
+}
+
+.settings-memory-v3__tag--assistant {
+  color: #e8d6b5;
+  border-color: rgba(232, 214, 181, 0.3);
+}
+
+.settings-memory-v3__tag--tool {
+  color: #c0e5d0;
+  border-color: rgba(192, 229, 208, 0.3);
+}
+
+/* ============================================================
+   Settings → 文件中心 v3
+   Single column: dense status bar + fold-out details + full
+   file list with chip badges.
+   ============================================================ */
+
+.settings-storage-v3 {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-storage-v3__statusbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) auto auto;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.settings-storage-v3__usage-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.settings-storage-v3__usage-line strong {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-storage-v3__usage-quota {
+  color: var(--muted);
+}
+
+.settings-storage-v3__usage-percent {
+  margin-left: auto;
+  color: var(--soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-storage-v3__usage-bar {
+  margin-top: 8px;
+  height: 6px;
+  background: var(--panel-strong);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.settings-storage-v3__usage-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.85));
+  transition: width 0.3s ease;
+}
+
+.settings-storage-v3__facts {
+  display: flex;
+  gap: 24px;
+}
+
+.settings-storage-v3__fact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.settings-storage-v3__fact span {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.settings-storage-v3__fact small {
+  color: var(--soft);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+
+.settings-storage-v3__head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-storage-v3__details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.settings-storage-v3__detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.settings-storage-v3__detail-row:nth-child(-n + 3) {
+  border-top: none;
+}
+
+.settings-storage-v3__detail-row span {
+  color: var(--muted);
+}
+
+.settings-storage-v3__detail-row strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.settings-storage-v3__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-storage-v3__filters {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.settings-storage-v3__filter {
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.settings-storage-v3__filter:hover {
+  color: var(--text);
+}
+
+.settings-storage-v3__filter.is-active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-storage-v3__search {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+}
+
+.settings-storage-v3__search:focus {
+  border-color: var(--text);
+}
+
+.settings-storage-v3__count {
+  color: var(--soft);
+  font-size: 12.5px;
+  flex: 0 0 auto;
+}
+
+.settings-storage-v3__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-storage-v3__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.settings-storage-v3__row:hover {
+  border-color: var(--border-strong);
+  background: var(--panel-soft);
+}
+
+.settings-storage-v3__row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-storage-v3__row-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.settings-storage-v3__row-path {
+  font-size: 12px;
+  color: var(--soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.settings-storage-v3__row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-storage-v3__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.settings-storage-v3__chip.is-referenced {
+  color: #c7e2cd;
+  border-color: rgba(120, 180, 140, 0.32);
+}
+
+.settings-storage-v3__chip.is-orphan {
+  color: #ddc99a;
+  border-color: rgba(220, 180, 100, 0.32);
+}
+
+.settings-storage-v3__refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.settings-storage-v3__ref {
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-storage-v3__ref:hover {
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--border-strong);
+}
+
+.settings-storage-v3__row-actions {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+@media (max-width: 900px) {
+  .settings-storage-v3__statusbar {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .settings-storage-v3__facts {
+    justify-content: space-between;
+  }
+  .settings-memory-v3__head {
+    flex-direction: column;
   }
 }

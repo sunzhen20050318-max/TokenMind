@@ -187,7 +187,7 @@ const LEGACY_SECTION_META = [
   { id: 'models', title: '模型', copy: '管理提供商、API Key 和默认模型。' },
   { id: 'tools', title: '工具', copy: '管理搜索、代理、命令执行和安全边界。' },
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。' },
-  { id: 'runtime', title: '运行时', copy: '管理渠道进度、网关和心跳设置。' },
+  { id: 'runtime', title: '服务', copy: 'Web 服务监听地址 / 端口与外部渠道消息行为。' },
 ] as const;
 
 const LEGACY_SEARCH_PROVIDER_OPTIONS = ['brave', 'tavily', 'duckduckgo', 'searxng', 'jina'];
@@ -208,7 +208,7 @@ const SECTION_META = [
   { id: 'mcp', title: 'MCP', copy: '管理 MCP 服务列表和工具可见范围。', group: 'core' },
   { id: 'channels', title: '外部渠道', copy: '接入飞书、钉钉、企业微信等中国主流应用。', group: 'core' },
   { id: 'skills', title: '技能', copy: '启用或停用已安装的智能体技能。', group: 'core' },
-  { id: 'runtime', title: '运行时', copy: '管理进度推送、网关和心跳设置。', group: 'core' },
+  { id: 'runtime', title: '服务', copy: 'Web 服务监听地址 / 端口与外部渠道消息行为。', group: 'core' },
   { id: 'memory', title: '记忆中心', copy: '查看长期记忆、当前上下文和近期归档。', group: 'workspace' },
   // 'automation' 仍然保留在 SECTION_META 里，让 SettingsModal initialSection
   // 能定位到 renderAutomationCenter；但下方左侧 nav 渲染时会过滤掉它，因为
@@ -807,6 +807,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageQuery, setStorageQuery] = useState('');
   const [storageFilterMode, setStorageFilterMode] = useState<StorageFilterMode>('all');
+  const [storageDetailsOpen, setStorageDetailsOpen] = useState(false);
   const [storageActionPath, setStorageActionPath] = useState<string | null>(null);
   const [taskName, setTaskName] = useState('');
   const [taskMessage, setTaskMessage] = useState('');
@@ -829,7 +830,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     'search' | 'exec' | 'audit' | 'uploads' | 'knowledge' | null
   >(null);
   const [editingKnowledgeModelKind, setEditingKnowledgeModelKind] = useState<
-    'embedding' | 'rerank' | null
+    'embedding' | 'rerank' | 'vlm' | null
   >(null);
   const [channelCatalog, setChannelCatalog] = useState<ChannelCatalogEntry[] | null>(null);
   const [channelLoading, setChannelLoading] = useState(false);
@@ -858,6 +859,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               api_key: '',
             },
           },
+          // Fill in defaults for any knowledge field the backend hasn't sent
+          // yet — guards against the user upgrading the frontend before
+          // restarting an older backend. The cast lets TS accept the spread
+          // even though KnowledgeSettings declares vlm_* as required (we're
+          // explicitly defending against a server that hasn't been told yet).
+          knowledge: Object.assign(
+            {
+              vlm_model: '',
+              vlm_api_key: '',
+              vlm_api_base: null as string | null,
+              vlm_timeout: 30,
+              vlm_max_dim: 1280,
+              vlm_max_workers: 8,
+            },
+            data.tools.knowledge,
+          ),
         });
 
         const providerKeys = Object.keys(PROVIDER_META);
@@ -1537,6 +1554,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             : {}),
           rerank_api_base: toolsDraft.knowledge.rerank_api_base || '',
           rerank_top_n: toolsDraft.knowledge.rerank_top_n,
+          vlm_model: toolsDraft.knowledge.vlm_model,
+          ...(toolsDraft.knowledge.vlm_api_key.trim()
+            ? { vlm_api_key: toolsDraft.knowledge.vlm_api_key.trim() }
+            : {}),
+          vlm_api_base: toolsDraft.knowledge.vlm_api_base || '',
+          vlm_timeout: toolsDraft.knowledge.vlm_timeout,
+          vlm_max_dim: toolsDraft.knowledge.vlm_max_dim,
+          vlm_max_workers: toolsDraft.knowledge.vlm_max_workers,
         },
       });
 
@@ -1555,9 +1580,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 },
               },
               knowledge: {
+                // Keep prior values as a fallback so an older backend that
+                // doesn't echo back the vlm_* fields can't strip the
+                // defaults we initialised them with.
+                ...current.knowledge,
                 ...response.tools.knowledge,
                 embedding_api_key: '',
                 rerank_api_key: '',
+                vlm_api_key: '',
               },
             }
           : current
@@ -1575,9 +1605,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSavingSection('knowledge-models');
     setNotice(null);
     try {
-      // Partial update: only the embedding/rerank model fields. The backend
-      // looks at model_fields_set so chunking, vector_backend, top_k stay
-      // untouched.
+      // Partial update: only the embedding/rerank/vlm model fields. The
+      // backend looks at model_fields_set so chunking, vector_backend, top_k
+      // stay untouched.
       const response = await api.updateToolsConfig({
         knowledge: {
           embedding_model: toolsDraft.knowledge.embedding_model,
@@ -1591,6 +1621,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             : {}),
           rerank_api_base: toolsDraft.knowledge.rerank_api_base || '',
           rerank_top_n: toolsDraft.knowledge.rerank_top_n,
+          vlm_model: toolsDraft.knowledge.vlm_model,
+          ...(toolsDraft.knowledge.vlm_api_key.trim()
+            ? { vlm_api_key: toolsDraft.knowledge.vlm_api_key.trim() }
+            : {}),
+          vlm_api_base: toolsDraft.knowledge.vlm_api_base || '',
+          vlm_timeout: toolsDraft.knowledge.vlm_timeout,
+          vlm_max_dim: toolsDraft.knowledge.vlm_max_dim,
+          vlm_max_workers: toolsDraft.knowledge.vlm_max_workers,
         },
       });
       setToolsDraft((current) =>
@@ -1604,6 +1642,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 // the input field empty so the placeholder reads cleanly.
                 embedding_api_key: '',
                 rerank_api_key: '',
+                vlm_api_key: '',
               },
             }
           : current,
@@ -2262,19 +2301,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="settings-panel">
           <div className="settings-panel-header">
             <h3>知识库模型</h3>
-            <p>用于把上传的文档向量化(Embedding)以及对召回结果重排(Rerank,可选)。</p>
+            <p>用于把上传的文档向量化(Embedding)、对召回结果重排(Rerank,可选)以及解析文档时调用视觉模型理解图表/扫描页(VLM,可选)。</p>
           </div>
           <div className="settings-provider-grid">
-            {(['embedding', 'rerank'] as const).map((kind) => {
+            {(['embedding', 'rerank', 'vlm'] as const).map((kind) => {
               const isEmbedding = kind === 'embedding';
+              const isVlm = kind === 'vlm';
               const model = isEmbedding
                 ? toolsDraft.knowledge.embedding_model
-                : toolsDraft.knowledge.rerank_model;
+                : isVlm
+                  ? toolsDraft.knowledge.vlm_model
+                  : toolsDraft.knowledge.rerank_model;
               const endpoint = isEmbedding
                 ? toolsDraft.knowledge.embedding_api_base
-                : toolsDraft.knowledge.rerank_api_base;
+                : isVlm
+                  ? toolsDraft.knowledge.vlm_api_base
+                  : toolsDraft.knowledge.rerank_api_base;
               const configured = Boolean(model.trim());
               const editing = editingKnowledgeModelKind === kind;
+              const label = isEmbedding ? 'Embedding' : isVlm ? 'VLM (视觉解析)' : 'Rerank';
 
               return (
                 <div
@@ -2285,9 +2330,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="settings-provider-head">
                     <div>
-                      <div className="settings-provider-name">
-                        {isEmbedding ? 'Embedding' : 'Rerank'}
-                      </div>
+                      <div className="settings-provider-name">{label}</div>
                       <div className="settings-badges">
                         <span className="settings-badge">
                           {configured ? '已配置' : '未配置'}
@@ -2330,20 +2373,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const renderKnowledgeModelEditor = () => {
     if (!editingKnowledgeModelKind || !toolsDraft) return null;
-    const isEmbedding = editingKnowledgeModelKind === 'embedding';
+    const kind = editingKnowledgeModelKind;
     const close = () => setEditingKnowledgeModelKind(null);
+
+    const meta = {
+      embedding: {
+        title: 'Embedding 模型',
+        intro: '把上传的文档切成片段后用这个模型转成向量,留空则只走关键词检索。',
+        modelCopy: '推荐 text-embedding-3-small / bge-large-zh 等。',
+        modelPlaceholder: 'text-embedding-3-small',
+        modelField: 'embedding_model' as const,
+        apiKeyField: 'embedding_api_key' as const,
+        apiBaseField: 'embedding_api_base' as const,
+      },
+      rerank: {
+        title: 'Rerank 模型',
+        intro: '对召回的候选片段做二次排序,提升命中质量。留空则关闭 rerank。',
+        modelCopy: '推荐 bge-reranker-v2-m3 / cohere rerank 等。',
+        modelPlaceholder: 'bge-reranker-v2-m3',
+        modelField: 'rerank_model' as const,
+        apiKeyField: 'rerank_api_key' as const,
+        apiBaseField: 'rerank_api_base' as const,
+      },
+      vlm: {
+        title: 'VLM 视觉解析模型',
+        intro: '配置后,解析 PDF 扫描页与 Office 文档内嵌图片时会调用该 VLM 生成图文描述;留空则跳过视觉解析,仅做文本提取。',
+        modelCopy: '推荐 Qwen2.5-VL / GPT-4o-mini / Gemini 1.5 Flash 等多模态模型。',
+        modelPlaceholder: 'Qwen/Qwen2.5-VL-7B-Instruct',
+        modelField: 'vlm_model' as const,
+        apiKeyField: 'vlm_api_key' as const,
+        apiBaseField: 'vlm_api_base' as const,
+      },
+    }[kind];
+
+    const setKnowledgeField = (updates: Partial<typeof toolsDraft.knowledge>) =>
+      setToolsDraft((current) =>
+        current
+          ? { ...current, knowledge: { ...current.knowledge, ...updates } }
+          : current,
+      );
+
     return (
       <>
         <div className="settings-provider-editor-backdrop" onClick={close} />
         <aside className="settings-provider-editor">
           <div className="settings-provider-editor-head">
             <div>
-              <h3>{isEmbedding ? 'Embedding 模型' : 'Rerank 模型'}</h3>
-              <p>
-                {isEmbedding
-                  ? '把上传的文档切成片段后用这个模型转成向量,留空则只走关键词检索。'
-                  : '对召回的候选片段做二次排序,提升命中质量。留空则关闭 rerank。'}
-              </p>
+              <h3>{meta.title}</h3>
+              <p>{meta.intro}</p>
             </div>
             <button
               aria-label="关闭"
@@ -2357,38 +2434,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="settings-provider-editor-body">
             <div className="settings-panel">
               <div className="settings-grid one">
-                <Field
-                  label="模型"
-                  copy={
-                    isEmbedding
-                      ? '推荐 text-embedding-3-small / bge-large-zh 等。'
-                      : '推荐 bge-reranker-v2-m3 / cohere rerank 等。'
-                  }
-                >
+                <Field label="模型" copy={meta.modelCopy}>
                   <input
                     className="settings-input"
                     onChange={(event) =>
-                      setToolsDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              knowledge: {
-                                ...current.knowledge,
-                                ...(isEmbedding
-                                  ? { embedding_model: event.target.value }
-                                  : { rerank_model: event.target.value }),
-                              },
-                            }
-                          : current,
-                      )
+                      setKnowledgeField({ [meta.modelField]: event.target.value } as any)
                     }
-                    placeholder={isEmbedding ? 'text-embedding-3-small' : 'bge-reranker-v2-m3'}
+                    placeholder={meta.modelPlaceholder}
                     type="text"
-                    value={
-                      isEmbedding
-                        ? toolsDraft.knowledge.embedding_model
-                        : toolsDraft.knowledge.rerank_model
-                    }
+                    value={toolsDraft.knowledge[meta.modelField]}
                   />
                 </Field>
                 <Field label="API Key">
@@ -2396,78 +2450,89 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     autoComplete="off"
                     className="settings-input"
                     onChange={(event) =>
-                      setToolsDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              knowledge: {
-                                ...current.knowledge,
-                                ...(isEmbedding
-                                  ? { embedding_api_key: event.target.value }
-                                  : { rerank_api_key: event.target.value }),
-                              },
-                            }
-                          : current,
-                      )
+                      setKnowledgeField({ [meta.apiKeyField]: event.target.value } as any)
                     }
                     placeholder="sk-..."
                     type="password"
-                    value={
-                      isEmbedding
-                        ? toolsDraft.knowledge.embedding_api_key
-                        : toolsDraft.knowledge.rerank_api_key
-                    }
+                    value={toolsDraft.knowledge[meta.apiKeyField]}
                   />
                 </Field>
                 <Field label="Base URL(可选)" copy="兼容 OpenAI 协议的网关地址。">
                   <input
                     className="settings-input"
                     onChange={(event) =>
-                      setToolsDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              knowledge: {
-                                ...current.knowledge,
-                                ...(isEmbedding
-                                  ? { embedding_api_base: event.target.value || null }
-                                  : { rerank_api_base: event.target.value || null }),
-                              },
-                            }
-                          : current,
-                      )
+                      setKnowledgeField({
+                        [meta.apiBaseField]: event.target.value || null,
+                      } as any)
                     }
                     placeholder="https://api.openai.com/v1"
                     type="text"
-                    value={
-                      (isEmbedding
-                        ? toolsDraft.knowledge.embedding_api_base
-                        : toolsDraft.knowledge.rerank_api_base) ?? ''
-                    }
+                    value={toolsDraft.knowledge[meta.apiBaseField] ?? ''}
                   />
                 </Field>
-                {!isEmbedding ? (
+                {kind === 'rerank' ? (
                   <Field label="重排条数" copy="对召回的前 N 个候选做 rerank。">
                     <input
                       className="settings-input"
                       min={1}
                       onChange={(event) =>
-                        setToolsDraft((current) =>
-                          current
-                            ? {
-                                ...current,
-                                knowledge: {
-                                  ...current.knowledge,
-                                  rerank_top_n: Number(event.target.value) || 1,
-                                },
-                              }
-                            : current,
-                        )
+                        setKnowledgeField({
+                          rerank_top_n: Number(event.target.value) || 1,
+                        })
                       }
                       type="number"
                       value={toolsDraft.knowledge.rerank_top_n}
                     />
                   </Field>
+                ) : null}
+                {kind === 'vlm' ? (
+                  <>
+                    <Field label="请求超时 (秒)" copy="单次 VLM 调用的最长等待时间。">
+                      <input
+                        className="settings-input"
+                        min={5}
+                        onChange={(event) =>
+                          setKnowledgeField({
+                            vlm_timeout: Number(event.target.value) || 30,
+                          })
+                        }
+                        type="number"
+                        value={toolsDraft.knowledge.vlm_timeout}
+                      />
+                    </Field>
+                    <Field
+                      label="图片最大边长 (px)"
+                      copy="上传给 VLM 前会等比缩放到这个尺寸,降低 token 消耗。"
+                    >
+                      <input
+                        className="settings-input"
+                        min={256}
+                        onChange={(event) =>
+                          setKnowledgeField({
+                            vlm_max_dim: Number(event.target.value) || 1280,
+                          })
+                        }
+                        type="number"
+                        value={toolsDraft.knowledge.vlm_max_dim}
+                      />
+                    </Field>
+                    <Field
+                      label="并发线程数"
+                      copy="解析一个文档时同时跑多少个 VLM 调用。值越大单个文档越快,但峰值 API 花费也更高。"
+                    >
+                      <input
+                        className="settings-input"
+                        min={1}
+                        onChange={(event) =>
+                          setKnowledgeField({
+                            vlm_max_workers: Number(event.target.value) || 1,
+                          })
+                        }
+                        type="number"
+                        value={toolsDraft.knowledge.vlm_max_workers}
+                      />
+                    </Field>
+                  </>
                 ) : null}
               </div>
               <div className="settings-actions">
@@ -2849,7 +2914,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     return (
-      <div className="settings-mcp-editor">
+      <>
+        <div className="settings-mcp-editor-backdrop" onClick={closeEditor} />
+        <aside className="settings-mcp-editor" role="dialog" aria-label={meta.title}>
         <div className="settings-mcp-editor__head">
           <div>
             <h3>{meta.title}</h3>
@@ -3276,7 +3343,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {savingSection === 'tools' ? '保存中…' : '保存'}
           </button>
         </div>
-      </div>
+        </aside>
+      </>
     );
   };
 
@@ -3398,7 +3466,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const editingExistingName = selectedMcpName;
 
     return (
-      <div className="settings-mcp-editor">
+      <>
+        <div className="settings-mcp-editor-backdrop" onClick={closeMcpEditor} />
+        <aside className="settings-mcp-editor" role="dialog" aria-label="MCP 服务编辑器">
         <div className="settings-mcp-editor__head">
           <h3>{editingExistingName ? `编辑 ${editingExistingName}` : '新建 MCP 服务'}</h3>
           <button
@@ -3642,7 +3712,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {savingSection === 'mcp' ? '保存中…' : '保存'}
           </button>
         </div>
-      </div>
+        </aside>
+      </>
     );
   };
 
@@ -4516,103 +4587,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return <div className="settings-empty">当前还没有可展示的记忆数据。</div>;
     }
 
+    const editorLines = memoryDraft ? memoryDraft.split('\n').length : 0;
+
     return (
-      <div className="settings-section settings-memory-section settings-memory-section--v2">
-        <div className="settings-metrics">
-          <Metric label="长期记忆字数" value={`${longTermMeta.words} 词`} />
-          <Metric label="当前上下文条目" value={`${memoryOverview.current_context.items.length} 条`} />
-          <Metric label="近期归档条目" value={`${memoryOverview.archive.total} 条`} />
+      <div className="settings-section settings-memory-v3">
+        <header className="settings-memory-v3__head">
+          <div>
+            <h3>长期记忆</h3>
+            <p>跨会话持续生效的事实、偏好与背景。改完点保存才会落盘。</p>
+          </div>
+          <div className="settings-memory-v3__head-actions">
+            <button
+              className="settings-button-secondary"
+              onClick={() => void loadMemoryOverview('', true)}
+              type="button"
+            >
+              刷新
+            </button>
+            <button
+              className="settings-button"
+              disabled={!memoryDraftDirty || memorySaving || !memoryOverview.long_term.editable}
+              onClick={() => void handleSaveLongTermMemory()}
+              type="button"
+            >
+              {memorySaving ? '保存中' : '保存'}
+            </button>
+          </div>
+        </header>
+
+        <div className="settings-memory-v3__editor-shell">
+          <textarea
+            className="settings-memory-v3__editor"
+            onChange={(event) => setMemoryDraft(event.target.value)}
+            placeholder="这里还没有长期记忆。你可以记录固定偏好、工作背景和重要事实。"
+            spellCheck={false}
+            value={memoryDraft}
+          />
+          <div className="settings-memory-v3__statusbar">
+            <span className={`settings-memory-v3__dot ${memoryDraftDirty ? 'is-dirty' : 'is-clean'}`} aria-hidden />
+            <span className="settings-memory-v3__statuslabel">
+              {memoryDraftDirty ? '有未保存修改' : '已同步'}
+            </span>
+            <span className="settings-memory-v3__sep">·</span>
+            <span>{formatTimestamp(memoryOverview.long_term.updated_at)}</span>
+            <span className="settings-memory-v3__sep">·</span>
+            <span>{memoryDraft.length} 字 · {editorLines} 行</span>
+            {!memoryOverview.long_term.editable ? (
+              <>
+                <span className="settings-memory-v3__sep">·</span>
+                <span className="settings-memory-v3__readonly">只读</span>
+              </>
+            ) : null}
+          </div>
         </div>
 
-        <div className="settings-memory-top">
-          <section className="settings-panel settings-memory-editor-card">
-            <div className="settings-panel-header settings-panel-header--split">
-              <div>
-                <h3>长期记忆</h3>
-                <p>保留真正会跨会话持续生效的事实、偏好和背景，让 TokenMind 长期理解你的工作方式。</p>
-              </div>
-              <div className="settings-memory-actions">
-                <button
-                  className="settings-button-secondary"
-                  onClick={() => void loadMemoryOverview('', true)}
-                  type="button"
-                >
-                  刷新
-                </button>
-                <button
-                  className="settings-button"
-                  disabled={!memoryDraftDirty || memorySaving || !memoryOverview.long_term.editable}
-                  onClick={() => void handleSaveLongTermMemory()}
-                  type="button"
-                >
-                  {memorySaving ? '保存中' : '保存长期记忆'}
-                </button>
-              </div>
-            </div>
-
-            <div className="settings-memory-editor-shell">
-              <textarea
-                className="settings-textarea settings-memory-editor settings-memory-editor--rich"
-                onChange={(event) => setMemoryDraft(event.target.value)}
-                placeholder="这里还没有长期记忆。你可以记录固定偏好、工作背景和重要事实。"
-                spellCheck={false}
-                value={memoryDraft}
-              />
-            </div>
-
-            <div className="settings-memory-editor-footer">
-              <span className={`settings-badge ${memoryDraftDirty ? 'active' : ''}`}>
-                {memoryDraftDirty ? '有未保存修改' : '内容已同步'}
-              </span>
-              <span className="settings-inline-note">
-                {memoryOverview.long_term.editable ? '当前可编辑' : '当前不可编辑'}
-              </span>
-              <span className="settings-inline-note">最后更新 {formatTimestamp(memoryOverview.long_term.updated_at)}</span>
-            </div>
-          </section>
-
-          <aside className="settings-panel settings-memory-summary-panel settings-memory-summary-panel--v2">
-            <div className="settings-panel-header">
-              <h3>记忆状态</h3>
-              <p>快速确认当前长期记忆的保存状态、规模和更新时间。</p>
-            </div>
-            <div className="settings-memory-stat-grid settings-memory-stat-grid--stacked">
-              <div className="settings-memory-stat-card">
-                <span>保存状态</span>
-                <strong>{memoryDraftDirty ? '有未保存修改' : '已同步'}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>可编辑</span>
-                <strong>{memoryOverview.long_term.editable ? '是' : '否'}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>字符数</span>
-                <strong>{memoryDraft.length}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>最后更新</span>
-                <strong>{formatTimestamp(memoryOverview.long_term.updated_at)}</strong>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <section className="settings-panel settings-memory-context-wide">
-          <div className="settings-panel-header">
-            <h3>当前上下文</h3>
-            <p>这里显示当前会话里仍在参与推理的上下文，让你一眼知道模型此刻还“带着什么”在思考。</p>
+        <section className="settings-memory-v3__block">
+          <div className="settings-memory-v3__block-head">
+            <h4>当前上下文</h4>
+            <span className="settings-memory-v3__count">
+              {memoryOverview.current_context.items.length} 条
+            </span>
           </div>
           {memoryOverview.current_context.items.length === 0 ? (
             <div className="settings-empty">
-              还没有活动会话内容。开始一段对话后，这里会显示当前真正参与推理的内容。
+              还没有活动会话内容。开始一段对话后，这里会显示当前仍在参与推理的近期消息。
             </div>
           ) : (
-            <div className="settings-memory-context-grid">
+            <div className="settings-memory-v3__list">
               {memoryOverview.current_context.items.slice(-6).map((item, index) => (
-                <article className="settings-memory-card settings-memory-card--context" key={`${item.timestamp || index}-${index}`}>
-                  <div className="settings-memory-card__head">
-                    <span className="settings-badge active">{memoryRoleLabel(item.role)}</span>
-                    <span className="settings-inline-note">{formatTimestamp(item.timestamp)}</span>
+                <article className="settings-memory-v3__item" key={`${item.timestamp || index}-${index}`}>
+                  <div className="settings-memory-v3__item-meta">
+                    <span className={`settings-memory-v3__tag settings-memory-v3__tag--${item.role}`}>
+                      {memoryRoleLabel(item.role)}
+                    </span>
+                    <span className="settings-memory-v3__time">{formatTimestamp(item.timestamp)}</span>
                   </div>
                   <SettingsMarkdown className="settings-markdown--compact" content={item.content} />
                 </article>
@@ -4621,20 +4669,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </section>
 
-        <section className="settings-panel settings-memory-archive-card">
-          <div className="settings-panel-header">
-            <h3>近期归档</h3>
-            <p>已经从主上下文移出的历史片段会显示在这里，适合回看、核对和搜索，不会打扰当前工作流。</p>
-          </div>
-          <div className="settings-memory-toolbar">
+        <section className="settings-memory-v3__block">
+          <div className="settings-memory-v3__block-head settings-memory-v3__block-head--with-search">
+            <h4>近期归档</h4>
             <input
-              className="settings-input"
+              className="settings-memory-v3__search"
               onChange={(event) => setMemoryArchiveQuery(event.target.value)}
               placeholder="搜索归档内容"
-              type="text"
+              type="search"
               value={memoryArchiveQuery}
             />
-            <span className="settings-badge">{memoryOverview.archive.total} 条</span>
+            <span className="settings-memory-v3__count">{memoryOverview.archive.total} 条</span>
           </div>
 
           {memoryOverview.archive.items.length === 0 ? (
@@ -4644,12 +4689,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : '还没有近期归档内容。对话足够长之后，这里会出现整理过的历史片段。'}
             </div>
           ) : (
-            <div className="settings-memory-card-list settings-memory-card-list--archive">
+            <div className="settings-memory-v3__list">
               {memoryOverview.archive.items.slice(0, 6).map((item) => (
-                <article className="settings-memory-card settings-memory-card--archive" key={item.id}>
-                  <div className="settings-memory-card__head">
-                    <span className="settings-badge active">归档片段</span>
-                    <span className="settings-inline-note">{formatTimestamp(item.timestamp)}</span>
+                <article className="settings-memory-v3__item" key={item.id}>
+                  <div className="settings-memory-v3__item-meta">
+                    <span className="settings-memory-v3__tag">归档</span>
+                    <span className="settings-memory-v3__time">{formatTimestamp(item.timestamp)}</span>
                   </div>
                   <SettingsMarkdown className="settings-markdown--compact" content={item.content} />
                 </article>
@@ -4821,148 +4866,171 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return <div className="settings-empty">当前还没有可展示的文件数据。</div>;
     }
 
-    return (
-      <div className="settings-section settings-storage-section">
-        <div className="settings-metrics">
-          <Metric label="已用空间" value={formatBytes(storageOverview.summary.used_bytes)} />
-          <Metric label="总配额" value={formatBytes(storageOverview.summary.quota_bytes)} />
-          <Metric label="待清理文件" value={`${storageOverview.summary.stale_unreferenced_file_count} 个`} />
-        </div>
+    const cleanupBusy = storageActionPath === '__cleanup__';
 
-        <div className="settings-grid">
-          <section className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>存储概览</h3>
-              <p>上传的文件会保存在工作区，并按当前策略自动清理。你可以先看空间，再决定是否需要手动整理。</p>
-            </div>
-            <div className="settings-usage-row">
-              <strong>{storageUsagePercent}%</strong>
-              <span>
-                {formatBytes(storageOverview.summary.used_bytes)} / {formatBytes(storageOverview.summary.quota_bytes)}
+    return (
+      <div className="settings-section settings-storage-v3">
+        <header className="settings-storage-v3__statusbar">
+          <div className="settings-storage-v3__usage">
+            <div className="settings-storage-v3__usage-line">
+              <strong>{formatBytes(storageOverview.summary.used_bytes)}</strong>
+              <span className="settings-storage-v3__usage-quota">
+                / {formatBytes(storageOverview.summary.quota_bytes)}
               </span>
+              <span className="settings-storage-v3__usage-percent">{storageUsagePercent}%</span>
             </div>
-            <div className="settings-usage-bar">
-              <div className="settings-usage-fill" style={{ width: `${storageUsagePercent}%` }} />
+            <div className="settings-storage-v3__usage-bar">
+              <div
+                className="settings-storage-v3__usage-fill"
+                style={{ width: `${storageUsagePercent}%` }}
+              />
             </div>
-            <div className="settings-memory-stat-grid settings-memory-stat-grid--stacked">
-              <div className="settings-memory-stat-card">
-                <span>单文件上限</span>
-                <strong>{formatBytes(storageOverview.summary.max_file_bytes)}</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>保留天数</span>
-                <strong>{storageOverview.summary.retention_days} 天</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>清理间隔</span>
-                <strong>{storageOverview.summary.cleanup_interval_hours} 小时</strong>
-              </div>
-              <div className="settings-memory-stat-card">
-                <span>剩余空间</span>
-                <strong>{formatBytes(storageOverview.summary.available_bytes)}</strong>
-              </div>
+          </div>
+
+          <div className="settings-storage-v3__facts">
+            <div className="settings-storage-v3__fact">
+              <span>{storageOverview.files.length}</span>
+              <small>个文件</small>
             </div>
-            <div className="settings-actions">
+            <div className="settings-storage-v3__fact">
+              <span>{storageOverview.summary.unreferenced_file_count}</span>
+              <small>未引用</small>
+            </div>
+            <div className="settings-storage-v3__fact">
+              <span>{storageOverview.summary.retention_days}</span>
+              <small>天保留</small>
+            </div>
+          </div>
+
+          <div className="settings-storage-v3__head-actions">
+            <button
+              className="settings-button-secondary"
+              onClick={() => setStorageDetailsOpen((v) => !v)}
+              type="button"
+            >
+              {storageDetailsOpen ? '收起详情' : '更多详情'}
+            </button>
+            <button
+              className="settings-button"
+              disabled={cleanupBusy}
+              onClick={() => void handleCleanupStorage()}
+              type="button"
+            >
+              {cleanupBusy ? '正在清理' : '清理过期'}
+            </button>
+          </div>
+        </header>
+
+        {storageDetailsOpen ? (
+          <section className="settings-storage-v3__details">
+            <div className="settings-storage-v3__detail-row">
+              <span>单文件上限</span>
+              <strong>{formatBytes(storageOverview.summary.max_file_bytes)}</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>检查间隔</span>
+              <strong>每 {storageOverview.summary.cleanup_interval_hours} 小时</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>已引用文件</span>
+              <strong>{storageOverview.summary.referenced_file_count} 个</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>待清理孤立</span>
+              <strong>{storageOverview.summary.stale_unreferenced_file_count} 个</strong>
+            </div>
+            <div className="settings-storage-v3__detail-row">
+              <span>剩余可用</span>
+              <strong>{formatBytes(storageOverview.summary.available_bytes)}</strong>
+            </div>
+          </section>
+        ) : null}
+
+        <div className="settings-storage-v3__toolbar">
+          <div className="settings-storage-v3__filters">
+            {(
+              [
+                ['all', '全部'],
+                ['referenced', '已引用'],
+                ['orphan', '未引用'],
+              ] as const
+            ).map(([value, label]) => (
               <button
-                className="settings-button"
-                disabled={storageActionPath === '__cleanup__'}
-                onClick={() => void handleCleanupStorage()}
+                key={value}
+                className={`settings-storage-v3__filter ${storageFilterMode === value ? 'is-active' : ''}`}
+                onClick={() => setStorageFilterMode(value)}
                 type="button"
               >
-                {storageActionPath === '__cleanup__' ? '正在清理' : '立即清理过期文件'}
+                {label}
               </button>
-            </div>
-          </section>
+            ))}
+          </div>
+          <input
+            className="settings-storage-v3__search"
+            onChange={(event) => setStorageQuery(event.target.value)}
+            placeholder="搜索文件名 / 路径 / 会话"
+            type="search"
+            value={storageQuery}
+          />
+          <span className="settings-storage-v3__count">{filteredStorageFiles.length} 个结果</span>
+        </div>
 
-          <section className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>文件列表</h3>
-              <p>可以按引用状态查看文件。删除按钮始终保留；如果文件还被会话引用，点击后会直接告诉你原因。</p>
-            </div>
-            <div className="settings-memory-toolbar">
-              <input
-                className="settings-input"
-                onChange={(event) => setStorageQuery(event.target.value)}
-                placeholder="搜索文件名、路径或会话"
-                type="text"
-                value={storageQuery}
-              />
-              <div className="settings-filter-group">
-                {[
-                  ['all', '全部'],
-                  ['referenced', '已引用'],
-                  ['orphan', '未引用'],
-                ].map(([value, label]) => (
+        {filteredStorageFiles.length === 0 ? (
+          <div className="settings-empty">
+            {storageQuery.trim() || storageFilterMode !== 'all'
+              ? '没有匹配当前筛选条件的文件。'
+              : '工作区还没有上传文件。'}
+          </div>
+        ) : (
+          <div className="settings-storage-v3__list">
+            {filteredStorageFiles.slice(0, 30).map((file) => (
+              <article className="settings-storage-v3__row" key={file.path}>
+                <div className="settings-storage-v3__row-main">
+                  <div className="settings-storage-v3__row-name">{file.name}</div>
+                  <div className="settings-storage-v3__row-path">{file.path}</div>
+                  <div className="settings-storage-v3__row-chips">
+                    <span className="settings-storage-v3__chip">{badgeLabel(file)}</span>
+                    <span
+                      className={`settings-storage-v3__chip ${file.referenced ? 'is-referenced' : 'is-orphan'}`}
+                    >
+                      {file.referenced ? `已引用 ${file.reference_count}` : '未引用'}
+                    </span>
+                    <span className="settings-storage-v3__chip">{formatBytes(file.size)}</span>
+                    <span className="settings-storage-v3__chip">
+                      {formatTimestamp(file.modified_at)}
+                    </span>
+                  </div>
+                  {file.referenced_by.length > 0 ? (
+                    <div className="settings-storage-v3__refs">
+                      {file.referenced_by.map((reference) => (
+                        <button
+                          key={`${file.path}-${reference.session_id}`}
+                          className="settings-storage-v3__ref"
+                          onClick={() => navigateToSession(reference.session_id)}
+                          title={`跳转到会话 ${reference.title}`}
+                          type="button"
+                        >
+                          {truncateMiddle(reference.title, 26)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="settings-storage-v3__row-actions">
                   <button
-                    key={value}
-                    className={`settings-filter-button ${storageFilterMode === value ? 'active' : ''}`}
-                    onClick={() => setStorageFilterMode(value as StorageFilterMode)}
+                    className="settings-button-danger"
+                    disabled={!file.can_delete || storageActionPath === file.path}
+                    onClick={() => void handleDeleteStoredFile(file)}
+                    title={file.can_delete ? '删除文件' : '该文件仍被会话引用，需先解除引用'}
                     type="button"
                   >
-                    {label}
+                    {storageActionPath === file.path ? '删除中' : '删除'}
                   </button>
-                ))}
-              </div>
-            </div>
-
-            {filteredStorageFiles.length === 0 ? (
-              <div className="settings-empty">当前筛选条件下没有文件。</div>
-            ) : (
-              <div className="settings-file-list">
-                {filteredStorageFiles.slice(0, 12).map((file) => (
-                  <article className="settings-file-card settings-file-card--refined" key={file.path}>
-                    <div className="settings-list-head">
-                      <div>
-                        <div className="settings-provider-name" title={file.name}>
-                          {truncateMiddle(file.name, 36)}
-                        </div>
-                        <div className="settings-badges">
-                          <span className="settings-badge">{badgeLabel(file)}</span>
-                          <span className={`settings-badge ${file.referenced ? 'active' : ''}`}>
-                            {file.referenced ? `已引用 ${file.reference_count} 次` : '未引用'}
-                          </span>
-                          <span className="settings-badge">{formatBytes(file.size)}</span>
-                        </div>
-                      </div>
-                      <button
-                        className="settings-button-danger"
-                        disabled={storageActionPath === file.path}
-                        onClick={() => void handleDeleteStoredFile(file)}
-                        title="删除文件"
-                        type="button"
-                      >
-                        {storageActionPath === file.path ? '删除中' : '删除'}
-                      </button>
-                    </div>
-                    <div className="settings-file-path" title={file.path}>
-                      {truncateMiddle(file.path, 72)}
-                    </div>
-                    <div className="settings-job-facts">
-                      <span>更新于 {formatTimestamp(file.modified_at)}</span>
-                      <span>{file.can_delete ? '可直接删除' : '仍被会话引用，需先解除引用'}</span>
-                    </div>
-                    {file.referenced_by.length > 0 ? (
-                      <div className="settings-reference-list">
-                        {file.referenced_by.map((reference) => (
-                          <button
-                            key={`${file.path}-${reference.session_id}`}
-                            className="settings-reference-pill"
-                            onClick={() => {
-                              navigateToSession(reference.session_id);
-                            }}
-                            type="button"
-                          >
-                            {truncateMiddle(reference.title, 26)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -4981,8 +5049,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="settings-section">
         <div className="settings-mcp-toolbar">
           <div className="settings-mcp-toolbar__text">
-            <h3>运行时与渠道</h3>
-            <p>控制 Web 服务监听、心跳，以及外部渠道能看到的中间过程。</p>
+            <h3>服务</h3>
+            <p>
+              Web 服务监听地址 / 端口与外部渠道消息行为。修改 host/port 后需要重启 TokenMind 才完全生效。
+            </p>
           </div>
           <div className="settings-mcp-toolbar__actions">
             <button
@@ -4996,16 +5066,110 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        <div className="settings-grid">
+        <div className="settings-grid one">
           <div className="settings-panel">
             <div className="settings-panel-header">
-              <h3>渠道行为</h3>
-              <p>控制外部渠道是否看到中间过程。</p>
+              <h3>Web 服务</h3>
+              <p>
+                启动 <code>tokenmind web</code> 时如果没有显式传 <code>--port</code>，会使用这里配置的端口。
+              </p>
+            </div>
+            <div className="settings-grid">
+              <Field
+                label="Host"
+                copy={
+                  runtimeDraft.gateway.host === '0.0.0.0'
+                    ? '0.0.0.0：监听所有网络接口，同 LAN 内手机 / 平板可以访问。'
+                    : runtimeDraft.gateway.host === '127.0.0.1'
+                      ? '127.0.0.1：仅本机访问，最安全。'
+                      : 'Web 服务监听地址。'
+                }
+              >
+                <div className="settings-input-with-suggestions">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setRuntimeDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              gateway: { ...current.gateway, host: event.target.value },
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder="0.0.0.0"
+                    type="text"
+                    value={runtimeDraft.gateway.host}
+                  />
+                  <div className="settings-suggestion-row">
+                    <button
+                      type="button"
+                      className="settings-chip"
+                      onClick={() =>
+                        setRuntimeDraft((current) =>
+                          current
+                            ? { ...current, gateway: { ...current.gateway, host: '0.0.0.0' } }
+                            : current,
+                        )
+                      }
+                      disabled={runtimeDraft.gateway.host === '0.0.0.0'}
+                    >
+                      0.0.0.0
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-chip"
+                      onClick={() =>
+                        setRuntimeDraft((current) =>
+                          current
+                            ? { ...current, gateway: { ...current.gateway, host: '127.0.0.1' } }
+                            : current,
+                        )
+                      }
+                      disabled={runtimeDraft.gateway.host === '127.0.0.1'}
+                    >
+                      127.0.0.1
+                    </button>
+                  </div>
+                </div>
+              </Field>
+              <Field label="Port" copy="Web 服务监听端口。默认 18888。">
+                <input
+                  className="settings-input"
+                  min={1}
+                  max={65535}
+                  onChange={(event) =>
+                    setRuntimeDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            gateway: {
+                              ...current.gateway,
+                              port: Math.min(65535, Math.max(1, Number(event.target.value) || 1)),
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  type="number"
+                  value={runtimeDraft.gateway.port}
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="settings-panel">
+            <div className="settings-panel-header">
+              <h3>外部渠道消息</h3>
+              <p>
+                控制 TokenMind 接入的外部渠道（Telegram / 飞书 / 钉钉等）能看到助手的哪些中间过程。
+              </p>
             </div>
             <div className="settings-grid one">
               <ToggleRow
                 title="发送进度消息"
-                copy="在渠道中同步助手的中间文本进度。"
+                copy="把助手生成过程中的中间文本同步到外部渠道，关闭则只发最终答复。"
                 value={runtimeDraft.channels.send_progress}
                 onToggle={() =>
                   setRuntimeDraft((current) =>
@@ -5017,13 +5181,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             send_progress: !current.channels.send_progress,
                           },
                         }
-                      : current
+                      : current,
                   )
                 }
               />
               <ToggleRow
-                title="发送工具提示"
-                copy="在渠道中展示工具调用提示。"
+                title="发送工具调用提示"
+                copy="在外部渠道里展示助手正在调用什么工具（如「正在搜索网页」）。"
                 value={runtimeDraft.channels.send_tool_hints}
                 onToggle={() =>
                   setRuntimeDraft((current) =>
@@ -5035,111 +5199,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             send_tool_hints: !current.channels.send_tool_hints,
                           },
                         }
-                      : current
+                      : current,
                   )
                 }
               />
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-header">
-              <h3>网关与心跳</h3>
-              <p>host、port 和心跳参数通常需要在重启服务后完全生效。</p>
-            </div>
-            <div className="settings-grid">
-              <Field label="Host" copy="Web 服务监听地址。">
-                <input
-                  className="settings-input"
-                  onChange={(event) =>
-                    setRuntimeDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            gateway: {
-                              ...current.gateway,
-                              host: event.target.value,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="text"
-                  value={runtimeDraft.gateway.host}
-                />
-              </Field>
-              <Field label="Port" copy="Web 服务端口。">
-                <input
-                  className="settings-input"
-                  min={1}
-                  onChange={(event) =>
-                    setRuntimeDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            gateway: {
-                              ...current.gateway,
-                              port: Number(event.target.value) || 1,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="number"
-                  value={runtimeDraft.gateway.port}
-                />
-              </Field>
-            </div>
-            <div className="settings-grid one">
-              <ToggleRow
-                title="启用心跳"
-                copy="按固定周期执行心跳任务。"
-                value={runtimeDraft.gateway.heartbeat.enabled}
-                onToggle={() =>
-                  setRuntimeDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          gateway: {
-                            ...current.gateway,
-                            heartbeat: {
-                              ...current.gateway.heartbeat,
-                              enabled: !current.gateway.heartbeat.enabled,
-                            },
-                          },
-                        }
-                      : current
-                  )
-                }
-              />
-              <Field label="心跳间隔（秒）" copy="心跳任务触发间隔。">
-                <input
-                  className="settings-input"
-                  min={1}
-                  onChange={(event) =>
-                    setRuntimeDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            gateway: {
-                              ...current.gateway,
-                              heartbeat: {
-                                ...current.gateway.heartbeat,
-                                interval_s: Number(event.target.value) || 1,
-                              },
-                            },
-                          }
-                        : current
-                    )
-                  }
-                  type="number"
-                  value={runtimeDraft.gateway.heartbeat.interval_s}
-                />
-              </Field>
             </div>
           </div>
         </div>
-
       </div>
     );
   };

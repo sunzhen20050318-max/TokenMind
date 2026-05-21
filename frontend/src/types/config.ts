@@ -112,6 +112,12 @@ export interface KnowledgeSettings {
   rerank_api_key: string;
   rerank_api_base: string | null;
   rerank_top_n: number;
+  vlm_model: string;
+  vlm_api_key: string;
+  vlm_api_base: string | null;
+  vlm_timeout: number;
+  vlm_max_dim: number;
+  vlm_max_workers: number;
 }
 
 export interface McpServerSettings {
@@ -162,10 +168,6 @@ export interface RuntimeSettings {
   gateway: {
     host: string;
     port: number;
-    heartbeat: {
-      enabled: boolean;
-      interval_s: number;
-    };
   };
 }
 
@@ -243,6 +245,12 @@ export interface ToolsSettingsUpdate {
     rerank_api_key?: string;
     rerank_api_base?: string | null;
     rerank_top_n?: number;
+    vlm_model?: string;
+    vlm_api_key?: string;
+    vlm_api_base?: string | null;
+    vlm_timeout?: number;
+    vlm_max_dim?: number;
+    vlm_max_workers?: number;
   };
   audit_enabled?: boolean;
   restrict_to_workspace?: boolean;
@@ -256,10 +264,6 @@ export interface RuntimeSettingsUpdate {
   gateway?: {
     host?: string;
     port?: number;
-    heartbeat?: {
-      enabled?: boolean;
-      interval_s?: number;
-    };
   };
 }
 
