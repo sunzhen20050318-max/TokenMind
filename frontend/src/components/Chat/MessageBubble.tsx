@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import type { Attachment, Message, MessageCitation } from '../../types';
 import { api } from '../../services/api';
 import { useChatStore } from '../../stores/chatStore';
+import { copyToClipboard } from '../../utils/clipboard';
 // retainAttachment / updateAttachment no longer used here — attachments are auto-saved.
 import { BrandMark } from '../BrandMark';
 import { AttachmentIcon } from './AttachmentIcon';
@@ -151,25 +152,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, embeddedT
 
   const handleCopy = async () => {
     if (!canCopy) return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(renderedContent);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = renderedContent;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-      setCopyState('copied');
-      setTimeout(() => setCopyState('idle'), 1500);
-    } catch {
-      setCopyState('failed');
-      setTimeout(() => setCopyState('idle'), 1500);
-    }
+    const ok = await copyToClipboard(renderedContent);
+    setCopyState(ok ? 'copied' : 'failed');
+    setTimeout(() => setCopyState('idle'), 1500);
   };
 
   const handleDelete = async () => {

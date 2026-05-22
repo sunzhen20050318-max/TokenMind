@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { api } from '../../services/api';
 import { useChatStore } from '../../stores/chatStore';
 import type { Attachment } from '../../types';
+import { copyToClipboard } from '../../utils/clipboard';
 import { OverlayPortal } from '../Overlay/OverlayPortal';
 import {
   canCopyContent,
@@ -248,12 +249,12 @@ export function AttachmentPreview() {
   const handleCopy = useCallback(async () => {
     const content = textContent ?? attachment?.preview_text ?? '';
     if (!content) return;
-    try {
-      await navigator.clipboard.writeText(content);
+    const ok = await copyToClipboard(content);
+    if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
-      setTextError(err instanceof Error ? err.message : '复制失败');
+    } else {
+      setTextError('复制失败');
     }
   }, [attachment?.preview_text, textContent]);
 
