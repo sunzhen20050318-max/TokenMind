@@ -553,6 +553,39 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
     return loaded
 
 
+_LAN_BIND_HOSTS = frozenset({"0.0.0.0", "::", "::0"})
+
+
+def _ensure_lan_auth_secret(config: Config) -> None:
+    """When TokenMind is exposed beyond localhost but no auth_secret is
+    configured, mint a strong random one and persist it. Print it to the
+    console once so the user can copy it into the device that needs LAN
+    access (a phone on the same Wi-Fi, etc.)."""
+    import secrets
+
+    from tokenmind.config.loader import save_config
+
+    host = (config.gateway.host or "").strip()
+    if host not in _LAN_BIND_HOSTS:
+        return
+    if config.gateway.auth_secret:
+        return
+    new_secret = secrets.token_urlsafe(24)
+    config.gateway.auth_secret = new_secret
+    try:
+        save_config(config)
+    except Exception:
+        # Best-effort persistence; the secret still applies in-memory for
+        # this session and the user can copy it from the console banner.
+        pass
+    console.print()
+    console.print("[yellow]🔐 已为 LAN 访问生成访问密钥：[/yellow]")
+    console.print(f"  [bold cyan]{new_secret}[/bold cyan]")
+    console.print("  本机（localhost）访问无需密钥；手机 / 其他设备首次访问时输入这串。")
+    console.print("  也可在设置中心 → 服务 → 访问密钥 中查看 / 重置。")
+    console.print()
+
+
 def _warn_deprecated_config_keys(config_path: Path | None) -> None:
     """Hint users to remove obsolete keys from their config file."""
     import json
@@ -738,6 +771,10 @@ def web(
     console.print(f"{__logo__} Starting TokenMind Web UI on port {port}...")
     sync_workspace_templates(config.workspace_path)
 
+    _ensure_lan_auth_secret(config)
+    bind_host = (config.gateway.host or "0.0.0.0").strip()
+    auth_secret = config.gateway.auth_secret
+
     bus = MessageBus()
     provider = _make_provider_for_web(config)
     session_manager = SessionManager(config.workspace_path)
@@ -831,6 +868,7 @@ def web(
         session_manager=session_manager,
         connection_manager=connection_manager,
         web_channel=web_channel,
+        auth_secret=auth_secret,
     )
     frontend_dir = resolve_frontend_dist_dir()
     if frontend_dir is None:
@@ -871,9 +909,16 @@ def web(
             outbound_dispatcher_task = asyncio.create_task(dispatch_outbound())
             # Start agent loop in background
             agent_task = asyncio.create_task(agent.run())
-            # Start FastAPI server
-            config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
-            server = uvicorn.Server(config)
+            # Start FastAPI server — honor the configured bind host so the
+            # user can pin to 127.0.0.1 (local-only) when they don't want
+            # LAN exposure.
+            uvi_config = uvicorn.Config(
+                app,
+                host=bind_host,
+                port=port,
+                log_level="info",
+            )
+            server = uvicorn.Server(uvi_config)
             await server.serve()
         except KeyboardInterrupt:
             console.print("\nShutting down...")

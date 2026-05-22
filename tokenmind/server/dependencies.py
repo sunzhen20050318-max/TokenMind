@@ -79,3 +79,19 @@ def set_usage_recorder(recorder: Any) -> None:
 def get_usage_recorder() -> Any:
     """Get the global token usage recorder instance."""
     return _usage_recorder
+
+
+_app: Any = None
+
+
+def set_app(app: Any) -> None:
+    """Register the running FastAPI app instance so routes can reach
+    app.state from outside the request scope (e.g. updating the cached
+    auth_secret after settings rotate it)."""
+    global _app
+    _app = app
+
+
+def get_app() -> Any:
+    """Return the registered FastAPI app, or ``None`` before startup."""
+    return _app

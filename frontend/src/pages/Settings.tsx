@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { CloseIcon } from '../components/CloseIcon';
 import { api } from '../services/api';
 import { useChatStore } from '../stores/chatStore';
+import { copyToClipboard } from '../utils/clipboard';
 import {
   createEmptyCreativeCapabilitySettings,
   isCreativeCapabilityConfigured,
@@ -848,7 +849,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setCreativeDraft(data.creative);
         setCreativeCapabilities(data.creative);
         setAgentDraft(data.agent);
-        setRuntimeDraft(data.runtime);
+        // Backfill auth_secret default when an older backend doesn't echo
+        // it, same pattern we use for the VLM fields.
+        setRuntimeDraft({
+          ...data.runtime,
+          gateway: {
+            ...data.runtime.gateway,
+            auth_secret: data.runtime.gateway?.auth_secret ?? '',
+          },
+        });
         setSearchApiKeyMasked(data.tools.web.search.api_key || '');
         setToolsDraft({
           ...data.tools,
@@ -5155,6 +5164,88 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="number"
                   value={runtimeDraft.gateway.port}
                 />
+              </Field>
+            </div>
+          </div>
+
+          <div className="settings-panel">
+            <div className="settings-panel-header">
+              <h3>访问密钥</h3>
+              <p>
+                LAN（手机 / 平板等同 Wi-Fi 设备）访问 TokenMind 时必须提供这个密钥。本机访问无需密钥。
+                修改后立即对新连接生效，不需要重启。
+              </p>
+            </div>
+            <div className="settings-grid one">
+              <Field
+                label="X-TokenMind-Secret"
+                copy="留空则关闭 LAN 鉴权（不推荐）。点重置生成新密钥。"
+              >
+                <div className="settings-input-with-suggestions">
+                  <input
+                    className="settings-input"
+                    onChange={(event) =>
+                      setRuntimeDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              gateway: {
+                                ...current.gateway,
+                                auth_secret: event.target.value,
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder="LAN 访问密钥"
+                    spellCheck={false}
+                    type="text"
+                    value={runtimeDraft.gateway.auth_secret || ''}
+                  />
+                  <div className="settings-suggestion-row">
+                    <button
+                      type="button"
+                      className="settings-chip"
+                      disabled={!runtimeDraft.gateway.auth_secret}
+                      onClick={async () => {
+                        const secret = runtimeDraft.gateway.auth_secret || '';
+                        if (!secret) return;
+                        const ok = await copyToClipboard(secret);
+                        setNotice({
+                          tone: ok ? 'success' : 'error',
+                          text: ok ? '密钥已复制到剪贴板' : '复制失败',
+                        });
+                      }}
+                    >
+                      复制密钥
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-chip"
+                      onClick={() => {
+                        // Generate a 32-char URL-safe random secret in the
+                        // browser. Backend regenerates server-side if the
+                        // user instead just clears the field and saves.
+                        const bytes = new Uint8Array(24);
+                        crypto.getRandomValues(bytes);
+                        const b64 = btoa(String.fromCharCode(...bytes))
+                          .replace(/\+/g, '-')
+                          .replace(/\//g, '_')
+                          .replace(/=+$/, '');
+                        setRuntimeDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                gateway: { ...current.gateway, auth_secret: b64 },
+                              }
+                            : current,
+                        );
+                      }}
+                    >
+                      重置生成新密钥
+                    </button>
+                  </div>
+                </div>
               </Field>
             </div>
           </div>

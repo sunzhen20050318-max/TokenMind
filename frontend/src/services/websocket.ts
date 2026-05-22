@@ -1,4 +1,5 @@
 import type { Attachment, WSMessageType } from '../types';
+import { withSecretQuery } from './apiAuth';
 
 /**
  * Per-session WebSocket pool.
@@ -89,7 +90,8 @@ class WebSocketPool {
     this.connections.set(sessionId, conn);
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/chat?session_id=${encodeURIComponent(sessionId)}`;
+    const baseUrl = `${protocol}//${window.location.host}/ws/chat?session_id=${encodeURIComponent(sessionId)}`;
+    const wsUrl = withSecretQuery(baseUrl);
     const ws = new WebSocket(wsUrl);
     conn.ws = ws;
 
@@ -144,7 +146,8 @@ class WebSocketPool {
 
   private reattachSocket(conn: PooledConnection): void {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/chat?session_id=${encodeURIComponent(conn.sessionId)}`;
+    const baseUrl = `${protocol}//${window.location.host}/ws/chat?session_id=${encodeURIComponent(conn.sessionId)}`;
+    const wsUrl = withSecretQuery(baseUrl);
     const ws = new WebSocket(wsUrl);
     conn.ws = ws;
 

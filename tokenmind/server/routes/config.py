@@ -173,6 +173,7 @@ class GatewayConfigUpdate(BaseModel):
 
     host: str | None = None
     port: int | None = None
+    auth_secret: str | None = None
 
 
 class RuntimeConfigUpdate(BaseModel):
@@ -346,6 +347,7 @@ def _build_config_response() -> ConfigResponse:
         "gateway": {
             "host": config.gateway.host,
             "port": config.gateway.port,
+            "auth_secret": config.gateway.auth_secret,
         },
     }
     templates_dict = config.templates.model_dump()
@@ -634,6 +636,20 @@ async def update_tools_config(update: ToolsConfigUpdate):
         raise HTTPException(status_code=500, detail=f"Failed to update tools config: {e}") from e
 
 
+def _refresh_app_auth_secret(new_secret: str) -> None:
+    """Mirror gateway.auth_secret onto the running FastAPI app.state so the
+    LAN auth middleware picks up rotations immediately instead of needing a
+    restart."""
+    try:
+        from tokenmind.server.dependencies import get_app
+
+        app = get_app()
+        if app is not None:
+            app.state.auth_secret = new_secret or ""
+    except Exception:  # pragma: no cover — best effort
+        pass
+
+
 @router.put("/runtime")
 async def update_runtime_config(update: RuntimeConfigUpdate):
     """Update channel and gateway runtime configuration."""
@@ -651,6 +667,10 @@ async def update_runtime_config(update: RuntimeConfigUpdate):
                 config.gateway.host = update.gateway.host
             if "port" in update.gateway.model_fields_set:
                 config.gateway.port = update.gateway.port
+            if "auth_secret" in update.gateway.model_fields_set:
+                new_secret = (update.gateway.auth_secret or "").strip()
+                config.gateway.auth_secret = new_secret
+                _refresh_app_auth_secret(new_secret)
 
         save_config(config)
 

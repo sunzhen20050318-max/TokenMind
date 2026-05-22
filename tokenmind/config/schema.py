@@ -102,6 +102,12 @@ class GatewayConfig(Base):
 
     host: str = "0.0.0.0"
     port: int = 18888
+    # Shared secret required from any non-localhost client. Auto-generated on
+    # first startup when host is LAN-exposed (0.0.0.0 / ::) and this is
+    # empty. Local (127.0.0.1) requests are always allowed without it, so
+    # the user never needs to enter it when accessing TokenMind on the same
+    # machine the server runs on.
+    auth_secret: str = ""
 
 
 class WebSearchConfig(Base):

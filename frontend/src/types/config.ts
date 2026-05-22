@@ -168,6 +168,7 @@ export interface RuntimeSettings {
   gateway: {
     host: string;
     port: number;
+    auth_secret: string;
   };
 }
 
@@ -264,6 +265,7 @@ export interface RuntimeSettingsUpdate {
   gateway?: {
     host?: string;
     port?: number;
+    auth_secret?: string;
   };
 }
 

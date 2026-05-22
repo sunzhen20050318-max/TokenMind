@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import mimetypes
 import shutil
 from contextlib import asynccontextmanager
@@ -31,6 +32,7 @@ from tokenmind.projects import ProjectStore
 from tokenmind.server.attachments import AttachmentStore, categorize_attachment
 from tokenmind.server.channel.web import WebChannel
 from tokenmind.server.dependencies import (
+    set_app,
     set_chat_service,
     set_connection_manager,
     set_cron_service,
@@ -1679,12 +1681,18 @@ async def lifespan(app: FastAPI):
                 logger.exception("Failed to close WebSocket connections during shutdown")
 
 
+def _consteq(provided: str, expected: str) -> bool:
+    """Constant-time string comparison so the LAN gate can't be timing-probed."""
+    return bool(expected) and hmac.compare_digest(provided, expected)
+
+
 def create_app(
     bus: MessageBus,
     agent_loop: Any,
     session_manager: Any,
     connection_manager: ConnectionManager,
     web_channel: WebChannel,
+    auth_secret: str = "",
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -1709,6 +1717,8 @@ def create_app(
     )
     app.state.chat_service = chat_service
     app.state.connection_manager = connection_manager
+    app.state.auth_secret = auth_secret or ""
+    set_app(app)
 
     # Add CORS middleware
     app.add_middleware(
@@ -1718,6 +1728,45 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # LAN access gate: when an auth_secret is configured, every non-localhost
+    # request (including LAN devices like a phone on the same Wi-Fi) must
+    # present it as ``X-TokenMind-Secret`` or ``?secret=...``. Localhost calls
+    # bypass entirely so the user never needs to enter the secret on the
+    # machine that runs the server.
+    @app.middleware("http")
+    async def _lan_auth_gate(request, call_next):
+        secret = (getattr(app.state, "auth_secret", "") or "").strip()
+        if not secret:
+            return await call_next(request)
+        client_host = ""
+        if request.client is not None:
+            client_host = (request.client.host or "").strip()
+        if client_host in {"127.0.0.1", "::1", "localhost"}:
+            return await call_next(request)
+        # Allow the verify endpoint itself so the frontend can prompt the
+        # user for the secret without being blocked.
+        if request.url.path == "/api/auth/verify":
+            return await call_next(request)
+        # Allow the static frontend HTML/JS/CSS so users can at least load
+        # the page and see the auth prompt; data endpoints are gated.
+        path = request.url.path
+        is_api = path.startswith("/api") or path.startswith("/ws")
+        if not is_api:
+            return await call_next(request)
+        provided = (
+            request.headers.get("X-TokenMind-Secret")
+            or request.query_params.get("secret")
+            or ""
+        )
+        if not _consteq(provided, secret):
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                {"detail": "LAN 访问需要密钥，请在前端输入访问密钥"},
+                status_code=401,
+            )
+        return await call_next(request)
 
     # Include routers
     app.include_router(assets_router)
@@ -1735,10 +1784,40 @@ def create_app(
     app.include_router(updates_router)
     app.include_router(usage_router)
 
+    # Lightweight auth probe: the frontend hits this with the secret the
+    # user pastes into the AuthGate. Always returns 200 with whether the
+    # provided secret matches (the LAN middleware above also gates it
+    # against unauthenticated callers when configured, but we additionally
+    # let the call through so the prompt can verify on the same request).
+    @app.post("/api/auth/verify")
+    async def _api_auth_verify(payload: dict):
+        secret = (getattr(app.state, "auth_secret", "") or "").strip()
+        if not secret:
+            return {"required": False, "ok": True}
+        provided = (payload or {}).get("secret", "")
+        if not isinstance(provided, str):
+            provided = ""
+        return {"required": True, "ok": _consteq(provided, secret)}
+
     # WebSocket endpoint
     @app.websocket("/ws/chat")
     async def ws_chat(websocket: WebSocket, session_id: str | None = None):
         """WebSocket endpoint for real-time chat."""
+        # LAN auth gate — same as the HTTP middleware. WS doesn't go through
+        # FastAPI middleware so we enforce it inline before accepting the
+        # handshake. Browsers can't set custom headers on the WebSocket
+        # constructor, so we accept the secret via ``?secret=...`` query.
+        secret = (getattr(app.state, "auth_secret", "") or "").strip()
+        if secret:
+            client_host = ""
+            if websocket.client is not None:
+                client_host = (websocket.client.host or "").strip()
+            if client_host not in {"127.0.0.1", "::1", "localhost"}:
+                provided = websocket.query_params.get("secret") or ""
+                if not _consteq(provided, secret):
+                    await websocket.close(code=4401, reason="LAN auth required")
+                    return
+
         if session_id is None:
             # Generate a random session ID for anonymous users
             import uuid
