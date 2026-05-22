@@ -1385,7 +1385,11 @@ class AgentLoop:
             first_message = self._first_user_message_text(session)
             if not first_message:
                 first_message = (msg.content or "").strip()
-            if len(first_message) < 3:
+            # 2 chars is enough for a meaningful Chinese greeting ("你好"
+            # / "嗨" / "早安"); previously we required ≥3 chars which
+            # silently skipped these. Only single-char inputs ("a" / "?")
+            # are truly too thin to summarise.
+            if len(first_message) < 2:
                 logger.debug(
                     "Title gen: skipping {} — first user message too short ({} chars)",
                     session_key, len(first_message),

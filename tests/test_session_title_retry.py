@@ -145,13 +145,14 @@ async def test_title_failure_leaves_auto_titled_false_so_next_message_retries(
 
 
 @pytest.mark.asyncio
-async def test_title_skip_when_first_message_too_short(tmp_path: Path) -> None:
-    """Messages under 3 chars are too short to summarize meaningfully —
-    the task should return early without touching the LLM."""
+async def test_title_skip_when_first_message_is_single_char(tmp_path: Path) -> None:
+    """Single-char inputs ("?" / "a") are too thin to summarise — the
+    task should return early without touching the LLM. Two-char Chinese
+    greetings ("你好" / "嗨啊") are fine and DO get summarised."""
     loop = _make_loop(tmp_path)
     msg = InboundMessage(
         channel="web", sender_id="user1", chat_id="too-short",
-        content="hi", session_key_override="web:too-short",
+        content="a", session_key_override="web:too-short",
     )
     call_count = 0
 
@@ -163,6 +164,29 @@ async def test_title_skip_when_first_message_too_short(tmp_path: Path) -> None:
     loop._call_title_summarizer = fake_call  # type: ignore[method-assign]
     await loop._summarize_session_title(msg)
     assert call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_title_two_char_chinese_greeting_is_summarised(tmp_path: Path) -> None:
+    """Regression: 2-char Chinese greetings like '你好' used to be skipped
+    because the threshold was len < 3. They're now accepted."""
+    loop = _make_loop(tmp_path)
+    msg = InboundMessage(
+        channel="web", sender_id="user1", chat_id="two-char",
+        content="你好", session_key_override="web:two-char",
+    )
+
+    captured: list[str] = []
+
+    async def fake_call(first_message: str, **_: object) -> str | None:
+        captured.append(first_message)
+        return "日常问候"
+
+    loop._call_title_summarizer = fake_call  # type: ignore[method-assign]
+    await loop._summarize_session_title(msg)
+    assert captured == ["你好"]
+    refetched = loop.sessions.get_or_create("web:two-char")
+    assert refetched.title == "日常问候"
 
 
 @pytest.mark.asyncio
