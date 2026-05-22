@@ -23,6 +23,7 @@ from tokenmind.agent.context import ContextBuilder
 from tokenmind.agent.memory import MemoryConsolidator
 from tokenmind.agent.skill_suggestions import SkillSuggestionStore
 from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
+from tokenmind.agent.streaming import AgentStreamingHandler
 from tokenmind.agent.subagent import SubagentManager
 from tokenmind.agent.tools.cron import CronTool
 from tokenmind.agent.tools.deliver_attachment import DeliverAttachmentTool
@@ -739,10 +740,12 @@ class AgentLoop:
                         },
                     ]
 
+            streaming = AgentStreamingHandler(on_progress=on_progress)
             response = await self.provider.chat_with_retry(
                 messages=messages,
                 tools=tool_defs,
                 model=self.model,
+                on_tool_call_delta=streaming.on_tool_call_delta,
             )
             self._record_usage(response, session_key=msg.session_key if msg else None)
 
