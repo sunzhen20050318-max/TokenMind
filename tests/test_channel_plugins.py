@@ -13,7 +13,6 @@ from tokenmind.channels.base import BaseChannel
 from tokenmind.channels.manager import ChannelManager
 from tokenmind.config.schema import ChannelsConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -160,6 +159,62 @@ def test_discover_all_builtin_shadows_plugin():
 
 
 # ---------------------------------------------------------------------------
+# discover_enabled — only imports the requested channels
+# ---------------------------------------------------------------------------
+
+def test_discover_enabled_empty_short_circuits():
+    """No channels enabled -> no imports, no entry_points scan."""
+    from tokenmind.channels.registry import discover_enabled
+
+    # If entry_points were called we'd see the patch detect it.
+    with patch(_EP_TARGET) as ep_mock:
+        result = discover_enabled(set())
+
+    assert result == {}
+    ep_mock.assert_not_called()
+
+
+def test_discover_enabled_skips_unenabled_builtins():
+    """Only the named channels should be loaded; the entry_points scan is
+    skipped when every name is already satisfied by a built-in."""
+    from tokenmind.channels.registry import discover_enabled
+
+    with patch("tokenmind.channels.registry.load_channel_class") as load_mock:
+        load_mock.return_value = _FakePlugin
+        with patch(_EP_TARGET) as ep_mock:
+            result = discover_enabled({"email"})
+
+    assert "email" in result
+    load_mock.assert_called_once_with("email")
+    ep_mock.assert_not_called()
+
+
+def test_discover_enabled_falls_back_to_plugins_for_unknown_names():
+    """If an enabled name isn't a built-in, scan entry_points for it."""
+    from tokenmind.channels.registry import discover_enabled
+
+    ep = _make_entry_point("customplugin", _FakePlugin)
+    with patch(_EP_TARGET, return_value=[ep]):
+        result = discover_enabled({"customplugin"})
+
+    assert "customplugin" in result
+    assert result["customplugin"] is _FakePlugin
+
+
+def test_discover_enabled_plugin_cannot_shadow_builtin():
+    """If a plugin tries to claim a built-in name, the built-in wins."""
+    from tokenmind.channels.registry import discover_enabled
+
+    ep = _make_entry_point("telegram", _FakeTelegram)
+    # Force the plugin scan by also asking for a non-builtin name.
+    with patch(_EP_TARGET, return_value=[ep]):
+        result = discover_enabled({"telegram", "noplugin"})
+
+    assert "telegram" in result
+    assert result["telegram"] is not _FakeTelegram
+
+
+# ---------------------------------------------------------------------------
 # Manager _init_channels with dict config (plugin scenario)
 # ---------------------------------------------------------------------------
 
@@ -176,8 +231,11 @@ async def test_manager_loads_plugin_from_dict_config():
     )
 
     with patch(
-        "tokenmind.channels.registry.discover_all",
-        return_value={"fakeplugin": _FakePlugin},
+        "tokenmind.channels.registry.discover_channel_names",
+        return_value=["fakeplugin"],
+    ), patch(
+        "tokenmind.channels.registry.load_channel_class",
+        return_value=_FakePlugin,
     ):
         mgr = ChannelManager.__new__(ChannelManager)
         mgr.config = fake_config
@@ -200,8 +258,11 @@ async def test_manager_skips_disabled_plugin():
     )
 
     with patch(
-        "tokenmind.channels.registry.discover_all",
-        return_value={"fakeplugin": _FakePlugin},
+        "tokenmind.channels.registry.discover_channel_names",
+        return_value=["fakeplugin"],
+    ), patch(
+        "tokenmind.channels.registry.load_channel_class",
+        return_value=_FakePlugin,
     ):
         mgr = ChannelManager.__new__(ChannelManager)
         mgr.config = fake_config

@@ -48,14 +48,30 @@ class ChannelManager:
         return channel
 
     def _init_channels(self) -> None:
-        """Initialize channels discovered via pkgutil scan + entry_points plugins."""
-        from tokenmind.channels.registry import discover_all
+        """Initialize channels discovered via pkgutil scan + entry_points plugins.
 
-        for name, cls in discover_all().items():
+        Walks ``config.channels`` first to learn which channels the user has
+        enabled, then asks the registry to import only those modules. This
+        avoids the multi-hundred-ms cost of loading heavy SDKs (lark_oapi,
+        dingtalk_stream, baileys) for channels that are turned off — a
+        common state on fresh installs.
+        """
+        from tokenmind.channels.registry import (
+            discover_channel_names,
+            discover_enabled,
+        )
+
+        enabled_names: set[str] = set()
+        for name in discover_channel_names():
             section = getattr(self.config.channels, name, None)
             if section is None:
                 continue
-            if not self._is_enabled(section):
+            if self._is_enabled(section):
+                enabled_names.add(name)
+
+        for name, cls in discover_enabled(enabled_names).items():
+            section = getattr(self.config.channels, name, None)
+            if section is None:
                 continue
             try:
                 self.channels[name] = self._build_channel(name, cls, section)
@@ -87,9 +103,9 @@ class ChannelManager:
 
     async def refresh_channel(self, name: str, section: dict[str, Any]) -> BaseChannel | None:
         """Apply saved channel settings to the running channel manager."""
-        from tokenmind.channels.registry import discover_all
+        from tokenmind.channels.registry import discover_enabled
 
-        cls = discover_all().get(name)
+        cls = discover_enabled({name}).get(name)
         if cls is None:
             logger.warning("Cannot refresh unknown channel {}", name)
             return None
