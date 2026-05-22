@@ -309,10 +309,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const shouldTreatAsProject = !!existingProject || (!!resolvedProjectId && !existingGlobal);
 
     if (!existingGlobal && !existingProject) {
+      // Stamp the optimistic entry with "now" so the sidebar's time-bucket
+      // grouping puts a brand-new session under "今天" instead of falling
+      // back to "更早" (which is what happens when ``updated_at`` /
+      // ``created_at`` are undefined). The backend will overwrite these
+      // with its own timestamps the next time loadSessions() refreshes.
+      const nowIso = new Date().toISOString();
       const newSession: Session = {
         session_id: sessionId,
         message_count: 0,
         project_id: shouldTreatAsProject ? resolvedProjectId || undefined : undefined,
+        created_at: nowIso,
+        updated_at: nowIso,
       };
       if (shouldTreatAsProject) {
         set((current) => ({ projectSessions: [newSession, ...current.projectSessions] }));
