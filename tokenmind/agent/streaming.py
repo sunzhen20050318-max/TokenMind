@@ -91,12 +91,13 @@ class AgentStreamingHandler:
     async def _emit_file_edit_event(self, event: dict[str, Any]) -> None:
         """Route a file-edit progress event through the on_progress channel.
 
-        Uses the ``_file_edit_progress`` metadata key — Stage 4's
-        WebChannel will recognise it and forward a dedicated WS frame.
-        Until then the event is silently dropped on the CLI path (no
-        on_progress callback) and harmlessly attached as metadata on the
-        web path.
+        Calls ``on_progress(content, file_edit_event=event)`` — the agent
+        loop's ``_bus_progress`` understands this kwarg and converts it
+        into an ``_file_edit_progress`` metadata key on the outbound
+        message; the WebChannel then forwards a dedicated WS frame.
+        Silently dropped on paths without an on_progress callback (CLI,
+        subagents).
         """
         if self._on_progress is None:
             return
-        await self._on_progress("", _file_edit_progress=event)
+        await self._on_progress("", file_edit_event=event)

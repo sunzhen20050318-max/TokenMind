@@ -16,6 +16,10 @@ function getEventLabel(event: TimelineEvent): string {
     const len = (event.content || '').length;
     return len > 0 ? `💭 思考过程 · ${len} 字` : '💭 思考过程';
   }
+  if (event.type === 'file_edit_progress' && event.fileEdit) {
+    const icon = event.fileEdit.tool === 'write_file' ? '📝' : '✏️';
+    return `${icon} ${event.fileEdit.path || event.content || '...'}`;
+  }
   if (event.content && event.content.trim()) {
     return event.content;
   }
@@ -23,6 +27,17 @@ function getEventLabel(event: TimelineEvent): string {
 }
 
 function getEventDetail(event: TimelineEvent): string {
+  if (event.type === 'file_edit_progress' && event.fileEdit) {
+    const { phase, status, added, deleted, approximate, error } = event.fileEdit;
+    if (phase === 'error') {
+      return error ? `失败：${error.slice(0, 120)}` : '失败';
+    }
+    if (status === 'done') {
+      return `完成 · +${added} −${deleted} 行`;
+    }
+    const prefix = approximate ? '正在写入 (估算)' : '正在写入';
+    return `${prefix} · +${added} −${deleted} 行`;
+  }
   if (event.detail) {
     return event.detail;
   }
@@ -39,6 +54,13 @@ function getEventDetail(event: TimelineEvent): string {
     return '执行被阻止或失败';
   }
   return '工具完成';
+}
+
+function fileEditDotColor(event: TimelineEvent): string | null {
+  if (event.type !== 'file_edit_progress' || !event.fileEdit) return null;
+  if (event.fileEdit.phase === 'error') return '#ef4444';
+  if (event.fileEdit.status === 'done') return '#34c759';
+  return '#0a84ff';  // editing in progress
 }
 
 export const ToolChain: React.FC<ToolChainProps> = memo(
@@ -311,7 +333,8 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
                             height: '7px',
                             borderRadius: '50%',
                             backgroundColor:
-                              event.type === 'tool_end'
+                              fileEditDotColor(event) ||
+                              (event.type === 'tool_end'
                                 ? '#34c759'
                                 : event.type === 'tool_error'
                                   ? '#ef4444'
@@ -319,7 +342,7 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
                                     ? '#f59e0b'
                                     : event.type === 'reasoning'
                                       ? '#8b85d6'
-                                      : '#5f5f65',
+                                      : '#5f5f65'),
                           }}
                         />
                       </div>

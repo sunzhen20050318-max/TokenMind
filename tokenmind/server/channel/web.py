@@ -123,6 +123,20 @@ class WebChannel(BaseChannel):
 
         # Handle progress messages - tool events
         if msg.metadata.get("_progress"):
+            if msg.metadata.get("_file_edit_progress"):
+                # Live write_file / edit_file diff stats while the model
+                # streams its arguments — the WebUI's ToolIndicator uses
+                # these to show a rolling +N/-M counter inside the
+                # in-progress tool row.
+                await self._ws_manager.send_to_session(
+                    session_key=msg.chat_id,
+                    message={
+                        "type": "file_edit_progress",
+                        "event": msg.metadata["_file_edit_progress"],
+                        "channel": msg.channel,
+                    },
+                )
+                return
             if msg.metadata.get("_reasoning_content"):
                 # Reasoning (model thinking from DeepSeek-R1 / Qwen Thinking /
                 # Kimi Thinking etc.) rides the same progress pipeline as

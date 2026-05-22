@@ -20,9 +20,22 @@ export interface ToolCall {
   turnId: string; // Associates this tool call with a specific user message timestamp
 }
 
+export interface FileEditEvent {
+  version: number;
+  call_id: string;
+  tool: 'write_file' | 'edit_file';
+  path: string;
+  phase: 'start' | 'end' | 'error';
+  added: number;
+  deleted: number;
+  approximate: boolean;
+  status: 'editing' | 'done' | 'error';
+  error?: string;
+}
+
 export interface TimelineEvent {
   id: string;
-  type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error' | 'reasoning';
+  type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error' | 'reasoning' | 'file_edit_progress';
   content: string;
   timestamp: string;
   turnId: string;
@@ -30,6 +43,7 @@ export interface TimelineEvent {
   toolName?: string;
   duration?: number;
   detail?: string;
+  fileEdit?: FileEditEvent;
 }
 
 export interface ModelProvider {
@@ -196,6 +210,16 @@ interface ChatState {
   addSessionTimelineEvent: (
     sessionId: string,
     event: Omit<TimelineEvent, 'id' | 'timestamp' | 'turnId'>,
+  ) => void;
+  /**
+   * Update-or-insert a file_edit_progress timeline event for the given
+   * call_id. Streaming generates dozens of these per file edit; we keep a
+   * single timeline row per call_id and mutate its diff counts in place
+   * so the UI shows a rolling +N/-M counter instead of a spammy log.
+   */
+  applySessionFileEditProgress: (
+    sessionId: string,
+    event: FileEditEvent,
   ) => void;
   addSessionMessage: (sessionId: string, message: Message) => void;
 
@@ -1135,6 +1159,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
         timestamp: new Date().toISOString(),
         turnId,
         ...event,
+      };
+      return { timelineEvents: [...slice.timelineEvents, newEvent] };
+    });
+  },
+
+  applySessionFileEditProgress: (sessionId, event) => {
+    applySliceUpdate(set, get, sessionId, (slice) => {
+      const turnId = slice.currentTurnId || '';
+      const callId = event.call_id;
+      const existing = slice.timelineEvents.findIndex(
+        (e) => e.type === 'file_edit_progress' && e.fileEdit?.call_id === callId,
+      );
+      if (existing >= 0) {
+        const updated = slice.timelineEvents.slice();
+        updated[existing] = {
+          ...updated[existing],
+          fileEdit: event,
+          content: event.path,
+          detail: event.error || updated[existing].detail,
+        };
+        return { timelineEvents: updated };
+      }
+      const newEvent: TimelineEvent = {
+        id: `file-edit-${callId}-${Date.now()}`,
+        type: 'file_edit_progress',
+        content: event.path,
+        timestamp: new Date().toISOString(),
+        turnId,
+        toolId: callId,
+        toolName: event.tool,
+        fileEdit: event,
+        detail: event.error,
       };
       return { timelineEvents: [...slice.timelineEvents, newEvent] };
     });

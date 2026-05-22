@@ -1755,6 +1755,7 @@ class AgentLoop:
             reasoning: bool = False,
             duration: float | None = None,
             detail: str | None = None,
+            file_edit_event: dict[str, Any] | None = None,
         ) -> None:
             meta = dict(msg.metadata or {})
             meta["_progress"] = True
@@ -1769,8 +1770,12 @@ class AgentLoop:
                 meta["_tool_duration"] = duration
             if detail:
                 meta["_tool_detail"] = detail
+            if file_edit_event is not None:
+                meta["_file_edit_progress"] = file_edit_event
             from datetime import datetime
-            if reasoning:
+            if file_edit_event is not None:
+                tl_type = "file_edit_progress"
+            elif reasoning:
                 tl_type = "reasoning"
             elif tool_start:
                 tl_type = "tool_start"
@@ -1780,7 +1785,7 @@ class AgentLoop:
                 tl_type = "tool_error"
             else:
                 tl_type = "progress"
-            raw_timeline_events.append({
+            event_entry: dict[str, Any] = {
                 "type": tl_type,
                 "content": content,
                 "timestamp": datetime.now().isoformat(),
@@ -1788,7 +1793,10 @@ class AgentLoop:
                 "tool_name": tool_name,
                 "duration": duration,
                 "detail": detail,
-            })
+            }
+            if file_edit_event is not None:
+                event_entry["file_edit_event"] = file_edit_event
+            raw_timeline_events.append(event_entry)
             await self.bus.publish_outbound(OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))

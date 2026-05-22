@@ -345,8 +345,8 @@ async def test_streaming_handler_integration_emits_through_on_progress(
     assert len(captured) == 1
     text, meta = captured[0]
     assert text == ""
-    assert "_file_edit_progress" in meta
-    event = meta["_file_edit_progress"]
+    assert "file_edit_event" in meta
+    event = meta["file_edit_event"]
     assert event["tool"] == "write_file"
     assert event["path"] == "x.txt"
     assert event["added"] == 1

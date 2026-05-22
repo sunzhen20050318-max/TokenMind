@@ -137,6 +137,14 @@ export function useSessionOrchestrator(): void {
             content: msg.content,
           });
           break;
+        case 'file_edit_progress':
+          // Live +N/-M counts while the model streams write_file / edit_file
+          // arguments. Updates a single timeline row per call_id so the UI
+          // shows a rolling counter instead of a spammy log.
+          if (msg.event && typeof msg.event === 'object') {
+            store.applySessionFileEditProgress(sessionId, msg.event);
+          }
+          break;
         case 'guidance_received':
           // Server confirmed it queued the guidance — append a user
           // bubble flagged as guidance so the chat shows what the user

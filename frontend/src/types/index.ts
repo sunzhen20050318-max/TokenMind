@@ -292,6 +292,7 @@ export type WSMessageType =
   | { type: 'tool_error'; content: string; tool_id: string; tool_name: string; detail?: string; channel: string }
   | { type: 'progress'; content: string }
   | { type: 'reasoning'; content: string; channel: string }
+  | { type: 'file_edit_progress'; event: import('../stores/chatStore').FileEditEvent; channel: string }
   | { type: 'guidance_received'; content: string; channel: string }
   | { type: 'session_title_updated'; session_id: string; title: string; channel: string }
   | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
