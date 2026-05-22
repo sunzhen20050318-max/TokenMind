@@ -26,6 +26,7 @@ from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
 from tokenmind.agent.subagent import SubagentManager
 from tokenmind.agent.tools.cron import CronTool
 from tokenmind.agent.tools.deliver_attachment import DeliverAttachmentTool
+from tokenmind.agent.tools.file_state import FileStates
 from tokenmind.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from tokenmind.agent.tools.generate_image import GenerateImageTool
 from tokenmind.agent.tools.message import MessageTool
@@ -207,6 +208,11 @@ class AgentLoop:
         self._current_session_key: ContextVar[str | None] = ContextVar(
             "tokenmind_current_session_key", default=None
         )
+        # Per-session record of which files were read in the current
+        # session. read_file records into it; edit_file consults it so the
+        # agent must view a file (and see any external modifications)
+        # before mutating it.
+        self.file_states = FileStates()
         # Session-keyed queue of "guidance" snippets the user typed while
         # the agent was working. Each entry is a plain Chinese sentence;
         # the main ReAct loop flushes the queue right before each LLM call
@@ -238,9 +244,22 @@ class AgentLoop:
         """Register the default set of tools."""
         allowed_dir = self.workspace if self.restrict_to_workspace else None
         extra_read = [BUILTIN_SKILLS_DIR] if allowed_dir else None
-        self.tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir, extra_allowed_dirs=extra_read))
-        for cls in (WriteFileTool, EditFileTool, ListDirTool):
-            self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
+        get_sk = lambda: self._current_session_key.get(None)  # noqa: E731
+        self.tools.register(ReadFileTool(
+            workspace=self.workspace,
+            allowed_dir=allowed_dir,
+            extra_allowed_dirs=extra_read,
+            file_states=self.file_states,
+            get_session_key=get_sk,
+        ))
+        self.tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
+        self.tools.register(EditFileTool(
+            workspace=self.workspace,
+            allowed_dir=allowed_dir,
+            file_states=self.file_states,
+            get_session_key=get_sk,
+        ))
+        self.tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
         # Inject LibreOffice's install dir into the shell's PATH when present
         # but not already on PATH — covers macOS DMG installs (soffice lives
         # in /Applications/LibreOffice.app/...) and Windows MSI installs

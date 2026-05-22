@@ -2,9 +2,10 @@
 
 import difflib
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from tokenmind.agent.tools.base import Tool
+from tokenmind.agent.tools.file_state import FileStates
 
 
 def _resolve_path(
@@ -41,13 +42,25 @@ class _FsTool(Tool):
         workspace: Path | None = None,
         allowed_dir: Path | None = None,
         extra_allowed_dirs: list[Path] | None = None,
+        file_states: FileStates | None = None,
+        get_session_key: Callable[[], str | None] | None = None,
     ):
         self._workspace = workspace
         self._allowed_dir = allowed_dir
         self._extra_allowed_dirs = extra_allowed_dirs
+        self._file_states = file_states
+        self._get_session_key = get_session_key
 
     def _resolve(self, path: str) -> Path:
         return _resolve_path(path, self._workspace, self._allowed_dir, self._extra_allowed_dirs)
+
+    def _session_key(self) -> str | None:
+        if self._get_session_key is None:
+            return None
+        try:
+            return self._get_session_key()
+        except Exception:
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +141,11 @@ class ReadFileTool(_FsTool):
                 result += f"\n\n(Showing lines {offset}-{end} of {total}. Use offset={end + 1} to continue.)"
             else:
                 result += f"\n\n(End of file — {total} lines total)"
+
+            if self._file_states is not None:
+                sk = self._session_key()
+                if sk:
+                    self._file_states.record_read(sk, fp)
             return result
         except PermissionError as e:
             return f"Error: {e}"
@@ -243,6 +261,13 @@ class EditFileTool(_FsTool):
             if not fp.exists():
                 return f"Error: File not found: {path}"
 
+            if self._file_states is not None:
+                sk = self._session_key()
+                if sk:
+                    warning = self._file_states.check_before_edit(sk, fp)
+                    if warning:
+                        return f"Error: {warning}"
+
             raw = fp.read_bytes()
             uses_crlf = b"\r\n" in raw
             content = raw.decode("utf-8").replace("\r\n", "\n")
@@ -262,6 +287,11 @@ class EditFileTool(_FsTool):
                 new_content = new_content.replace("\n", "\r\n")
 
             fp.write_bytes(new_content.encode("utf-8"))
+
+            if self._file_states is not None:
+                sk = self._session_key()
+                if sk:
+                    self._file_states.record_read(sk, fp)
             return f"Successfully edited {fp}"
         except PermissionError as e:
             return f"Error: {e}"

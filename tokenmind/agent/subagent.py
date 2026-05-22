@@ -9,6 +9,7 @@ from typing import Any
 from loguru import logger
 
 from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
+from tokenmind.agent.tools.file_state import FileStates
 from tokenmind.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from tokenmind.agent.tools.registry import ToolRegistry
 from tokenmind.agent.tools.shell import ExecTool
@@ -94,9 +95,24 @@ class SubagentManager:
             tools = ToolRegistry()
             allowed_dir = self.workspace if self.restrict_to_workspace else None
             extra_read = [BUILTIN_SKILLS_DIR] if allowed_dir else None
-            tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir, extra_allowed_dirs=extra_read))
+            # Each subagent task gets its own FileStates — its read history
+            # is isolated from the parent agent and from sibling subagents.
+            file_states = FileStates()
+            sk_for_subagent = f"subagent:{task_id}"
+            tools.register(ReadFileTool(
+                workspace=self.workspace,
+                allowed_dir=allowed_dir,
+                extra_allowed_dirs=extra_read,
+                file_states=file_states,
+                get_session_key=lambda sk=sk_for_subagent: sk,
+            ))
             tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(EditFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
+            tools.register(EditFileTool(
+                workspace=self.workspace,
+                allowed_dir=allowed_dir,
+                file_states=file_states,
+                get_session_key=lambda sk=sk_for_subagent: sk,
+            ))
             tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
             tools.register(ExecTool(
                 working_dir=str(self.workspace),
