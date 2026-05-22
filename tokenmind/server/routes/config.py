@@ -92,6 +92,7 @@ class AgentConfigUpdate(BaseModel):
     temperature: float | None = None
     max_tool_iterations: int | None = None
     reasoning_effort: str | None = None
+    fallback_models: list[str] | None = None
 
 
 class WebSearchConfigUpdate(BaseModel):
@@ -531,6 +532,18 @@ async def update_agent_config(update: AgentConfigUpdate):
             defaults.max_tool_iterations = update.max_tool_iterations
         if "reasoning_effort" in update.model_fields_set:
             defaults.reasoning_effort = update.reasoning_effort or None
+        if "fallback_models" in update.model_fields_set:
+            # Strip blank entries and dedupe while preserving order so users
+            # can paste a comma-/newline-separated list without worrying
+            # about extra whitespace.
+            cleaned: list[str] = []
+            seen: set[str] = set()
+            for item in update.fallback_models or []:
+                token = (item or "").strip()
+                if token and token not in seen:
+                    cleaned.append(token)
+                    seen.add(token)
+            defaults.fallback_models = cleaned
 
         save_config(config)
 

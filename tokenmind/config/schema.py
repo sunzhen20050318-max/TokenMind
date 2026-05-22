@@ -39,6 +39,15 @@ class AgentDefaults(Base):
     temperature: float = 0.1
     max_tool_iterations: int = 40
     reasoning_effort: str | None = None  # low / medium / high - enables LLM thinking mode
+    # Ordered list of fully-qualified model strings (e.g. "deepseek/deepseek-chat",
+    # "anthropic/claude-haiku-4-5") to try in order when the primary `model`
+    # call returns finish_reason="error". Each entry routes to its own
+    # provider via the existing model-prefix detection. Empty list (default)
+    # disables failover entirely. National providers (Moonshot, MiniMax,
+    # DashScope etc.) frequently rate-limit during peak hours — listing one
+    # or two cheap alternatives means a single timeout doesn't break the
+    # conversation.
+    fallback_models: list[str] = Field(default_factory=list)
 
 
 class AgentsConfig(Base):

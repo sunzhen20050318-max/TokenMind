@@ -72,6 +72,7 @@ export interface AgentSettings {
   temperature: number;
   max_tool_iterations: number;
   reasoning_effort: string | null;
+  fallback_models: string[];
 }
 
 export interface WebSearchSettings {
@@ -210,6 +211,7 @@ export interface AgentSettingsUpdate {
   temperature?: number;
   max_tool_iterations?: number;
   reasoning_effort?: string | null;
+  fallback_models?: string[];
 }
 
 export interface ToolsSettingsUpdate {

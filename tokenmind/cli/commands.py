@@ -421,9 +421,9 @@ def _onboard_plugins(config_path: Path) -> None:
 
 
 def _make_provider_for_web(config: Config):
-    """Create provider for web command, allowing missing API key."""
+    """Create provider for web command, tolerating a missing primary API key
+    so the UI still boots into the Settings page."""
     from tokenmind.providers.base import GenerationSettings
-    from tokenmind.providers.openai_compat_provider import OpenAICompatProvider
     from tokenmind.providers.registry import find_by_name
 
     model = config.agents.defaults.model
@@ -438,25 +438,21 @@ def _make_provider_for_web(config: Config):
     )
 
     if needs_key:
-        console.print("[yellow]Warning: No API key configured. "
-                      "The Web UI will start, but chat will not work "
-                      "until you add an API key in Settings.[/yellow]")
-        provider = OpenAICompatProvider(
-            api_key=None,
-            api_base=None,
-            default_model=model,
+        console.print(
+            "[yellow]Warning: No API key configured. The Web UI will start, "
+            "but chat will not work until you add an API key in Settings.[/yellow]"
+        )
+        primary = _make_provider_core(config, strict=False)
+        defaults = config.agents.defaults
+        primary.generation = GenerationSettings(
+            temperature=defaults.temperature,
+            max_tokens=defaults.max_tokens,
+            reasoning_effort=defaults.reasoning_effort,
         )
     else:
-        provider = _make_provider(config)
-        return provider
+        primary = _make_provider_core(config, strict=True)
 
-    defaults = config.agents.defaults
-    provider.generation = GenerationSettings(
-        temperature=defaults.temperature,
-        max_tokens=defaults.max_tokens,
-        reasoning_effort=defaults.reasoning_effort,
-    )
-    return provider
+    return _wrap_with_fallback(config, primary, strict=False)
 
 
 async def _route_web_outbound_message(
@@ -478,44 +474,56 @@ async def _route_web_outbound_message(
     logger.warning("Unknown channel in web runtime: {}", msg.channel)
 
 
-def _make_provider(config: Config):
-    """Create the appropriate LLM provider from config."""
+def _make_provider_core(config: Config, *, model: str | None = None, strict: bool = True):
+    """Create a concrete (non-failover-wrapped) provider for ``model``.
+
+    Uses the configured agent default when ``model`` is None. When ``strict``
+    is False, a missing API key only logs a warning and returns an inert
+    provider (used by ``tokenmind web`` so the UI can boot even before the
+    user has typed in any keys). Used both as the primary provider and as
+    the factory the FallbackProvider calls to materialise backups.
+    """
     from tokenmind.providers.anthropic_provider import AnthropicProvider
     from tokenmind.providers.base import GenerationSettings
+    from tokenmind.providers.openai_compat_provider import OpenAICompatProvider
     from tokenmind.providers.registry import find_by_name
 
-    model = config.agents.defaults.model
-    provider_name = config.get_provider_name(model)
-    p = config.get_provider(model)
+    target_model = model or config.agents.defaults.model
+    provider_name = config.get_provider_name(target_model)
+    p = config.get_provider(target_model)
     spec = find_by_name(provider_name) if provider_name else None
     backend = spec.backend if spec else "openai_compat"
 
+    needs_key = (
+        not target_model.startswith("bedrock/")
+        and not (p and p.api_key)
+        and not (spec and (spec.is_oauth or spec.is_local or spec.is_direct))
+    )
+
     if backend == "anthropic":
-        if not p or not p.api_key:
-            console.print("[red]Error: Anthropic requires api_key.[/red]")
-            console.print("Set it in ~/.tokenmind/config.json under providers.anthropic section")
-            raise typer.Exit(1)
+        if needs_key:
+            if strict:
+                console.print("[red]Error: Anthropic requires api_key.[/red]")
+                console.print("Set it in ~/.tokenmind/config.json under providers.anthropic section")
+                raise typer.Exit(1)
+            return OpenAICompatProvider(api_key=None, api_base=None, default_model=target_model)
         provider = AnthropicProvider(
             api_key=p.api_key,
-            api_base=config.get_api_base(model),
-            default_model=model,
+            api_base=config.get_api_base(target_model),
+            default_model=target_model,
             extra_headers=p.extra_headers if p else None,
         )
     else:
-        from tokenmind.providers.openai_compat_provider import OpenAICompatProvider
-
-        if (
-            not model.startswith("bedrock/")
-            and not (p and p.api_key)
-            and not (spec and (spec.is_oauth or spec.is_local or spec.is_direct))
-        ):
-            console.print("[red]Error: No API key configured.[/red]")
-            console.print("Set one in ~/.tokenmind/config.json under providers section")
-            raise typer.Exit(1)
+        if needs_key:
+            if strict:
+                console.print("[red]Error: No API key configured.[/red]")
+                console.print("Set one in ~/.tokenmind/config.json under providers section")
+                raise typer.Exit(1)
+            return OpenAICompatProvider(api_key=None, api_base=None, default_model=target_model)
         provider = OpenAICompatProvider(
             api_key=p.api_key if p else None,
-            api_base=config.get_api_base(model),
-            default_model=model,
+            api_base=config.get_api_base(target_model),
+            default_model=target_model,
             extra_headers=p.extra_headers if p else None,
             spec=spec,
         )
@@ -527,6 +535,26 @@ def _make_provider(config: Config):
         reasoning_effort=defaults.reasoning_effort,
     )
     return provider
+
+
+def _wrap_with_fallback(config: Config, primary, *, strict: bool):
+    """Return ``primary`` wrapped in a FallbackProvider when the agent
+    config lists any fallback_models, otherwise pass it through unchanged."""
+    fallbacks = list(config.agents.defaults.fallback_models or [])
+    if not fallbacks:
+        return primary
+    from tokenmind.providers.fallback import FallbackProvider
+
+    def _factory(model_name: str):
+        return _make_provider_core(config, model=model_name, strict=strict)
+
+    return FallbackProvider(primary=primary, fallback_models=fallbacks, provider_factory=_factory)
+
+
+def _make_provider(config: Config):
+    """Create the appropriate LLM provider from config (strict — requires key)."""
+    primary = _make_provider_core(config, strict=True)
+    return _wrap_with_fallback(config, primary, strict=True)
 
 
 def _load_runtime_config(config: str | None = None, workspace: str | None = None) -> Config:

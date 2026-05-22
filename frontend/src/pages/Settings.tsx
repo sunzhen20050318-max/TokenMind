@@ -848,7 +848,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setProviders(data.providers);
         setCreativeDraft(data.creative);
         setCreativeCapabilities(data.creative);
-        setAgentDraft(data.agent);
+        setAgentDraft({
+          ...data.agent,
+          fallback_models: data.agent.fallback_models ?? [],
+        });
         // Backfill auth_secret default when an older backend doesn't echo
         // it, same pattern we use for the VLM fields.
         setRuntimeDraft({
@@ -2892,6 +2895,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }
                 type="number"
                 value={agentDraft.max_tool_iterations}
+              />
+            </Field>
+          </div>
+          <div className="settings-grid one">
+            <Field
+              label="备用模型（自动切换）"
+              copy="主模型报错时按顺序尝试这些模型。每行一个完整模型名，如 deepseek/deepseek-chat。留空关闭自动切换。"
+            >
+              <textarea
+                className="settings-textarea"
+                onChange={(event) =>
+                  setAgentDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          fallback_models: event.target.value
+                            .split(/\r?\n/)
+                            .map((line) => line.trim())
+                            .filter(Boolean),
+                        }
+                      : current,
+                  )
+                }
+                placeholder={'deepseek/deepseek-chat\nanthropic/claude-haiku-4-5'}
+                rows={3}
+                spellCheck={false}
+                value={(agentDraft.fallback_models || []).join('\n')}
               />
             </Field>
           </div>
