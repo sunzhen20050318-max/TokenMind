@@ -1491,13 +1491,16 @@ class AgentLoop:
             f"{first_message}\n"
             "---"
         )
-        # Thinking-capable providers (MiniMax / DeepSeek-R1 / Kimi-Thinking)
-        # can spend most of the response budget on hidden reasoning even when
-        # the prompt says "don't think". 30s leaves room for that without
+        # Use chat_with_retry (not bare chat) so a transient connection
+        # blip / 429 / 5xx auto-retries with exponential backoff and
+        # benefits from fallback_models when configured. Thinking-capable
+        # providers (MiniMax / DeepSeek-R1 / Kimi-Thinking) can spend
+        # most of the response budget on hidden reasoning even when
+        # the prompt says "don't think" — 30s leaves room for that without
         # making a stuck call drag on forever.
         try:
             response = await asyncio.wait_for(
-                self.provider.chat(
+                self.provider.chat_with_retry(
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": classification_request},
@@ -1516,6 +1519,23 @@ class AgentLoop:
             return None
 
         self._record_usage(response, session_key=session_key)
+        # A provider error (network blip, 5xx, rate limit) returns an
+        # ``LLMResponse`` whose ``content`` is the error string itself
+        # (e.g. "Error calling LLM: Connection error."). Without this
+        # guard the title extractor would happily slice that into
+        # something like "Error call" and persist it as the session
+        # title — confusing AND it would set ``auto_titled=True`` so no
+        # retry ever fires. Bail out before parsing so the retry path
+        # on the next user message kicks in.
+        finish_reason = getattr(response, "finish_reason", None)
+        if finish_reason == "error":
+            logger.warning(
+                "Title gen: provider returned error for {} — content={!r} "
+                "(will retry on next user message)",
+                session_key,
+                (getattr(response, "content", "") or "")[:160],
+            )
+            return None
         raw = (getattr(response, "content", None) or "").strip()
         return self._extract_title_from_raw(raw)
 

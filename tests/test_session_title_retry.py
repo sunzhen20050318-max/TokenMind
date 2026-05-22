@@ -193,6 +193,55 @@ async def test_title_idempotent_when_already_titled(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_provider_error_response_does_not_become_title(tmp_path: Path) -> None:
+    """When the provider returns finish_reason='error' (network blip, 5xx,
+    rate limit), the title summarizer must NOT slice the error message
+    into something like "Error call" and save it as the session title.
+    """
+    loop = _make_loop(tmp_path)
+    # Real-world example from the field: MiniMax connection error.
+    error_response = LLMResponse(
+        content="Error calling LLM: Connection error.",
+        finish_reason="error",
+    )
+    loop.provider.chat_with_retry = AsyncMock(return_value=error_response)
+
+    title = await loop._call_title_summarizer(
+        "你好啊", session_key="web:err-test",
+    )
+    assert title is None, (
+        "Provider error response must produce no title (would otherwise "
+        "show up in the sidebar as 'Error call' or similar garbage)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_error_response_keeps_auto_titled_false(tmp_path: Path) -> None:
+    """Defence in depth: even via the full task entry point, an error
+    response must not flip auto_titled — otherwise no retry would fire on
+    the next user message."""
+    loop = _make_loop(tmp_path)
+    session = loop.sessions.get_or_create("web:err-full")
+    session.messages = [{"role": "user", "content": "你好啊"}]
+    loop.sessions.save(session)
+
+    loop.provider.chat_with_retry = AsyncMock(return_value=LLMResponse(
+        content="Error calling LLM: Connection error.",
+        finish_reason="error",
+    ))
+
+    msg = InboundMessage(
+        channel="web", sender_id="u", chat_id="err-full",
+        content="你好啊", session_key_override="web:err-full",
+    )
+    await loop._summarize_session_title(msg)
+
+    refetched = loop.sessions.get_or_create("web:err-full")
+    assert refetched.metadata.get("auto_titled") is not True
+    assert refetched.metadata.get("title") in (None, "")
+
+
+@pytest.mark.asyncio
 async def test_title_concurrent_call_short_circuits(tmp_path: Path) -> None:
     """A second invocation while the first is in-flight should bail out."""
     loop = _make_loop(tmp_path)
