@@ -266,6 +266,48 @@ async def test_error_response_keeps_auto_titled_false(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_title_attempts_cap_stops_retrying(tmp_path: Path) -> None:
+    """After ``_TITLE_MAX_ATTEMPTS`` failures, the task must set
+    auto_titled=True and stop spending tokens — the sidebar falls back
+    to showing the first user message preview."""
+    loop = _make_loop(tmp_path)
+    session = loop.sessions.get_or_create("web:cap")
+    session.messages = [{"role": "user", "content": "你好啊"}]
+    loop.sessions.save(session)
+
+    call_count = 0
+
+    async def always_fail(first_message: str, **_: object) -> str | None:
+        nonlocal call_count
+        call_count += 1
+        return None  # simulate persistent provider failure
+
+    loop._call_title_summarizer = always_fail  # type: ignore[method-assign]
+
+    msg = InboundMessage(
+        channel="web", sender_id="u", chat_id="cap",
+        content="你好啊", session_key_override="web:cap",
+    )
+
+    # First 3 attempts each call the LLM, no title set, attempts counter
+    # increments. The 4th invocation sees attempts==3 and short-circuits
+    # without calling the LLM.
+    for _ in range(loop._TITLE_MAX_ATTEMPTS):
+        await loop._summarize_session_title(msg)
+
+    assert call_count == loop._TITLE_MAX_ATTEMPTS
+    refetched = loop.sessions.get_or_create("web:cap")
+    assert refetched.metadata.get("title_attempts") == loop._TITLE_MAX_ATTEMPTS
+    # Trigger one more — should NOT call the LLM, should flip auto_titled.
+    await loop._summarize_session_title(msg)
+    assert call_count == loop._TITLE_MAX_ATTEMPTS, (
+        "exceeding the cap must not consume more tokens"
+    )
+    refetched = loop.sessions.get_or_create("web:cap")
+    assert refetched.metadata.get("auto_titled") is True
+
+
+@pytest.mark.asyncio
 async def test_title_concurrent_call_short_circuits(tmp_path: Path) -> None:
     """A second invocation while the first is in-flight should bail out."""
     loop = _make_loop(tmp_path)

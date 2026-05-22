@@ -16,6 +16,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from tokenmind.agent.file_edit_tracker import FileEditTracker
 from tokenmind.providers.base import ToolCallDelta
 
@@ -50,10 +52,25 @@ class AgentStreamingHandler:
         )
 
     async def on_tool_call_delta(self, payload: ToolCallDelta) -> None:
-        """Provider-facing callback. See ``ToolCallDeltaCallback``."""
+        """Provider-facing callback. See ``ToolCallDeltaCallback``.
+
+        Wrapped in a broad except so a misbehaving tracker / progress sink
+        (e.g. a WebSocket that disconnected mid-stream) can't tear down
+        the entire chat call. The chat itself still completes; the worst
+        case is the WebUI not seeing live file-edit progress for the
+        remainder of this iteration.
+        """
         index = payload.get("index", 0)
         self._states[index] = payload
-        await self._file_edit_tracker.on_delta(payload)
+        try:
+            await self._file_edit_tracker.on_delta(payload)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Streaming handler: file-edit tracker raised on delta "
+                "(index={}, call_id={!r}) — continuing chat without live "
+                "progress for this iteration",
+                index, payload.get("call_id"),
+            )
 
     @property
     def latest_states(self) -> dict[int, ToolCallDelta]:
@@ -75,8 +92,34 @@ class AgentStreamingHandler:
 
         Triggers the final exact-diff ``end`` (or ``error``) event for
         ``write_file`` / ``edit_file`` calls. No-op for other tools.
+        Errors here are logged but never raised — the caller is the
+        agent loop's tool-execution path, which we don't want to crash
+        on a UI-side glitch.
         """
-        await self._file_edit_tracker.finalize(call_id, status=status, error=error)
+        try:
+            await self._file_edit_tracker.finalize(
+                call_id, status=status, error=error,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Streaming handler: file-edit tracker raised on finalize "
+                "(call_id={!r}, status={})",
+                call_id, status,
+            )
+
+    async def abandon_open_edits(self) -> None:
+        """Mark any in-flight file edits as errored after a chat failure.
+
+        Called when ``chat_with_retry`` returns ``finish_reason='error'``
+        and we never reach the tool-execution loop: without this, any
+        ``start`` event already on the WebUI would sit forever in
+        "正在写入..." state. Sweeps every call_id the tracker knows about
+        that hasn't been finalised, emits an error event for each.
+        """
+        try:
+            await self._file_edit_tracker.abandon_open()
+        except Exception:  # noqa: BLE001
+            logger.exception("Streaming handler: failed to abandon open edits")
 
     async def emit_progress(self, content: str, **meta: Any) -> None:
         """Helper that forwards arbitrary progress events to the WebUI.

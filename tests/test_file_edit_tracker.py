@@ -324,6 +324,57 @@ async def test_call_id_arrives_late_still_finds_state(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_abandon_open_marks_unfinalised_edits_as_error(tmp_path: Path) -> None:
+    """When the chat call errors out before the tool actually runs, any
+    in-flight edit on the WebUI timeline must be flipped to 'error' so
+    it doesn't sit in '正在写入' state forever."""
+    events, emit = _events_sink()
+    tracker = FileEditTracker(workspace=tmp_path, emit=emit)
+    # Emit a start event for an in-flight write_file.
+    await tracker.on_delta({
+        "index": 0, "call_id": "c1", "name": "write_file",
+        "arguments_delta": "",
+        "arguments": '{"path": "x.txt", "content": "hi',
+    })
+    starts = [e for e in events if e["phase"] == "start"]
+    assert len(starts) == 1
+    # Chat dies before tool execution → caller sweeps the tracker.
+    await tracker.abandon_open()
+    ends = [e for e in events if e["phase"] == "error"]
+    assert len(ends) == 1
+    assert ends[0]["call_id"] == "c1"
+    assert "Streaming chat ended" in ends[0]["error"]
+    # Idempotent: a second abandon_open emits nothing more.
+    before = len(events)
+    await tracker.abandon_open()
+    assert len(events) == before
+
+
+@pytest.mark.asyncio
+async def test_streaming_handler_swallows_tracker_exceptions(
+    tmp_path: Path,
+) -> None:
+    """A misbehaving tracker (e.g. WS closed mid-stream → emit raises) must
+    NOT take down the chat call. The handler logs and continues."""
+    from tokenmind.agent.streaming import AgentStreamingHandler
+
+    async def angry_progress(content: str, **meta: Any) -> None:
+        raise RuntimeError("websocket dropped")
+
+    handler = AgentStreamingHandler(
+        on_progress=angry_progress, workspace=tmp_path,
+    )
+    # Should NOT raise.
+    await handler.on_tool_call_delta({
+        "index": 0, "call_id": "c1", "name": "write_file",
+        "arguments_delta": "",
+        "arguments": '{"path": "x.txt", "content": "hi',
+    })
+    # State still recorded (handler-level state isn't affected by emit).
+    assert handler.latest_for(0) is not None
+
+
+@pytest.mark.asyncio
 async def test_streaming_handler_integration_emits_through_on_progress(
     tmp_path: Path,
 ) -> None:

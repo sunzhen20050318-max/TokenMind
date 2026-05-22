@@ -229,6 +229,31 @@ class FileEditTracker:
             payload["error"] = error[:240]
         await self._emit(payload)
 
+    async def abandon_open(self) -> None:
+        """Finalise every non-finalised edit with status="error".
+
+        Called by ``AgentStreamingHandler.abandon_open_edits`` when the
+        chat itself errored out before the tool-execution loop ever ran,
+        so any "start" event already on the WebUI doesn't sit forever
+        in the "正在写入..." state. Idempotent: each state is only ever
+        finalised once.
+        """
+        # Collect call_ids first so we don't mutate while iterating;
+        # finalize() flips state.finalized which would otherwise confuse
+        # a concurrent caller.
+        open_ids: list[str] = []
+        for state in self._states.values():
+            if state.finalized:
+                continue
+            if not state.path:
+                continue
+            open_ids.append(state.call_id or "")
+        for call_id in open_ids:
+            await self.finalize(
+                call_id, status="error",
+                error="Streaming chat ended before tool ran",
+            )
+
     # ── internals ────────────────────────────────────────────────────────
 
     @staticmethod

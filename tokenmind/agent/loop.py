@@ -926,6 +926,12 @@ class AgentLoop:
                 # poison the context and cause permanent 400 loops (#1303).
                 if response.finish_reason == "error":
                     logger.error("LLM returned error: {}", (clean or "")[:200])
+                    # The chat failed before any tool ran, so the file-edit
+                    # tracker's tool-execution finalize hook never fires —
+                    # tell the streaming handler to mark any open edit
+                    # entries on the WebUI timeline as errored, otherwise
+                    # they'd sit in "正在写入..." forever.
+                    await streaming.abandon_open_edits()
                     final_content = clean or "Sorry, I encountered an error calling the AI model."
                     break
                 messages = self.context.add_assistant_message(
@@ -1355,6 +1361,11 @@ class AgentLoop:
     # ── session title auto-summarization ─────────────────────────────────
 
     _TITLE_MAX_CHARS = 10
+    # After this many failed attempts the task gives up to bound token
+    # cost on a session whose model keeps returning empty / refusal /
+    # connection errors. The sidebar falls back to displaying the first
+    # user message preview in that case — readable, just not summarised.
+    _TITLE_MAX_ATTEMPTS = 3
 
     async def _summarize_session_title(self, msg: InboundMessage) -> None:
         """Generate a short Chinese title for a session that doesn't have one.
@@ -1379,6 +1390,21 @@ class AgentLoop:
         try:
             session = self.sessions.get_or_create(session_key)
             if session.metadata.get("auto_titled"):
+                return
+            attempts = int(session.metadata.get("title_attempts", 0) or 0)
+            if attempts >= self._TITLE_MAX_ATTEMPTS:
+                # Hit the retry cap — accept that this session won't get
+                # an auto-title and stop wasting tokens. Set auto_titled
+                # so the schedule guard at the call site short-circuits
+                # from now on. The sidebar already falls back to showing
+                # the first user message when there's no title.
+                if not session.metadata.get("auto_titled"):
+                    session.metadata["auto_titled"] = True
+                    self.sessions.save(session)
+                    logger.info(
+                        "Title gen: giving up on {} after {} attempts",
+                        session_key, attempts,
+                    )
                 return
             if session_key in self._title_in_flight:
                 return
@@ -1413,9 +1439,26 @@ class AgentLoop:
                 logger.exception("Title gen: LLM call failed for {}", session_key)
                 return
             if not title:
+                # Persist the attempt counter so the retry cap is enforced
+                # even across restarts. Each failure ticks +1; once the
+                # cap (3) is hit, the next invocation flips auto_titled
+                # to True and stops trying.
+                try:
+                    latest = self.sessions.get_or_create(session_key)
+                    latest.metadata["title_attempts"] = (
+                        int(latest.metadata.get("title_attempts", 0) or 0) + 1
+                    )
+                    self.sessions.save(latest)
+                except Exception:
+                    logger.exception(
+                        "Title gen: failed to bump attempt counter for {}",
+                        session_key,
+                    )
                 logger.warning(
-                    "Title gen: empty title for {} (will retry on next user message)",
+                    "Title gen: empty title for {} (attempt {} / {})",
                     session_key,
+                    int(session.metadata.get("title_attempts", 0) or 0) + 1,
+                    self._TITLE_MAX_ATTEMPTS,
                 )
                 return
 

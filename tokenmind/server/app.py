@@ -1518,6 +1518,11 @@ class ChatService:
         uploads_removed = upload_dir.exists()
         if upload_dir.exists():
             shutil.rmtree(upload_dir, ignore_errors=True)
+        # Drop the per-session read tracker so its ReadState entries don't
+        # accumulate indefinitely (~500 bytes each, no cleanup elsewhere).
+        file_states = getattr(self.agent_loop, "file_states", None)
+        if file_states is not None:
+            file_states.clear_session(session_id)
         channel, chat_id = (session_id.split(":", 1) if ":" in session_id else ("web", session_id))
         self.audit.record(
             audit_event,
@@ -1588,6 +1593,12 @@ class ChatService:
         if session:
             session.clear()
             self.session_manager.save(session)
+            # History cleared = the agent should re-read any files it
+            # previously knew about; the surviving session_key would
+            # otherwise let edit_file proceed without a fresh read.
+            file_states = getattr(self.agent_loop, "file_states", None)
+            if file_states is not None:
+                file_states.clear_session(session_id)
             channel, chat_id = (session_id.split(":", 1) if ":" in session_id else ("web", session_id))
             self.audit.record(
                 "session.cleared",
