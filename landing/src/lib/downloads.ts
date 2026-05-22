@@ -16,9 +16,11 @@ export interface InstallerLinks {
 }
 
 export const INSTALLERS: InstallerLinks = {
-  // Last published macOS DMG. Mac users on newer code paths will fall through
-  // to this until the next universal arm64+x64 build lands.
-  macos: 'https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMind-0.1.9-x64.dmg',
+  // 0.1.13 macOS DMG — built on Apple Silicon (arm64 only). Intel Macs
+  // running this DMG will work via Rosetta 2 for the Python runtime, but
+  // a native x64 build is still TODO. Update both here AND in the repo's
+  // versions.json when a new DMG is published.
+  macos: 'https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMind-0.1.13-arm64.dmg',
   windows:
     'https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMindSetup-0.1.12.exe',
 };
