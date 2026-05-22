@@ -6,4 +6,4 @@
  * source of truth in TypeScript means the update banner and the Settings
  * "About" panel can both read it without an API round-trip.
  */
-export const APP_VERSION = '0.1.11';
+export const APP_VERSION = '0.1.13';
