@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
@@ -1789,10 +1789,20 @@ def create_app(
     # provided secret matches (the LAN middleware above also gates it
     # against unauthenticated callers when configured, but we additionally
     # let the call through so the prompt can verify on the same request).
+    #
+    # Localhost callers are reported as ``required: False`` even when a
+    # secret is configured: the HTTP middleware already lets them through,
+    # so making the user-on-the-server-machine paste a password would be
+    # purely friction.
     @app.post("/api/auth/verify")
-    async def _api_auth_verify(payload: dict):
+    async def _api_auth_verify(payload: dict, request: Request):
         secret = (getattr(app.state, "auth_secret", "") or "").strip()
         if not secret:
+            return {"required": False, "ok": True}
+        client_host = ""
+        if request.client is not None:
+            client_host = (request.client.host or "").strip()
+        if client_host in {"127.0.0.1", "::1", "localhost"}:
             return {"required": False, "ok": True}
         provided = (payload or {}).get("secret", "")
         if not isinstance(provided, str):
