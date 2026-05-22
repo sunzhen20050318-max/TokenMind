@@ -1357,32 +1357,49 @@ class AgentLoop:
     _TITLE_MAX_CHARS = 10
 
     async def _summarize_session_title(self, msg: InboundMessage) -> None:
-        """Generate a short Chinese title for a brand-new session.
+        """Generate a short Chinese title for a session that doesn't have one.
 
         Runs as a background task so the user's actual turn isn't blocked.
         Idempotent — flagged via ``session.metadata['auto_titled']`` and
         re-fetches the session before writing in case the user manually
         renamed it in the meantime.
+
+        Retry-friendly: if the LLM call fails / times out / returns empty,
+        the next user message in the same session re-triggers this task
+        (see ``_process_message_inner``). We always derive the source text
+        from the first user message stored in the session, so the title
+        still reflects the conversation's opening even when generated on
+        attempt #2 or #3.
         """
         session_key = msg.session_key
-        first_message = (msg.content or "").strip()
-        if len(first_message) < 3:
-            return
 
-        # Dedupe quick-fire messages with an in-memory flag, but DO NOT
-        # persist auto_titled=True yet — a transient LLM failure here
-        # would otherwise permanently block retries on the next message.
+        # Pull the first user message out of the persisted session so a
+        # retry generated from message #2's invocation still summarises
+        # message #1 (the conversation's actual opening).
         try:
             session = self.sessions.get_or_create(session_key)
             if session.metadata.get("auto_titled"):
                 return
             if session_key in self._title_in_flight:
                 return
+            first_message = self._first_user_message_text(session)
+            if not first_message:
+                first_message = (msg.content or "").strip()
+            if len(first_message) < 3:
+                logger.debug(
+                    "Title gen: skipping {} — first user message too short ({} chars)",
+                    session_key, len(first_message),
+                )
+                return
             self._title_in_flight.add(session_key)
         except Exception:
             logger.exception("Title gen: failed to inspect session {}", session_key)
             return
 
+        logger.info(
+            "Title gen: starting for {} (first message preview: {!r})",
+            session_key, first_message[:40],
+        )
         try:
             try:
                 title = await self._call_title_summarizer(
@@ -1392,6 +1409,10 @@ class AgentLoop:
                 logger.exception("Title gen: LLM call failed for {}", session_key)
                 return
             if not title:
+                logger.warning(
+                    "Title gen: empty title for {} (will retry on next user message)",
+                    session_key,
+                )
                 return
 
             try:
@@ -1399,6 +1420,7 @@ class AgentLoop:
                 latest.set_title(title)
                 latest.metadata["auto_titled"] = True
                 self.sessions.save(latest)
+                logger.info("Title gen: saved {!r} for {}", title, session_key)
             except Exception:
                 logger.exception("Title gen: failed to persist {} for {}", title, session_key)
                 return
@@ -1469,6 +1491,10 @@ class AgentLoop:
             f"{first_message}\n"
             "---"
         )
+        # Thinking-capable providers (MiniMax / DeepSeek-R1 / Kimi-Thinking)
+        # can spend most of the response budget on hidden reasoning even when
+        # the prompt says "don't think". 30s leaves room for that without
+        # making a stuck call drag on forever.
         try:
             response = await asyncio.wait_for(
                 self.provider.chat(
@@ -1481,15 +1507,40 @@ class AgentLoop:
                     temperature=0.3,
                     reasoning_effort=None,
                 ),
-                timeout=15.0,
+                timeout=30.0,
             )
         except asyncio.TimeoutError:
-            logger.warning("Title summarizer timed out")
+            logger.warning(
+                "Title gen: provider call timed out after 30s for {}", session_key,
+            )
             return None
 
         self._record_usage(response, session_key=session_key)
         raw = (getattr(response, "content", None) or "").strip()
         return self._extract_title_from_raw(raw)
+
+    @staticmethod
+    def _first_user_message_text(session: Any) -> str:
+        """Return the first user message's text content, or '' if none."""
+        for raw in getattr(session, "messages", None) or []:
+            if raw.get("role") != "user":
+                continue
+            content = raw.get("content")
+            if isinstance(content, str):
+                return content.strip()
+            if isinstance(content, list):
+                # Multi-modal user message — pull the first text block.
+                for block in content:
+                    if (
+                        isinstance(block, dict)
+                        and block.get("type") in ("text", "input_text")
+                        and isinstance(block.get("text"), str)
+                    ):
+                        text = block["text"].strip()
+                        if text:
+                            return text
+            return ""
+        return ""
 
     # Prefixes that indicate the title-summarizer LLM treated the input
     # as a request to fulfil and refused, instead of classifying it.
@@ -1677,17 +1728,21 @@ class AgentLoop:
         key = session_key or msg.session_key
         session = self.sessions.get_or_create(key)
 
-        # First user message in a fresh session → kick off background title
-        # summarization. Idempotent (auto_titled flag) and non-blocking, so
-        # the agent's main turn proceeds immediately. We capture the first
-        # message text now because session.messages is mutated below.
+        # Kick off background title summarization on every user message
+        # in a session that hasn't been titled yet. The previous gate
+        # (``not session.messages``, i.e. only the very first message)
+        # made title generation a one-shot: a transient LLM failure /
+        # timeout / refusal on attempt #1 left the session permanently
+        # untitled. Now we retry on each subsequent user message until
+        # ``auto_titled`` is set — the source text is always pulled from
+        # the first user message stored on the session so the title still
+        # reflects the conversation's opening.
         if (
             msg.channel != "system"
             and msg.content
             and msg.content.strip()
             and not msg.content.strip().startswith("/")
             and not session.metadata.get("auto_titled")
-            and not session.messages
         ):
             self._schedule_background(self._summarize_session_title(msg))
 
