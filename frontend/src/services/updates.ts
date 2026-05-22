@@ -102,7 +102,12 @@ export function compareVersions(a: string, b: string): number {
 
 export function isUpdateAvailable(info: VersionInfo | null): boolean {
   if (!info?.latest?.version) return false;
-  return compareVersions(APP_VERSION, info.latest.version) < 0;
+  if (compareVersions(APP_VERSION, info.latest.version) >= 0) return false;
+  // Suppress the "新版本可用" pitch when there's no actual binary for this
+  // platform yet (e.g. the Mac DMG has been bumped in versions.json but
+  // ``downloads.macos`` is still a "TODO" placeholder). Otherwise users
+  // see a modal with no "立即下载" button and nothing to act on.
+  return pickDownloadUrl(info) !== null;
 }
 
 export function isUpdateDismissed(version: string): boolean {
@@ -214,15 +219,30 @@ export function detectOS(): 'macos' | 'windows' | 'linux' | 'unknown' {
   return 'unknown';
 }
 
+function isValidDownloadUrl(value: string | undefined | null): value is string {
+  // Guards against placeholders we leave in versions.json before the real
+  // binary is uploaded (e.g. "TODO", "" or "REPLACE_ME"). Without this
+  // check, ``new URL(value, baseUrl)`` would happily build
+  // ``http://localhost:18888/TODO`` and trigger a confusing download.
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^(todo|tbd|none|placeholder|replace.?me|null|n\/a)$/i.test(trimmed)) {
+    return false;
+  }
+  // Anything else has to be at least a recognisable absolute URL.
+  return /^https?:\/\//i.test(trimmed);
+}
+
 export function pickDownloadUrl(info: VersionInfo): string | null {
   const os = detectOS();
   const downloads = info.latest.downloads;
-  if (downloads) {
-    const url =
-      os !== 'unknown' ? downloads[os] : undefined;
-    if (url) return url;
+  if (downloads && os !== 'unknown') {
+    const url = downloads[os];
+    if (isValidDownloadUrl(url)) return url;
   }
-  return info.latest.download_page ?? null;
+  const page = info.latest.download_page;
+  return isValidDownloadUrl(page) ? page : null;
 }
 
 /* ===================================================================== *
