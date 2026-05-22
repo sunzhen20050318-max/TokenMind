@@ -11,7 +11,12 @@ import json_repair
 from loguru import logger
 from openai import AsyncOpenAI
 
-from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from tokenmind.providers.base import (
+    LLMProvider,
+    LLMResponse,
+    ToolCallDeltaCallback,
+    ToolCallRequest,
+)
 from tokenmind.providers.registry import ProviderSpec
 from tokenmind.providers.usage import build_usage
 
@@ -444,6 +449,7 @@ class OpenAICompatProvider(LLMProvider):
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
+        on_tool_call_delta: ToolCallDeltaCallback | None = None,
     ) -> LLMResponse:
         resolved_model = self._resolve_model(model or self.default_model)
         if self._supports_cache_control(resolved_model):
@@ -471,6 +477,8 @@ class OpenAICompatProvider(LLMProvider):
             kwargs["tool_choice"] = tool_choice or "auto"
 
         try:
+            if on_tool_call_delta is not None:
+                return await self._chat_streaming(kwargs, on_tool_call_delta)
             response = await self._client.chat.completions.create(**kwargs)
             return self._parse_response(response)
         except Exception as exc:
@@ -478,6 +486,128 @@ class OpenAICompatProvider(LLMProvider):
             if body and str(body).strip():
                 return LLMResponse(content=f"Error: {str(body).strip()[:500]}", finish_reason="error")
             return LLMResponse(content=f"Error calling LLM: {exc}", finish_reason="error")
+
+    async def _chat_streaming(
+        self,
+        kwargs: dict[str, Any],
+        on_tool_call_delta: ToolCallDeltaCallback,
+    ) -> LLMResponse:
+        """Run the SDK call in streaming mode and re-assemble an LLMResponse.
+
+        Fires ``on_tool_call_delta`` for every tool-call argument chunk so
+        the agent loop can surface in-progress work (e.g. live file edit
+        diffs) to the WebUI before the call has finished assembling.
+
+        The returned response is byte-equivalent to what the non-streaming
+        path would have produced: same ``content``, ``tool_calls``,
+        ``finish_reason``, ``usage``, and ``reasoning_content``.
+        """
+        stream_kwargs = {
+            **kwargs,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        # index → {"id", "name", "arguments"} accumulating as deltas arrive.
+        tool_state: dict[int, dict[str, Any]] = {}
+        finish_reason: str | None = None
+        usage_obj: Any = None
+
+        stream = await self._client.chat.completions.create(**stream_kwargs)
+        async for chunk in stream:
+            # The final usage chunk often has empty choices; capture and skip.
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage_obj = chunk_usage
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+
+            choice = choices[0]
+            if getattr(choice, "finish_reason", None):
+                finish_reason = choice.finish_reason
+
+            delta = getattr(choice, "delta", None)
+            if delta is None:
+                continue
+
+            text_delta = getattr(delta, "content", None)
+            if text_delta:
+                content_parts.append(text_delta)
+
+            # DeepSeek-R1 / Kimi Thinking style: ``reasoning_content`` arrives
+            # as an extra delta field rather than in the standard ``content``.
+            rc_delta = _read_extra(delta, "reasoning_content")
+            if rc_delta:
+                reasoning_parts.append(rc_delta)
+
+            for tcd in getattr(delta, "tool_calls", None) or []:
+                idx = getattr(tcd, "index", 0)
+                state = tool_state.setdefault(
+                    idx, {"id": None, "name": None, "arguments": ""},
+                )
+
+                if getattr(tcd, "id", None) and not state["id"]:
+                    state["id"] = tcd.id
+
+                fn = getattr(tcd, "function", None)
+                args_delta = ""
+                if fn is not None:
+                    if getattr(fn, "name", None) and not state["name"]:
+                        state["name"] = fn.name
+                    if getattr(fn, "arguments", None):
+                        args_delta = fn.arguments
+                        state["arguments"] += fn.arguments
+
+                await on_tool_call_delta({
+                    "index": idx,
+                    "call_id": state["id"],
+                    "name": state["name"],
+                    "arguments_delta": args_delta,
+                    "arguments": state["arguments"],
+                })
+
+        content = "".join(content_parts) if content_parts else None
+        reasoning_content = "".join(reasoning_parts) or None
+
+        tool_calls: list[ToolCallRequest] = []
+        for idx in sorted(tool_state):
+            state = tool_state[idx]
+            if not state["name"]:
+                continue
+            args_str = state["arguments"] or ""
+            try:
+                arguments = json_repair.loads(args_str) if args_str else {}
+            except Exception:  # noqa: BLE001
+                arguments = {}
+            tool_calls.append(ToolCallRequest(
+                id=state["id"] or "",
+                name=state["name"],
+                arguments=arguments if isinstance(arguments, dict) else {},
+            ))
+
+        # XML tool-call fallback (MiMo etc) — same logic as non-streaming path.
+        if not tool_calls and isinstance(content, str):
+            xml_calls, cleaned_content = _extract_xml_tool_calls(content)
+            if xml_calls:
+                tool_calls = xml_calls
+                content = cleaned_content or None
+                if (finish_reason or "stop") == "stop":
+                    finish_reason = "tool_calls"
+
+        usage: dict[str, int] = (
+            _normalize_openai_usage(usage_obj) if usage_obj is not None else {}
+        )
+
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason or "stop",
+            usage=usage,
+            reasoning_content=reasoning_content,
+        )
 
     def _parse_response(self, response: Any) -> LLMResponse:
         choices = list(getattr(response, "choices", []) or [])

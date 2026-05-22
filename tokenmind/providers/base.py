@@ -3,10 +3,25 @@
 import asyncio
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeAlias
 
 from loguru import logger
+
+# Streaming tool-call delta payload. Fires while the model is still
+# producing the function-call arguments — used by the agent loop to surface
+# in-progress file edits (and similar incrementally-visible operations) to
+# the WebUI before the call has finished assembling.
+#
+# Shape:
+#   index:           tool-call slot (distinguishes parallel calls)
+#   call_id:         tool call id, once the provider has emitted it
+#   name:            tool function name, once known
+#   arguments_delta: the raw JSON-string chunk that just arrived
+#   arguments:       accumulated arguments JSON string so far
+ToolCallDelta: TypeAlias = dict[str, Any]
+ToolCallDeltaCallback: TypeAlias = Callable[[ToolCallDelta], Awaitable[None]]
 
 
 @dataclass
@@ -48,7 +63,7 @@ class LLMResponse:
     error_code: str | None = None
     retry_after_s: float | None = None
     is_transient: bool | None = None
-    
+
     @property
     def has_tool_calls(self) -> bool:
         """Check if response contains tool calls."""
@@ -182,10 +197,11 @@ class LLMProvider(ABC):
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
+        on_tool_call_delta: ToolCallDeltaCallback | None = None,
     ) -> LLMResponse:
         """
         Send a chat completion request.
-        
+
         Args:
             messages: List of message dicts with 'role' and 'content'.
             tools: Optional list of tool definitions.
@@ -193,7 +209,13 @@ class LLMProvider(ABC):
             max_tokens: Maximum tokens in response.
             temperature: Sampling temperature.
             tool_choice: Tool selection strategy ("auto", "required", or specific tool dict).
-        
+            on_tool_call_delta: Optional async callback fired for every
+                streaming tool-call argument delta. When provided, providers
+                that support streaming use streaming mode under the hood;
+                the returned ``LLMResponse`` is still the fully-assembled
+                response. Providers that don't support streaming may
+                ignore this callback.
+
         Returns:
             LLMResponse with content and/or tool calls.
         """
@@ -294,6 +316,7 @@ class LLMProvider(ABC):
         temperature: object = _SENTINEL,
         reasoning_effort: object = _SENTINEL,
         tool_choice: str | dict[str, Any] | None = None,
+        on_tool_call_delta: ToolCallDeltaCallback | None = None,
     ) -> LLMResponse:
         """Call chat() with retry on transient provider failures.
 
@@ -312,6 +335,7 @@ class LLMProvider(ABC):
             messages=messages, tools=tools, model=model,
             max_tokens=max_tokens, temperature=temperature,
             reasoning_effort=reasoning_effort, tool_choice=tool_choice,
+            on_tool_call_delta=on_tool_call_delta,
         )
 
         for attempt, delay in enumerate(self._CHAT_RETRY_DELAYS, start=1):

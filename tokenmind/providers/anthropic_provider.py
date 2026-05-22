@@ -337,7 +337,9 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
+        on_tool_call_delta: Any = None,  # streaming not yet supported; accept and ignore
     ) -> LLMResponse:
+        _ = on_tool_call_delta
         normalized_model = self._normalize_model(model or self.default_model)
         messages, tools = self._apply_cache_control(messages, tools)
         system, anthropic_messages = self._convert_messages(messages)

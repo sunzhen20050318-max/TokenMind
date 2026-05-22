@@ -33,7 +33,9 @@ class OpenAICodexProvider(LLMProvider):
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
+        on_tool_call_delta: Any = None,  # streaming not supported here; accept and ignore
     ) -> LLMResponse:
+        _ = on_tool_call_delta
         model = model or self.default_model
         system_prompt, input_items = _convert_messages(messages)
 
