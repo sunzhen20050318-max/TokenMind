@@ -22,7 +22,7 @@ export interface ToolCall {
 
 export interface TimelineEvent {
   id: string;
-  type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error';
+  type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error' | 'reasoning';
   content: string;
   timestamp: string;
   turnId: string;

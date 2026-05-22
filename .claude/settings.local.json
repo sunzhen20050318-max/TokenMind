@@ -246,7 +246,10 @@
       "Bash(echo \"started pid $!\")",
       "Bash(grep -E \"\\\\.py$\")",
       "Bash(grep \"\\\\.py$\")",
-      "Bash(gh repo *)"
+      "Bash(gh repo *)",
+      "Bash(pytest tests/test_agent_loop.py tests/test_session_manager.py)",
+      "Bash(pytest tests/ -q --no-header --deselect tests/test_hatch_build.py -k \"loop or session or chat\")",
+      "Bash(pytest tests/test_message_tool_suppress.py::TestMessageToolSuppressLogic::test_progress_hides_internal_reasoning -v)"
     ],
     "additionalDirectories": [
       "/tmp"

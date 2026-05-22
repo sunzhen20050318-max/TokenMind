@@ -115,7 +115,9 @@ class TestMessageToolSuppressLogic:
         assert session.messages[-1]["role"] == "assistant"
         assert session.messages[-1]["content"] == "Scheduled result"
 
-    async def test_progress_hides_internal_reasoning(self, tmp_path: Path) -> None:
+    async def test_progress_hides_inline_think_tags_but_surfaces_reasoning(
+        self, tmp_path: Path
+    ) -> None:
         loop = _make_loop(tmp_path)
         tool_call = ToolCallRequest(id="call1", name="read_file", arguments={"path": "foo.txt"})
         calls = iter([
@@ -131,18 +133,28 @@ class TestMessageToolSuppressLogic:
         loop.tools.get_definitions = MagicMock(return_value=[])
         loop.tools.execute = AsyncMock(return_value="ok")
 
-        progress: list[tuple[str, bool]] = []
+        progress: list[tuple[str, bool, bool]] = []
 
-        async def on_progress(content: str, *, tool_hint: bool = False, **kwargs) -> None:
-            progress.append((content, tool_hint))
+        async def on_progress(
+            content: str,
+            *,
+            tool_hint: bool = False,
+            reasoning: bool = False,
+            **kwargs,
+        ) -> None:
+            progress.append((content, tool_hint, reasoning))
 
         final_content, _, _ = await loop._run_agent_loop([], on_progress=on_progress)
 
         assert final_content == "Done"
+        # reasoning_content is now surfaced as its own timeline event (rendered
+        # as a 💭 row in the UI). The inline <think>…</think> portion of the
+        # content stays stripped from the visible answer.
         assert progress == [
-            ("Visible", False),
-            ('read_file({"path": "foo.txt"})', False),
-            ("read_file completed", False),
+            ("secret reasoning", False, True),
+            ("Visible", False, False),
+            ('read_file({"path": "foo.txt"})', False, False),
+            ("read_file completed", False, False),
         ]
 
 

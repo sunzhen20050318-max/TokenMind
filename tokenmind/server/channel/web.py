@@ -123,6 +123,19 @@ class WebChannel(BaseChannel):
 
         # Handle progress messages - tool events
         if msg.metadata.get("_progress"):
+            if msg.metadata.get("_reasoning_content"):
+                # Reasoning (model thinking from DeepSeek-R1 / Qwen Thinking /
+                # Kimi Thinking etc.) rides the same progress pipeline as
+                # tool events but renders as its own kind in the timeline.
+                await self._ws_manager.send_to_session(
+                    session_key=msg.chat_id,
+                    message={
+                        "type": "reasoning",
+                        "content": msg.content,
+                        "channel": msg.channel,
+                    },
+                )
+                return
             if msg.metadata.get("_browser_task"):
                 await self._ws_manager.send_to_session(
                     session_key=msg.chat_id,

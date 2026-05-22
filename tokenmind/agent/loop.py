@@ -727,6 +727,16 @@ class AgentLoop:
             )
             self._record_usage(response, session_key=msg.session_key if msg else None)
 
+            # If the model produced reasoning content (DeepSeek-R1 /
+            # Qwen Thinking / Kimi Thinking / GLM Thinking), surface it as
+            # its own timeline event so the UI can render a "💭 思考过程"
+            # entry inline with tools instead of leaking it as raw text.
+            if on_progress and response.reasoning_content:
+                await on_progress(
+                    response.reasoning_content,
+                    reasoning=True,
+                )
+
             if response.has_tool_calls:
                 if on_progress:
                     thought = self._strip_think(response.content)
@@ -1710,6 +1720,7 @@ class AgentLoop:
             tool_start: bool = False,
             tool_end: bool = False,
             tool_error: bool = False,
+            reasoning: bool = False,
             duration: float | None = None,
             detail: str | None = None,
         ) -> None:
@@ -1721,13 +1732,24 @@ class AgentLoop:
             meta["_tool_start"] = tool_start
             meta["_tool_end"] = tool_end
             meta["_tool_error"] = tool_error
+            meta["_reasoning_content"] = reasoning
             if duration is not None:
                 meta["_tool_duration"] = duration
             if detail:
                 meta["_tool_detail"] = detail
             from datetime import datetime
+            if reasoning:
+                tl_type = "reasoning"
+            elif tool_start:
+                tl_type = "tool_start"
+            elif tool_end:
+                tl_type = "tool_end"
+            elif tool_error:
+                tl_type = "tool_error"
+            else:
+                tl_type = "progress"
             raw_timeline_events.append({
-                "type": "tool_start" if tool_start else "tool_end" if tool_end else "tool_error" if tool_error else "progress",
+                "type": tl_type,
                 "content": content,
                 "timestamp": datetime.now().isoformat(),
                 "tool_id": tool_id,

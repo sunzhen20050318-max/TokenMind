@@ -12,6 +12,10 @@ interface ToolChainProps {
 }
 
 function getEventLabel(event: TimelineEvent): string {
+  if (event.type === 'reasoning') {
+    const len = (event.content || '').length;
+    return len > 0 ? `💭 思考过程 · ${len} 字` : '💭 思考过程';
+  }
   if (event.content && event.content.trim()) {
     return event.content;
   }
@@ -21,6 +25,9 @@ function getEventLabel(event: TimelineEvent): string {
 function getEventDetail(event: TimelineEvent): string {
   if (event.detail) {
     return event.detail;
+  }
+  if (event.type === 'reasoning') {
+    return '模型思考';
   }
   if (event.type === 'progress') {
     return '进度更新';
@@ -49,6 +56,17 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
     // not overflow with old Exec details.
     const [isExpanded, setIsExpanded] = useState(isActive);
     const [now, setNow] = useState(() => Date.now());
+    // Per-row "show full reasoning" toggle so a long DeepSeek-R1 monologue
+    // doesn't bloat the chain by default — user clicks to peek.
+    const [openReasonings, setOpenReasonings] = useState<Set<string>>(() => new Set());
+    const toggleReasoning = (eventId: string) => {
+      setOpenReasonings((prev) => {
+        const next = new Set(prev);
+        if (next.has(eventId)) next.delete(eventId);
+        else next.add(eventId);
+        return next;
+      });
+    };
 
     // When a tool chain transitions from idle → active (a fresh answer kicks off
     // Exec after the component is already mounted), auto-expand so the user can
@@ -251,7 +269,10 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
 
               {timelineEvents.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
-                  {timelineEvents.map((event, index) => (
+                  {timelineEvents.map((event, index) => {
+                    const isReasoning = event.type === 'reasoning';
+                    const expanded = isReasoning && openReasonings.has(event.id);
+                    return (
                     <div
                       key={event.id}
                       style={{
@@ -296,25 +317,63 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
                                   ? '#ef4444'
                                   : event.type === 'tool_start'
                                     ? '#f59e0b'
-                                    : '#5f5f65',
+                                    : event.type === 'reasoning'
+                                      ? '#8b85d6'
+                                      : '#5f5f65',
                           }}
                         />
                       </div>
 
                       <div>
-                        <div style={{ fontSize: '13px', color: '#e8e8eb', lineHeight: 1.42 }}>
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: '#e8e8eb',
+                            lineHeight: 1.42,
+                            cursor: isReasoning ? 'pointer' : 'default',
+                          }}
+                          onClick={isReasoning ? () => toggleReasoning(event.id) : undefined}
+                          title={isReasoning ? '点击查看 / 收起完整思考' : undefined}
+                        >
                           {getEventLabel(event)}
+                          {isReasoning ? (
+                            <span style={{ marginLeft: '6px', color: '#77777e', fontSize: '11px' }}>
+                              {expanded ? '收起 ▴' : '展开 ▾'}
+                            </span>
+                          ) : null}
                         </div>
                         <div style={{ fontSize: '11px', color: '#77777e', marginTop: '2px' }}>
                           {getEventDetail(event)}
                         </div>
+                        {isReasoning && expanded ? (
+                          <div
+                            style={{
+                              marginTop: '8px',
+                              padding: '10px 12px',
+                              background: 'rgba(139, 133, 214, 0.06)',
+                              border: '1px solid rgba(139, 133, 214, 0.18)',
+                              borderRadius: '8px',
+                              fontSize: '12.5px',
+                              lineHeight: 1.65,
+                              color: '#b8b8c4',
+                              fontStyle: 'italic',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              maxHeight: '320px',
+                              overflowY: 'auto',
+                            }}
+                          >
+                            {event.content}
+                          </div>
+                        ) : null}
                       </div>
 
                       <div style={{ fontSize: '11px', color: '#666', whiteSpace: 'nowrap' }}>
                         {event.duration !== undefined ? `${Math.round(event.duration)}s` : formatEventTime(event.timestamp)}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

@@ -128,6 +128,15 @@ export function useSessionOrchestrator(): void {
             content: msg.content,
           });
           break;
+        case 'reasoning':
+          // Model thinking content (DeepSeek-R1 / Qwen Thinking / Kimi
+          // Thinking etc.) — render as its own collapsible row inside
+          // ToolChain, in temporal order with tool calls.
+          store.addSessionTimelineEvent(sessionId, {
+            type: 'reasoning',
+            content: msg.content,
+          });
+          break;
         case 'guidance_received':
           // Server confirmed it queued the guidance — append a user
           // bubble flagged as guidance so the chat shows what the user

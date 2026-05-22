@@ -71,7 +71,7 @@ export interface ChatHistoryResponse {
   messages: Message[];
   timeline_events: Array<{
     id: string;
-    type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error';
+    type: 'progress' | 'tool_start' | 'tool_end' | 'tool_error' | 'reasoning';
     content: string;
     timestamp: string;
     turnId: string;
@@ -291,6 +291,7 @@ export type WSMessageType =
   | { type: 'tool_end'; content: string; tool_id: string; tool_name: string; duration: number; channel: string }
   | { type: 'tool_error'; content: string; tool_id: string; tool_name: string; detail?: string; channel: string }
   | { type: 'progress'; content: string }
+  | { type: 'reasoning'; content: string; channel: string }
   | { type: 'guidance_received'; content: string; channel: string }
   | { type: 'session_title_updated'; session_id: string; title: string; channel: string }
   | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
