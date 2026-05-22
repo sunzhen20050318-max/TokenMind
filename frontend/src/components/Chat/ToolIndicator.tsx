@@ -14,11 +14,11 @@ interface ToolChainProps {
 function getEventLabel(event: TimelineEvent): string {
   if (event.type === 'reasoning') {
     const len = (event.content || '').length;
-    return len > 0 ? `💭 思考过程 · ${len} 字` : '💭 思考过程';
+    return len > 0 ? `思考过程 · ${len} 字` : '思考过程';
   }
   if (event.type === 'file_edit_progress' && event.fileEdit) {
-    const icon = event.fileEdit.tool === 'write_file' ? '📝' : '✏️';
-    return `${icon} ${event.fileEdit.path || event.content || '...'}`;
+    const verb = event.fileEdit.tool === 'write_file' ? '写入' : '编辑';
+    return `${verb} ${event.fileEdit.path || event.content || '...'}`;
   }
   if (event.content && event.content.trim()) {
     return event.content;
@@ -341,7 +341,7 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
                                   : event.type === 'tool_start'
                                     ? '#f59e0b'
                                     : event.type === 'reasoning'
-                                      ? '#8b85d6'
+                                      ? '#9aa0a8'
                                       : '#5f5f65'),
                           }}
                         />
@@ -373,12 +373,12 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
                             style={{
                               marginTop: '8px',
                               padding: '10px 12px',
-                              background: 'rgba(139, 133, 214, 0.06)',
-                              border: '1px solid rgba(139, 133, 214, 0.18)',
+                              background: 'rgba(255, 255, 255, 0.03)',
+                              border: '1px solid rgba(255, 255, 255, 0.08)',
                               borderRadius: '8px',
                               fontSize: '12.5px',
                               lineHeight: 1.65,
-                              color: '#b8b8c4',
+                              color: '#c0c2c8',
                               fontStyle: 'italic',
                               whiteSpace: 'pre-wrap',
                               wordBreak: 'break-word',
