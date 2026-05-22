@@ -25,6 +25,7 @@ import { TtsPage } from './pages/voice/TtsStudio';
 import { VoiceDesignPage } from './pages/voice/VoiceDesignStudio';
 import { api } from './services/api';
 import {
+  compareVersions,
   fetchVersionInfo,
   POLL_INTERVAL_MS,
   setPendingSkillSuggestions,
@@ -68,7 +69,11 @@ const App: React.FC = () => {
       try {
         const status = await api.getStatus();
         if (cancelled || !status?.version) return;
-        if (status.version !== APP_VERSION) {
+        // Only reload when the backend is genuinely newer than the bundled
+        // JS — the inverse (backend older than this tab) happens when a dev
+        // has rebuilt the frontend without reinstalling the Python package,
+        // and force-reloading there would just lose work for nothing.
+        if (compareVersions(APP_VERSION, status.version) < 0) {
           sessionStorage.setItem(VERSION_RELOAD_GUARD_KEY, '1');
           window.location.reload();
         }
@@ -96,7 +101,13 @@ const App: React.FC = () => {
       try {
         const status = await api.getStatus();
         if (cancelled || !status?.version) return;
-        if (status.version !== APP_VERSION) {
+        // Only show the stale-tab banner when the server is genuinely newer
+        // than this tab. The reverse (server older than the bundled JS)
+        // happens during local development when the frontend has been
+        // rebuilt without reinstalling the Python package — showing a "new
+        // version available" hint there would be misleading and the
+        // version number on the banner would be the *older* of the two.
+        if (compareVersions(APP_VERSION, status.version) < 0) {
           setStaleServerVersion(status.version);
         }
       } catch {
