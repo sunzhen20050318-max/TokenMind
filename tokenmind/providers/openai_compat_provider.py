@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from typing import Any
@@ -13,6 +14,34 @@ from openai import AsyncOpenAI
 from tokenmind.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from tokenmind.providers.registry import ProviderSpec
 from tokenmind.providers.usage import build_usage
+
+# Default request timeout for every OpenAI-compatible call. The OpenAI SDK
+# defaults to 600s, which is far too long for typical chat completions — a
+# stalled domestic provider would wedge the agent for ten minutes. 120s
+# accommodates long thinking-mode responses while still failing fast on a
+# genuinely dead connection. Override via ``TOKENMIND_OPENAI_COMPAT_TIMEOUT_S``.
+_OPENAI_COMPAT_REQUEST_TIMEOUT_S = 120.0
+
+
+def _openai_compat_timeout_s() -> float:
+    raw = os.environ.get("TOKENMIND_OPENAI_COMPAT_TIMEOUT_S")
+    if not raw or not raw.strip():
+        return _OPENAI_COMPAT_REQUEST_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "Ignoring invalid TOKENMIND_OPENAI_COMPAT_TIMEOUT_S={!r}; using {}s",
+            raw, _OPENAI_COMPAT_REQUEST_TIMEOUT_S,
+        )
+        return _OPENAI_COMPAT_REQUEST_TIMEOUT_S
+    if value <= 0:
+        logger.warning(
+            "Ignoring non-positive TOKENMIND_OPENAI_COMPAT_TIMEOUT_S={!r}; using {}s",
+            raw, _OPENAI_COMPAT_REQUEST_TIMEOUT_S,
+        )
+        return _OPENAI_COMPAT_REQUEST_TIMEOUT_S
+    return value
 
 
 # Some "OpenAI-compatible" gateways (notably Xiaomi MiMo) advertise tool
@@ -261,6 +290,7 @@ class OpenAICompatProvider(LLMProvider):
         client_kwargs: dict[str, Any] = {
             "api_key": api_key or ("dummy" if spec and spec.is_oauth else "no-key"),
             "default_headers": default_headers,
+            "timeout": _openai_compat_timeout_s(),
         }
         if resolved_base:
             client_kwargs["base_url"] = resolved_base
@@ -314,45 +344,41 @@ class OpenAICompatProvider(LLMProvider):
         return False
 
     @staticmethod
-    def _drop_legacy_tool_turns_without_reasoning(
+    def _backfill_reasoning_content(
         messages: list[dict[str, Any]],
-        strict: bool = False,
     ) -> list[dict[str, Any]]:
-        """Remove assistant/tool turns that a thinking-mode API will reject.
+        """Inject ``reasoning_content=""`` on any assistant message missing it.
 
-        - ``strict=False`` (DeepSeek): drop only ``assistant+tool_calls`` turns
-          that lack ``reasoning_content`` (plus their tool results). Plain
-          assistant text turns are kept as-is.
-        - ``strict=True`` (MiMo): drop *every* assistant turn that lacks
-          ``reasoning_content`` — MiMo rejects mixed histories outright.
+        Some thinking-mode APIs (DeepSeek R1 / V4 / reasoner, MiMo) reject
+        history that contains assistant messages without ``reasoning_content``
+        — even on turns that had no tool calls. This happens when a session
+        was started with a non-thinking model (or without ``reasoning_effort``)
+        and the user later switches to a thinking model mid-session.
+
+        Previously we *dropped* the offending turns, which truncated the
+        agent's memory of earlier work. Backfilling an empty string keeps
+        the history intact and is semantically equivalent ("no thinking
+        happened on this turn") from the API's perspective.
+
+        Returns a new list. Assistant messages needing the backfill are
+        shallow-copied so the caller's session storage is not mutated.
         """
-        repaired: list[dict[str, Any]] = []
-        skip_tool_ids: set[str] = set()
-        dropped = 0
-
+        patched = 0
+        result: list[dict[str, Any]] = []
         for msg in messages:
-            if msg.get("role") == "tool" and msg.get("tool_call_id") in skip_tool_ids:
-                dropped += 1
-                continue
-
-            if msg.get("role") == "assistant" and not msg.get("reasoning_content"):
-                has_tool_calls = bool(msg.get("tool_calls"))
-                if has_tool_calls or strict:
-                    for tool_call in msg.get("tool_calls") or []:
-                        if isinstance(tool_call, dict) and tool_call.get("id"):
-                            skip_tool_ids.add(str(tool_call["id"]))
-                    dropped += 1
-                    continue
-
-            repaired.append(msg)
-
-        if dropped:
-            logger.warning(
-                "Dropped {} legacy thinking-mode message(s) without reasoning_content (strict={})",
-                dropped,
-                strict,
+            if msg.get("role") == "assistant" and "reasoning_content" not in msg:
+                copy = dict(msg)
+                copy["reasoning_content"] = ""
+                result.append(copy)
+                patched += 1
+            else:
+                result.append(msg)
+        if patched:
+            logger.debug(
+                "Backfilled reasoning_content='' on {} legacy assistant message(s)",
+                patched,
             )
-        return repaired
+        return result
 
     def _apply_model_overrides(self, resolved_model: str, kwargs: dict[str, Any]) -> None:
         if not self.spec:
@@ -423,8 +449,7 @@ class OpenAICompatProvider(LLMProvider):
         if self._supports_cache_control(resolved_model):
             messages, tools = self._apply_cache_control(messages, tools)
         if self._requires_reasoning_echo(resolved_model):
-            strict = bool(self.spec and self.spec.name == "mimo")
-            messages = self._drop_legacy_tool_turns_without_reasoning(messages, strict=strict)
+            messages = self._backfill_reasoning_content(messages)
 
         kwargs: dict[str, Any] = {
             "model": resolved_model,
