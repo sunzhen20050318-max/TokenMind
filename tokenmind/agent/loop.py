@@ -740,7 +740,10 @@ class AgentLoop:
                         },
                     ]
 
-            streaming = AgentStreamingHandler(on_progress=on_progress)
+            streaming = AgentStreamingHandler(
+                on_progress=on_progress,
+                workspace=self.workspace,
+            )
             response = await self.provider.chat_with_retry(
                 messages=messages,
                 tools=tool_defs,
@@ -854,6 +857,13 @@ class AgentLoop:
                     duration = time.monotonic() - start_time
                     logger.info(f"[TOOL] {tool_call.name} END (id={tool_call.id}, duration={duration:.2f}s)")
                     outcome = "error" if isinstance(result, str) and result.startswith("Error") else "success"
+
+                    if tool_call.name in {"write_file", "edit_file"}:
+                        await streaming.finalize_edit(
+                            tool_call.id,
+                            status="error" if outcome == "error" else "done",
+                            error=result if outcome == "error" else None,
+                        )
                     self.audit.record(
                         f"tool.{tool_call.name}.executed",
                         outcome,
