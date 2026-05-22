@@ -132,16 +132,32 @@ DMG_NAME="TokenMind-${VERSION}-${ARCH_LABEL}.dmg"
 DMG_PATH="${INSTALLER_DIR}/${DMG_NAME}"
 rm -f "${DMG_PATH}"
 
+DMG_BACKGROUND="${PROJECT_ROOT}/packaging/macos/dmg_background.png"
+if [[ ! -f "${DMG_BACKGROUND}" ]]; then
+    echo "    dmg_background.png missing; regenerate with:"
+    echo "      python3 packaging/macos/make_dmg_background.py"
+fi
+
 if command -v create-dmg >/dev/null 2>&1; then
+    # Window + icon coordinates are tuned to align with the arrow / labels
+    # baked into dmg_background.png — keep them in sync if you regenerate
+    # the background with different positions in make_dmg_background.py.
+    CREATE_DMG_ARGS=(
+        --volname "TokenMind ${VERSION}"
+        --volicon "${PROJECT_ROOT}/packaging/macos/tokenmind.icns"
+        --window-pos 200 120
+        --window-size 660 420
+        --icon-size 110
+        --icon "TokenMind.app" 175 200
+        --hide-extension "TokenMind.app"
+        --app-drop-link 485 200
+        --no-internet-enable
+    )
+    if [[ -f "${DMG_BACKGROUND}" ]]; then
+        CREATE_DMG_ARGS+=( --background "${DMG_BACKGROUND}" )
+    fi
     create-dmg \
-        --volname "TokenMind ${VERSION}" \
-        --window-pos 200 120 \
-        --window-size 600 380 \
-        --icon-size 110 \
-        --icon "TokenMind.app" 165 180 \
-        --hide-extension "TokenMind.app" \
-        --app-drop-link 435 180 \
-        --no-internet-enable \
+        "${CREATE_DMG_ARGS[@]}" \
         "${DMG_PATH}" \
         "${APP_BUNDLE}"
 else
