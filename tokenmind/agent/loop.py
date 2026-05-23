@@ -25,6 +25,7 @@ from tokenmind.agent.skill_suggestions import SkillSuggestionStore
 from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
 from tokenmind.agent.streaming import AgentStreamingHandler
 from tokenmind.agent.subagent import SubagentManager
+from tokenmind.agent.tools.ask_user import AskUserQuestionTool
 from tokenmind.agent.tools.cron import CronTool
 from tokenmind.agent.tools.deliver_attachment import DeliverAttachmentTool
 from tokenmind.agent.tools.file_state import FileStates
@@ -79,6 +80,20 @@ class PendingApproval:
     working_dir: str
     requested_at: float
     future: asyncio.Future[bool]
+
+
+@dataclass
+class PendingQuestion:
+    """One ``ask_user_question`` tool call waiting for the user's answers."""
+
+    question_id: str
+    session_key: str
+    chat_id: str
+    channel: str
+    tool_id: str
+    questions: list[dict]
+    requested_at: float
+    future: asyncio.Future[dict]
 
 
 class AgentLoop:
@@ -201,6 +216,7 @@ class AgentLoop:
         self._background_tasks: set[asyncio.Task] = set()
         self._processing_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._pending_approvals: dict[str, PendingApproval] = {}
+        self._pending_questions: dict[str, PendingQuestion] = {}
         # Tracks the session_key of whichever per-session task is currently
         # running on this asyncio context. Wiki tools use this (via
         # _get_active_wiki_kb) to resolve the session's active Wiki KB.
@@ -277,6 +293,7 @@ class AgentLoop:
         self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
+        self.tools.register(AskUserQuestionTool())
         self.tools.register(DeliverAttachmentTool(store=self.attachments, retention=timedelta(days=30)))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
@@ -706,6 +723,108 @@ class AgentLoop:
             self._pending_approvals.pop(approval_id, None)
         return cancelled
 
+    async def _request_user_question(
+        self,
+        *,
+        msg: InboundMessage,
+        tool_id: str,
+        questions: list[dict],
+    ) -> dict:
+        """Surface a structured question batch to the user and await the reply.
+
+        The user can take as long as they need — we deliberately do not set a
+        timeout. If the session is stopped or the WS disconnects, the pending
+        future is resolved with ``{}`` (no answers) so the tool can return a
+        graceful "user did not answer" result and the LLM decides what to do.
+        """
+        question_id = f"{msg.session_key}:{tool_id}"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict] = loop.create_future()
+        pending = PendingQuestion(
+            question_id=question_id,
+            session_key=msg.session_key,
+            chat_id=msg.chat_id,
+            channel=msg.channel,
+            tool_id=tool_id,
+            questions=questions,
+            requested_at=time.monotonic(),
+            future=future,
+        )
+        self._pending_questions[question_id] = pending
+
+        self.audit.record(
+            "tool.ask_user_question.requested",
+            "pending",
+            session_key=msg.session_key,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            actor=msg.sender_id,
+            details={"question_id": question_id, "tool_id": tool_id, "count": len(questions)},
+        )
+        await self.bus.publish_outbound(OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content="",
+            metadata={
+                "_question_required": True,
+                "_question_id": question_id,
+                "_tool_id": tool_id,
+                "_questions": questions,
+            },
+        ))
+        try:
+            answers = await future
+            self.audit.record(
+                "tool.ask_user_question.resolved",
+                "answered" if answers else "cancelled",
+                session_key=msg.session_key,
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                actor=msg.sender_id,
+                details={"question_id": question_id, "tool_id": tool_id},
+            )
+            return answers
+        finally:
+            self._pending_questions.pop(question_id, None)
+
+    async def _handle_user_question_response(self, msg: InboundMessage) -> None:
+        """Resolve a pending ``ask_user_question`` reply from the frontend."""
+        question_id = str((msg.metadata or {}).get("question_id") or "").strip()
+        answers = (msg.metadata or {}).get("answers") or {}
+        if not isinstance(answers, dict):
+            answers = {}
+        pending = self._pending_questions.get(question_id)
+        if not question_id or not pending:
+            await self.bus.publish_outbound(OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content="This question has expired.",
+                metadata={"_approval_error": True},
+            ))
+            return
+        if pending.session_key != msg.session_key:
+            await self.bus.publish_outbound(OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content="This question does not belong to the current session.",
+                metadata={"_approval_error": True},
+            ))
+            return
+        if not pending.future.done():
+            pending.future.set_result(answers)
+
+    def _cancel_pending_questions(self, session_key: str) -> int:
+        """Resolve any pending questions for a session with empty answers."""
+        cancelled = 0
+        for question_id, pending in list(self._pending_questions.items()):
+            if pending.session_key != session_key:
+                continue
+            if not pending.future.done():
+                pending.future.set_result({})
+                cancelled += 1
+            self._pending_questions.pop(question_id, None)
+        return cancelled
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],
@@ -853,7 +972,25 @@ class AgentLoop:
                             continue
                     logger.info(f"[TOOL] {tool_call.name} START (id={tool_call.id})")
                     start_time = time.monotonic()
-                    result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    if tool_call.name == "ask_user_question" and msg is not None and msg.channel == "web":
+                        # Bypass tools.execute — the loop owns the round-trip
+                        # so it has the InboundMessage context (session/chat)
+                        # needed to deliver the question over WS.
+                        import json as _json
+                        questions = (tool_call.arguments or {}).get("questions") or []
+                        if not isinstance(questions, list) or not questions:
+                            result = "Error: ask_user_question requires a non-empty 'questions' array."
+                        else:
+                            answers = await self._request_user_question(
+                                msg=msg,
+                                tool_id=tool_call.id,
+                                questions=questions,
+                            )
+                            result = _json.dumps(answers or {}, ensure_ascii=False) if answers else (
+                                "User did not respond. Proceed with your best judgement or ask a different question."
+                            )
+                    else:
+                        result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     duration = time.monotonic() - start_time
                     logger.info(f"[TOOL] {tool_call.name} END (id={tool_call.id}, duration={duration:.2f}s)")
                     outcome = "error" if isinstance(result, str) and result.startswith("Error") else "success"
@@ -978,6 +1115,8 @@ class AgentLoop:
                 await self._handle_restart(msg)
             elif (msg.metadata or {}).get("control") == "tool_approval":
                 await self._handle_tool_approval(msg)
+            elif (msg.metadata or {}).get("control") == "user_question_response":
+                await self._handle_user_question_response(msg)
             elif (msg.metadata or {}).get("control") == "guidance":
                 await self._handle_guidance(msg)
             else:
@@ -989,6 +1128,7 @@ class AgentLoop:
         """Cancel all active tasks and subagents for the session."""
         tasks = self._active_tasks.pop(msg.session_key, [])
         approval_cancelled = self._cancel_pending_approvals(msg.session_key)
+        self._cancel_pending_questions(msg.session_key)
         cancelled = sum(1 for t in tasks if not t.done() and t.cancel())
         for t in tasks:
             try:

@@ -272,6 +272,30 @@ export interface PendingToolApproval {
   received_at_ms?: number;
 }
 
+export interface UserQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface UserQuestionItem {
+  question: string;
+  header: string;
+  multiSelect?: boolean;
+  options: UserQuestionOption[];
+}
+
+export interface PendingUserQuestion {
+  question_id: string;
+  tool_id: string;
+  questions: UserQuestionItem[];
+  received_at_ms?: number;
+}
+
+export interface UserQuestionAnswer {
+  selected: string | string[];
+  notes?: string;
+}
+
 export interface StatusResponse {
   status: string;
   version: string;
@@ -296,5 +320,6 @@ export type WSMessageType =
   | { type: 'guidance_received'; content: string; channel: string }
   | { type: 'session_title_updated'; session_id: string; title: string; channel: string }
   | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
+  | { type: 'user_question_required'; question_id: string; tool_id: string; questions: UserQuestionItem[]; channel: string }
   | { type: 'error'; content: string }
   | { type: 'pong' };

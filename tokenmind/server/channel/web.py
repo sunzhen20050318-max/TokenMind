@@ -84,6 +84,19 @@ class WebChannel(BaseChannel):
             )
             return
 
+        if msg.metadata.get("_question_required"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "user_question_required",
+                    "question_id": msg.metadata.get("_question_id"),
+                    "tool_id": msg.metadata.get("_tool_id"),
+                    "questions": msg.metadata.get("_questions") or [],
+                    "channel": msg.channel,
+                },
+            )
+            return
+
         if msg.metadata.get("_approval_error"):
             await self._ws_manager.send_to_session(
                 session_key=msg.chat_id,

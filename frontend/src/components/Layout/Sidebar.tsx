@@ -117,7 +117,8 @@ function SidebarIcon({
   if (id === 'collapse') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M15 6l-6 6 6 6" />
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <line x1="9" y1="5" x2="9" y2="19" />
       </svg>
     );
   }
@@ -717,28 +718,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onMouseDown={handleResizeStart}
         />
       ) : null}
-      <button
-        className={`shell-sidebar__edge-toggle ${collapsed ? 'is-collapsed' : ''}`}
-        onClick={onToggleCollapse}
-        title={collapsed ? '展开侧边栏' : '收起侧边栏'}
-        type="button"
-      >
-        <span className={`shell-sidebar__collapse-icon ${collapsed ? 'is-collapsed' : ''}`}>
-          <SidebarIcon id="collapse" />
-        </span>
-      </button>
-
       <div className="shell-sidebar__top">
-        <div className="shell-sidebar__brand">
-          <div className="shell-sidebar__brand-row">
+        {collapsed ? (
+          <button
+            type="button"
+            className="shell-sidebar__brand shell-sidebar__brand--collapsed"
+            onClick={onToggleCollapse}
+            title="展开侧边栏"
+            aria-label="展开侧边栏"
+          >
             <BrandMark
               alt="TokenMind 标志"
               className="shell-sidebar__brand-logo"
-              size={collapsed ? 28 : 32}
-              variant={collapsed ? 'icon' : 'sidebar-wordmark'}
+              size={28}
+              variant="icon"
             />
+            <span className="shell-sidebar__brand-toggle-overlay" aria-hidden>
+              <SidebarIcon id="collapse" />
+            </span>
+          </button>
+        ) : (
+          <div className="shell-sidebar__brand">
+            <div className="shell-sidebar__brand-row">
+              <BrandMark
+                alt="TokenMind 标志"
+                className="shell-sidebar__brand-logo"
+                size={32}
+                variant="sidebar-wordmark"
+              />
+              <button
+                type="button"
+                className="shell-sidebar__brand-toggle"
+                onClick={onToggleCollapse}
+                title="收起侧边栏"
+                aria-label="收起侧边栏"
+              >
+                <SidebarIcon id="collapse" />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <button
           className="shell-sidebar__primary"
@@ -1061,59 +1080,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
 
             <button
+              className={`shell-sidebar__collapsed-button ${mainView === 'assets' ? 'is-active' : ''}`}
+              type="button"
+              title="资产库"
+              onClick={() => {
+                onSelectMainView('assets');
+                setSessionMenuOpen(false);
+              }}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="assets" />
+              </span>
+            </button>
+
+            <button
               className={`shell-sidebar__collapsed-button ${
                 mainView === 'project-home' || mainView === 'project-chat' ? 'is-active' : ''
               }`}
               type="button"
               title="项目"
-              onClick={onToggleCollapse}
+              onClick={() => {
+                // Expand the sidebar AND open the projects section so the
+                // user can pick a project. There's no global "projects"
+                // view to navigate to without a specific project id.
+                onToggleCollapse();
+                setProjectsExpanded(true);
+                setSessionMenuOpen(false);
+              }}
             >
               <span className="shell-sidebar__icon">
                 <SidebarIcon id="project" />
-              </span>
-            </button>
-
-            <button
-              className={`shell-sidebar__collapsed-button ${mainView === 'music' ? 'is-active' : ''}`}
-              type="button"
-              title="音乐"
-              onClick={() => {
-                onSelectMainView('music');
-                setSessionMenuOpen(false);
-              }}
-            >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="music" />
-              </span>
-            </button>
-
-            <button
-              className={`shell-sidebar__collapsed-button ${
-                VOICE_VIEWS.includes(mainView) ? 'is-active' : ''
-              }`}
-              type="button"
-              title="声音工程"
-              onClick={() => {
-                onSelectMainView('voice-clone');
-                setSessionMenuOpen(false);
-              }}
-            >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="voice" />
-              </span>
-            </button>
-
-            <button
-              className={`shell-sidebar__collapsed-button ${mainView === 'video' ? 'is-active' : ''}`}
-              type="button"
-              title="视频"
-              onClick={() => {
-                onSelectMainView('video');
-                setSessionMenuOpen(false);
-              }}
-            >
-              <span className="shell-sidebar__icon">
-                <SidebarIcon id="video" />
               </span>
             </button>
 

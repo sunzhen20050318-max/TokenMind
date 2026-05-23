@@ -118,6 +118,7 @@
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  transition: padding-bottom 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chat-shell__scroll.is-launch {

@@ -12,28 +12,38 @@
 
 .announcement-toast {
   pointer-events: auto;
-  background: rgba(20, 22, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 12px 14px;
+  position: relative;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+  padding: 12px 14px 12px 16px;
   color: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.40);
   font-size: 13px;
-  animation: announcement-toast-in 0.3s ease-out;
+  animation: announcement-toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
 }
 
-.announcement-toast--info {
-  border-color: rgba(255, 255, 255, 0.35);
+.announcement-toast::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
 }
 
-.announcement-toast--warning {
-  border-color: rgba(255, 185, 92, 0.5);
-  background: rgba(40, 30, 18, 0.98);
+.announcement-toast--info::before {
+  background: rgba(255, 255, 255, 0.18);
 }
 
-.announcement-toast--critical {
-  border-color: rgba(255, 90, 90, 0.55);
-  background: rgba(40, 18, 18, 0.98);
+.announcement-toast--warning::before {
+  background: rgba(217, 163, 102, 0.55);
+}
+
+.announcement-toast--critical::before {
+  background: rgba(196, 110, 94, 0.65);
 }
 
 .announcement-toast__head {
@@ -44,8 +54,7 @@
 }
 
 .announcement-toast__icon {
-  font-size: 16px;
-  flex-shrink: 0;
+  display: none;
 }
 
 .announcement-toast__title {
@@ -133,7 +142,7 @@
 @keyframes announcement-toast-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;

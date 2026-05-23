@@ -118,6 +118,36 @@ async def websocket_handler(
                 )
                 await inbound_queue.put(msg)
 
+            elif msg_type == "user_question_response":
+                from tokenmind.bus.events import InboundMessage
+
+                question_id = str(msg_data.get("question_id") or "").strip()
+                answers = msg_data.get("answers") or {}
+                if not question_id:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": "Missing question_id",
+                    })
+                    continue
+                if not isinstance(answers, dict):
+                    answers = {}
+
+                msg = InboundMessage(
+                    channel="web",
+                    sender_id="web_user",
+                    chat_id=session_key,
+                    content="/user-question-response",
+                    media=[],
+                    metadata={
+                        "websocket": True,
+                        "control": "user_question_response",
+                        "question_id": question_id,
+                        "answers": answers,
+                    },
+                    session_key_override=session_key,
+                )
+                await inbound_queue.put(msg)
+
             elif msg_type == "guidance":
                 from tokenmind.bus.events import InboundMessage
 

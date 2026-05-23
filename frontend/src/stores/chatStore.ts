@@ -4,6 +4,7 @@ import type {
   Message,
   MessageCitation,
   PendingToolApproval,
+  PendingUserQuestion,
   Project,
   Session,
 } from '../types';
@@ -72,6 +73,7 @@ export interface SessionSlice {
   linkedKnowledgeBaseIds: string[];
   activeWikiKbId: string | null;
   pendingApproval: PendingToolApproval | null;
+  pendingUserQuestion: PendingUserQuestion | null;
   /**
    * Messages typed while the agent was busy. Auto-flushed (one at a time)
    * when ``isLoading`` flips back to ``false``. See ``ChatWindow`` for the
@@ -97,6 +99,7 @@ const EMPTY_SLICE: SessionSlice = {
   linkedKnowledgeBaseIds: [],
   activeWikiKbId: null,
   pendingApproval: null,
+  pendingUserQuestion: null,
   pendingMessages: [],
   sessionExecTrusted: false,
 };
@@ -121,6 +124,7 @@ interface ChatState {
   toolCalls: ToolCall[];
   timelineEvents: TimelineEvent[];
   pendingApproval: PendingToolApproval | null;
+  pendingUserQuestion: PendingUserQuestion | null;
   pendingMessages: PendingChatMessage[];
   sessionExecTrusted: boolean;
   sessionsState: Record<string, SessionSlice>;
@@ -224,6 +228,7 @@ interface ChatState {
   addSessionMessage: (sessionId: string, message: Message) => void;
 
   setSessionPendingApproval: (sessionId: string, approval: PendingToolApproval | null) => void;
+  setSessionPendingUserQuestion: (sessionId: string, question: PendingUserQuestion | null) => void;
   enqueuePendingMessage: (sessionId: string, content: string) => void;
   removePendingMessage: (sessionId: string, id: string) => void;
   shiftPendingMessage: (sessionId: string) => PendingChatMessage | null;
@@ -249,6 +254,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   timelineEvents: [],
   currentTurnId: null,
   pendingApproval: null,
+  pendingUserQuestion: null,
   pendingMessages: [],
   sessionExecTrusted: false,
   sessionsState: {},
@@ -344,6 +350,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
         activeWikiKbId: state.activeWikiKbId,
         pendingApproval: state.pendingApproval,
+        pendingUserQuestion: state.pendingUserQuestion,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
       };
@@ -362,6 +369,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       linkedKnowledgeBaseIds: restored?.linkedKnowledgeBaseIds ?? [],
       activeWikiKbId: restored?.activeWikiKbId ?? null,
       pendingApproval: restored?.pendingApproval ?? null,
+      pendingUserQuestion: restored?.pendingUserQuestion ?? null,
       pendingMessages: restored?.pendingMessages ?? [],
       sessionExecTrusted: restored?.sessionExecTrusted ?? false,
       error: null,
@@ -998,6 +1006,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
         activeWikiKbId: state.activeWikiKbId,
         pendingApproval: state.pendingApproval,
+        pendingUserQuestion: state.pendingUserQuestion,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
       };
@@ -1208,6 +1217,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     applySliceUpdate(set, get, sessionId, () => ({ pendingApproval: approval }));
   },
 
+  setSessionPendingUserQuestion: (sessionId, question) => {
+    applySliceUpdate(set, get, sessionId, () => ({ pendingUserQuestion: question }));
+  },
+
   addSessionMessage: (sessionId, message) => {
     applySliceUpdate(set, get, sessionId, (slice) => ({
       messages: [...slice.messages, message],
@@ -1251,6 +1264,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
             activeWikiKbId: state.activeWikiKbId,
             pendingApproval: state.pendingApproval,
+            pendingUserQuestion: state.pendingUserQuestion,
             pendingMessages: state.pendingMessages,
             sessionExecTrusted: state.sessionExecTrusted,
           } as SessionSlice)
@@ -1298,6 +1312,7 @@ function applySliceUpdate(
       linkedKnowledgeBaseIds: state.linkedKnowledgeBaseIds,
       activeWikiKbId: state.activeWikiKbId,
       pendingApproval: state.pendingApproval,
+      pendingUserQuestion: state.pendingUserQuestion,
       pendingMessages: state.pendingMessages,
       sessionExecTrusted: state.sessionExecTrusted,
     };

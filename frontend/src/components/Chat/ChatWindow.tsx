@@ -6,11 +6,13 @@ import { InputArea, type DraftAttachment, type ComposerReasoningOption } from '.
 import { hasFileTransfer } from './inputAreaDrag';
 import { ToolChain } from './ToolIndicator';
 import { ToolApprovalModal } from './ToolApprovalModal';
+import { UserQuestionModal } from './UserQuestionModal';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
 import {
   useSessionConnected,
   isSessionExecTrusted,
   respondToToolApproval,
+  respondToUserQuestion,
   sendMessage as sendChatMessage,
   sendSessionGuidance,
   setSessionExecTrust,
@@ -273,14 +275,53 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
     pendingSessionStarter,
     clearPendingSessionStarter,
     pendingApproval,
+    pendingUserQuestion,
     pendingMessages,
     setSessionPendingApproval,
+    setSessionPendingUserQuestion,
     enqueuePendingMessage,
     removePendingMessage,
     shiftPendingMessage,
     setSessionExecTrusted,
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Track the composer dock's current height so we can grow the scroll
+  // area's bottom padding to match. Without this the approval / question
+  // modal (which is rendered inside the dock and grows the dock upward)
+  // would overlap the messages content. The base value covers the input
+  // area alone; ResizeObserver updates it when a modal appears.
+  const dockRef = useRef<HTMLDivElement>(null);
+  const [dockHeight, setDockHeight] = useState<number>(0);
+  const prevDockHeightRef = useRef<number>(0);
+  useEffect(() => {
+    const el = dockRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        setDockHeight(h);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // When the dock grows (modal appears), auto-scroll the messages
+  // container all the way to the bottom so the last message sits just
+  // above the (now-taller) dock. Using scrollIntoView with default
+  // block='start' would scroll the ref to the top of the viewport
+  // instead — wrong direction. We also wait one frame so the updated
+  // padding-bottom has been applied and scrollHeight reflects it.
+  useEffect(() => {
+    if (dockHeight > prevDockHeightRef.current + 20) {
+      const container = messagesEndRef.current?.parentElement;
+      if (container) {
+        requestAnimationFrame(() => {
+          container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        });
+      }
+    }
+    prevDockHeightRef.current = dockHeight;
+  }, [dockHeight]);
   // The orchestrator owns the WebSocket lifecycle; ChatWindow only ever
   // dispatches actions for its current session, never opens/closes sockets.
   const sendMessage = useCallback(
@@ -309,6 +350,32 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
     respondToToolApproval(sessionId, pendingApproval.approval_id, true);
     setSessionPendingApproval(sessionId, null);
   }, [pendingApproval, sessionId, setSessionPendingApproval]);
+  const redirectPendingTool = useCallback(
+    (instruction: string) => {
+      if (!pendingApproval) return;
+      const text = instruction.trim();
+      if (!text) return;
+      respondToToolApproval(sessionId, pendingApproval.approval_id, false);
+      sendSessionGuidance(sessionId, text);
+      setSessionPendingApproval(sessionId, null);
+    },
+    [pendingApproval, sessionId, setSessionPendingApproval],
+  );
+  const submitPendingUserQuestion = useCallback(
+    (answers: Record<string, { selected: string | string[]; notes?: string }>) => {
+      if (!pendingUserQuestion) return;
+      respondToUserQuestion(sessionId, pendingUserQuestion.question_id, answers);
+      setSessionPendingUserQuestion(sessionId, null);
+    },
+    [pendingUserQuestion, sessionId, setSessionPendingUserQuestion],
+  );
+  const cancelPendingUserQuestion = useCallback(() => {
+    if (!pendingUserQuestion) return;
+    // Sending an empty-answers response tells the backend the user
+    // dismissed the question; the tool result is "user did not respond".
+    respondToUserQuestion(sessionId, pendingUserQuestion.question_id, {});
+    setSessionPendingUserQuestion(sessionId, null);
+  }, [pendingUserQuestion, sessionId, setSessionPendingUserQuestion]);
 
   // On mount/session change, hydrate the per-session exec-trust flag from
   // localStorage so the toggle reflects the persisted preference.
@@ -782,7 +849,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
           </div>
         ) : null}
 
-        <div className={`chat-shell__scroll ${hasConversation ? 'is-active' : 'is-launch'}`}>
+        <div
+          className={`chat-shell__scroll ${hasConversation ? 'is-active' : 'is-launch'}`}
+          style={
+            hasConversation && dockHeight > 0
+              ? { paddingBottom: `${dockHeight + 36}px` }
+              : undefined
+          }
+        >
           {hasConversation ? (
             <div className="chat-thread">
               {renderedThread}
@@ -804,7 +878,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
           <div ref={messagesEndRef} />
         </div>
 
-        <div className={`chat-composer-dock ${hasConversation ? 'is-active' : 'is-launch'}`}>
+        <div
+          ref={dockRef}
+          className={`chat-composer-dock ${hasConversation ? 'is-active' : 'is-launch'}`}
+        >
           {!isConnected ? (
             <div className="chat-composer-dock__reconnecting" role="status">
               <span className="chat-composer-dock__reconnecting-dot" aria-hidden />
@@ -828,6 +905,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
               ) : null}
             </div>
           ) : null}
+          <ToolApprovalModal
+            approval={pendingApproval}
+            onApprove={approvePendingTool}
+            onReject={rejectPendingTool}
+            onTrustAndApprove={trustAndApprovePendingTool}
+            onRedirect={redirectPendingTool}
+          />
+          <UserQuestionModal
+            question={pendingUserQuestion}
+            onSubmit={submitPendingUserQuestion}
+            onCancel={cancelPendingUserQuestion}
+          />
           <InputArea
             onSend={handleSend}
             onStop={stopMessage}
@@ -896,12 +985,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
         </div>
       </div>
 
-      <ToolApprovalModal
-        approval={pendingApproval}
-        onApprove={approvePendingTool}
-        onReject={rejectPendingTool}
-        onTrustAndApprove={trustAndApprovePendingTool}
-      />
     </div>
   );
 };

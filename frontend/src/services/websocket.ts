@@ -245,6 +245,22 @@ class WebSocketPool {
     );
   }
 
+  respondToUserQuestion(
+    sessionId: string,
+    questionId: string,
+    answers: Record<string, { selected: string | string[]; notes?: string }>,
+  ): void {
+    const ws = this.socketFor(sessionId);
+    if (!ws) return;
+    ws.send(
+      JSON.stringify({
+        type: 'user_question_response',
+        question_id: questionId,
+        answers,
+      }),
+    );
+  }
+
   /**
    * Send a real-time guidance hint while the agent is busy. Unlike a
    * normal user message this is queued server-side and merged into the

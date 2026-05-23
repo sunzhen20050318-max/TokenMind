@@ -110,16 +110,16 @@
 
 .shell-header__bell-badge {
   position: absolute;
-  top: 1px;
-  right: 0;
-  background: #ef5b5b;
-  color: #fff;
-  font-size: 10px;
+  top: 2px;
+  right: 1px;
+  background: #c46e5e;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 9px;
   font-weight: 600;
   line-height: 1;
-  padding: 2px 5px;
-  border-radius: 8px;
-  min-width: 16px;
+  padding: 2px 4px;
+  border-radius: 7px;
+  min-width: 14px;
   text-align: center;
-  border: 2px solid #2a2a2e;
+  border: 1.5px solid #161616;
 }

@@ -176,6 +176,14 @@ export function useSessionOrchestrator(): void {
             received_at_ms: Date.now(),
           });
           break;
+        case 'user_question_required':
+          store.setSessionPendingUserQuestion(sessionId, {
+            question_id: msg.question_id,
+            tool_id: msg.tool_id,
+            questions: Array.isArray(msg.questions) ? msg.questions : [],
+            received_at_ms: Date.now(),
+          });
+          break;
         case 'error':
           store.setSessionError(sessionId, msg.content);
           store.setSessionLoading(sessionId, false);
@@ -319,6 +327,14 @@ export function respondToToolApproval(
   approved: boolean,
 ): void {
   wsPool.respondToToolApproval(sessionId, approvalId, approved);
+}
+
+export function respondToUserQuestion(
+  sessionId: string,
+  questionId: string,
+  answers: Record<string, { selected: string | string[]; notes?: string }>,
+): void {
+  wsPool.respondToUserQuestion(sessionId, questionId, answers);
 }
 
 export function setSessionExecTrust(sessionId: string, enabled: boolean): void {

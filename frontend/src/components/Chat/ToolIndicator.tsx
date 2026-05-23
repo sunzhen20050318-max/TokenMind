@@ -347,13 +347,19 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
                         />
                       </div>
 
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div
                           style={{
                             fontSize: '13px',
                             color: '#e8e8eb',
                             lineHeight: 1.42,
                             cursor: isReasoning ? 'pointer' : 'default',
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 2,
+                            overflow: 'hidden',
+                            wordBreak: 'break-all',
+                            whiteSpace: 'pre-wrap',
                           }}
                           onClick={isReasoning ? () => toggleReasoning(event.id) : undefined}
                           title={isReasoning ? '点击查看 / 收起完整思考' : undefined}
@@ -365,7 +371,19 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
                             </span>
                           ) : null}
                         </div>
-                        <div style={{ fontSize: '11px', color: '#77777e', marginTop: '2px' }}>
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            color: '#77777e',
+                            marginTop: '2px',
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 2,
+                            overflow: 'hidden',
+                            wordBreak: 'break-all',
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
                           {getEventDetail(event)}
                         </div>
                         {isReasoning && expanded ? (
