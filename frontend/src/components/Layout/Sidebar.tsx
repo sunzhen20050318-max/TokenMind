@@ -481,13 +481,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleOpenProject = async (projectId: string) => {
-    const isCurrentProject = activeProjectId === projectId && isProjectViewActive;
-    if (isCurrentProject) {
-      toggleProjectNode(projectId);
-      setSessionMenuOpen(false);
-      return;
-    }
-    setExpandedProjectIds((current) => (current.includes(projectId) ? current : [...current, projectId]));
+    // Always navigate to the project's home view when the project label
+    // is clicked — even if a session inside that project is currently
+    // open. Previously this short-circuited to "just toggle" on
+    // re-click, leaving the user stranded in the chat with no obvious
+    // way back to the project home. The caret has its own button now
+    // for expand/collapse so the label is dedicated to navigation.
+    setExpandedProjectIds((current) =>
+      current.includes(projectId) ? current : [...current, projectId],
+    );
     await openProject(projectId);
     onSelectMainView('project-home');
     setSessionMenuOpen(false);
@@ -830,7 +832,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               <SidebarIcon id="project" />
                             </span>
                             <span className="shell-sidebar__project-row-label">{node.project.name}</span>
-                            <span className={`shell-sidebar__project-row-caret ${node.isExpanded ? 'is-open' : ''}`}>▾</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            className={`shell-sidebar__project-caret ${
+                              node.isExpanded ? 'is-open' : ''
+                            }`}
+                            title={node.isExpanded ? '\u6536\u8d77\u4f1a\u8bdd' : '\u5c55\u5f00\u4f1a\u8bdd'}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleProjectNode(node.project.id);
+                            }}
+                          >
+                            {'\u25be'}
                           </button>
 
                           <div className="shell-sidebar__project-actions">

@@ -517,6 +517,37 @@
   color: #e9ebf0;
 }
 
+/* Caret split out from the project-row label so the label is dedicated
+   to navigation (→ project-home). The caret button toggles the inline
+   session list expand/collapse without leaving the current view.
+   Lives as a direct sibling of .project-row (not inside .project-actions)
+   so it's always visible — users can read the expand/collapse state at
+   a glance without hovering the project row. */
+.shell-sidebar__project-caret {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #777c86;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: transform 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+}
+
+.shell-sidebar__project-caret:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e9ebf0;
+}
+
+.shell-sidebar__project-caret.is-open {
+  transform: rotate(180deg);
+  color: #e9ebf0;
+}
+
 .shell-sidebar__project-actions,
 .shell-sidebar__project-session-actions {
   display: flex;
