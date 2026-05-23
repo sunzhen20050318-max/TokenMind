@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "latest": {
-    "version": "0.1.13",
-    "released_at": "2026-05-22",
-    "release_notes": "## ✨ 新功能\n\n- **文件编辑流式进度**：模型在写文件 / 改文件时，工具行实时显示 `+N -M` 行计数滚动\n- **fallback 模型自动切换**：主模型 429 / 超时 / 异常时透明切到备用模型（设置中心 → 模型 → 备用模型）\n- **LAN 访问密钥**：手机 / 其他设备通过同 Wi-Fi 访问时自动启用，可在设置中心 → 服务 → 访问密钥查看 / 重置\n- **思考过程独立时间线**：DeepSeek-R1 / Kimi-Thinking / Qwen-Thinking 等的 reasoning_content 在工具链里单独显示\n\n## 🛡️ 安全\n\n- **改文件前必须先 read_file**：防止模型基于过时记忆盲改导致内容错位\n- **外部修改检测**：文件被其他进程改过时，编辑工具会要求重新读取最新内容\n\n## ⚡ 性能\n\n- **冷启动加速**：未启用任何 channel 时，Web 启动从 ~440ms 降到 ~120ms（懒加载只导入用到的 channel SDK）\n- **120s 请求超时**：OpenAI 兼容 provider 不再无限挂起，默认 120s 后失败重试（可通过 TOKENMIND_OPENAI_COMPAT_TIMEOUT_S 调整）\n\n## 🔧 修复\n\n- **DeepSeek / MiMo 思考模式切换不丢历史**：之前会丢弃缺 reasoning_content 的旧消息，现在回填空串保留完整对话\n- **clipboard 在 LAN HTTP 下能用**：手机访问时复制按钮不再 silently fail\n- **MiMo XML 工具调用兼容多种方言**：覆盖 `<tool_call>` / `<tool_use>` / `<function_call>` 包装、`<function name=>` 属性形式、被截断的响应等\n\n## 📦 平台\n\n- 新增 macOS .dmg 安装包（含图形化引导窗口）",
+    "version": "0.1.14",
+    "released_at": "2026-05-23",
+    "release_notes": "## ✨ 新功能\n\n- **结构化问答**：模型在需要你做选择时会弹出问答弹窗（最多 4 个 tab、单/多选、Other 自由文本），键盘 `1-9` / `↑↓` / `Enter` 全部支持\n- **命令审批弹窗重做**：嵌入输入框上方而不再悬浮屏中央，新增「告诉 TokenMind 换种做法」选项（拒绝当前命令 + 把你的提示发给 agent 让它换方案）\n- **本会话不再询问**：审批弹窗左下角勾选后，当前会话同类命令直接放行\n\n## 🎨 风格统一\n\n- 公告面板 / 右下角弹出 toast 风格对齐弹窗：去掉 emoji，用左侧色条区分级别\n- 工具链行长内容（如带大段 JSON 的工具调用参数）自动截断到 2 行\n- 侧栏收起后只保留核心入口（知识库 / 资产库 / 项目 / 最近对话），点击项目图标自动展开侧栏 + 项目子树\n\n## 🔧 修复\n\n- 弹窗出现时消息区底部留出对应空间，避免遮挡最后一条消息\n- 侧栏 toggle 图标在展开态常驻可见，不再需要 hover 才出现",
     "downloads": {
       "windows": "TODO",
-      "macos": "https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMind-0.1.13-arm64.dmg"
+      "macos": "https://tokenmind.oss-cn-shenzhen.aliyuncs.com/TokenMind-0.1.14-arm64.dmg"
     },
     "min_supported_version": "0.1.0"
   },

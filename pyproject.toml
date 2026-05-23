@@ -1,6 +1,6 @@
 [project]
 name = "tokenmind-ai"
-version = "0.1.13"
+version = "0.1.14"
 description = "A lightweight personal AI assistant framework"
 readme = { file = "README_PYPI.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
