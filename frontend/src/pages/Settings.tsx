@@ -28,6 +28,7 @@ import type { MemoryOverviewResponse } from '../types/memory';
 import type { StorageFileItem, StorageOverviewResponse } from '../types/storage';
 import type { SkillSuggestion, SkillSummary } from '../types';
 import './settings.css';
+import '../components/Projects/projects.css';  // reuse .project-modal__* for skill delete confirm
 
 const PROVIDER_META: Record<
   string,
@@ -795,6 +796,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [togglingSkill, setTogglingSkill] = useState<string | null>(null);
   const [skillSuggestionBusy, setSkillSuggestionBusy] = useState<string | null>(null);
   const [selectedSkillSuggestion, setSelectedSkillSuggestion] = useState<SkillSuggestion | null>(null);
+  // When set, the skill-delete confirm modal is shown for this skill.
+  const [pendingDeleteSkill, setPendingDeleteSkill] = useState<SkillSummary | null>(null);
   const [memoryOverview, setMemoryOverview] = useState<MemoryOverviewResponse | null>(null);
   const [memoryDraft, setMemoryDraft] = useState('');
   const [memoryArchiveQuery, setMemoryArchiveQuery] = useState('');
@@ -1170,19 +1173,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const deleteSkill = async (skill: SkillSummary) => {
+  const requestDeleteSkill = (skill: SkillSummary) => {
     if (skill.source !== 'workspace') {
       setFailure(new Error('内置技能不能删除，只能在设置里停用。'), '无法删除技能');
       return;
     }
-    if (!window.confirm(`确认删除技能「${skill.name}」吗？\n\n该操作不可撤销，技能目录会被永久移除。`)) {
-      return;
-    }
+    setPendingDeleteSkill(skill);
+  };
+
+  const confirmDeleteSkill = async () => {
+    const skill = pendingDeleteSkill;
+    if (!skill) return;
     setTogglingSkill(skill.name);
     try {
       await api.deleteSkill(skill.name);
       setSkills((prev) => (prev ? prev.filter((item) => item.name !== skill.name) : prev));
       setNotice({ tone: 'success', text: `已删除技能 ${skill.name}` });
+      setPendingDeleteSkill(null);
     } catch (error) {
       setFailure(error, '删除技能失败');
     } finally {
@@ -5964,7 +5971,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         type="button"
                         className="settings-button-danger"
-                        onClick={() => void deleteSkill(item)}
+                        onClick={() => requestDeleteSkill(item)}
                         disabled={busy}
                         title="永久删除该技能目录"
                       >
@@ -5978,6 +5985,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         )}
         {renderSkillSuggestionDetail()}
+        {pendingDeleteSkill ? (
+          <div
+            className="project-modal__backdrop"
+            onClick={(event) => {
+              if (event.target === event.currentTarget && togglingSkill !== pendingDeleteSkill.name) {
+                setPendingDeleteSkill(null);
+              }
+            }}
+          >
+            <div
+              className="project-modal project-modal--confirm"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="project-modal__header">
+                <h2>删除技能</h2>
+                <button
+                  type="button"
+                  className="project-modal__close"
+                  onClick={() => setPendingDeleteSkill(null)}
+                  disabled={togglingSkill === pendingDeleteSkill.name}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="project-modal__body">
+                <p>
+                  确认删除技能「<strong>{pendingDeleteSkill.name}</strong>」吗？
+                </p>
+                <p style={{ color: '#999ba3', fontSize: '13px', marginTop: '8px' }}>
+                  该操作不可撤销，技能目录会被永久移除。
+                </p>
+              </div>
+              <div className="project-modal__actions">
+                <button
+                  type="button"
+                  className="project-modal__button is-secondary"
+                  onClick={() => setPendingDeleteSkill(null)}
+                  disabled={togglingSkill === pendingDeleteSkill.name}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="project-modal__button is-danger"
+                  onClick={() => void confirmDeleteSkill()}
+                  disabled={togglingSkill === pendingDeleteSkill.name}
+                >
+                  {togglingSkill === pendingDeleteSkill.name ? '删除中…' : '确认删除'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   };
