@@ -2038,6 +2038,17 @@
   flex: 1;
 }
 
+/* Footer row used to host the "delete skill" action without crowding the
+   main toggle in the card head. Right-aligned so the destructive button
+   sits visually distinct from the primary actions above it. */
+.settings-mcp-card__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
 /* ───── MCP editor (right-side drawer) ─────
    Used by both the MCP server editor and the Tools-category editor
    (search/exec/audit/uploads/knowledge). Slides over the right edge of

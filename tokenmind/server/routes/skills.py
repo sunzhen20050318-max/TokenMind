@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from tokenmind.agent.skill_suggestions import SkillSuggestion, SkillSuggestionStore
@@ -168,3 +170,68 @@ async def set_skill_enabled(name: str, request: SkillToggleRequest) -> SkillSumm
         if summary.name == name:
             return summary
     raise HTTPException(status_code=500, detail="Failed to reload skill after update")
+
+
+class SkillDeleteResponse(BaseModel):
+    deleted: bool
+    name: str
+
+
+@router.delete("/{name}", response_model=SkillDeleteResponse)
+async def delete_skill(name: str) -> SkillDeleteResponse:
+    """Delete a user-installed skill from the workspace.
+
+    Only ``source='workspace'`` skills can be removed — built-in skills
+    that ship inside the tokenmind package are read-only and return 403.
+    The directory is removed recursively and any ``disabled`` flag for
+    this skill is cleared from the config so the same name can later be
+    reused for a different skill.
+    """
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Skill name cannot be empty")
+
+    loader = _loader()
+    target = None
+    for skill in loader.list_all_skills():
+        if skill["name"] == name:
+            target = skill
+            break
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+    if target.get("source") != "workspace":
+        raise HTTPException(
+            status_code=403,
+            detail="Built-in skills can't be deleted — disable them in Settings instead.",
+        )
+
+    # ``target['path']`` points at SKILL.md; the actual skill is the
+    # parent directory we need to remove recursively.
+    raw_path = Path(target["path"]).resolve()
+    skill_dir = raw_path.parent if raw_path.is_file() else raw_path
+    # Belt-and-braces: refuse to rmtree anything outside the workspace
+    # skills/ dir, even if loader somehow handed us a wrong path.
+    config = load_config()
+    workspace_skills = (Path(config.agents.defaults.workspace).expanduser() / "skills").resolve()
+    try:
+        skill_dir.relative_to(workspace_skills)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail="Refusing to delete a skill outside the workspace skills directory.",
+        ) from exc
+
+    try:
+        shutil.rmtree(skill_dir)
+    except OSError as exc:
+        logger.exception("Failed to delete skill {} at {}", name, skill_dir)
+        raise HTTPException(status_code=500, detail=f"Failed to delete skill: {exc}") from exc
+
+    # Clean up the disabled-list entry if any so the name is fully gone.
+    disabled = set(config.skills.disabled)
+    if name in disabled:
+        disabled.discard(name)
+        config.skills.disabled = sorted(disabled)
+        save_config(config)
+
+    logger.info("Skill deleted: {} ({})", name, skill_dir)
+    return SkillDeleteResponse(deleted=True, name=name)

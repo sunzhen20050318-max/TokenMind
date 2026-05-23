@@ -442,6 +442,20 @@ export const api = {
     return res.json();
   },
 
+  async deleteSkill(name: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/skills/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      const detail =
+        error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail
+          : null;
+      throw new Error(detail || `Failed to delete skill: ${res.statusText}`);
+    }
+  },
+
   async listSkillSuggestions(): Promise<SkillSuggestion[]> {
     const res = await fetch(`${API_BASE}/skills/suggestions`);
     if (!res.ok) {

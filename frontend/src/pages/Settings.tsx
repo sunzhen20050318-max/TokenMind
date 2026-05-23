@@ -1170,6 +1170,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const deleteSkill = async (skill: SkillSummary) => {
+    if (skill.source !== 'workspace') {
+      setFailure(new Error('内置技能不能删除，只能在设置里停用。'), '无法删除技能');
+      return;
+    }
+    if (!window.confirm(`确认删除技能「${skill.name}」吗？\n\n该操作不可撤销，技能目录会被永久移除。`)) {
+      return;
+    }
+    setTogglingSkill(skill.name);
+    try {
+      await api.deleteSkill(skill.name);
+      setSkills((prev) => (prev ? prev.filter((item) => item.name !== skill.name) : prev));
+      setNotice({ tone: 'success', text: `已删除技能 ${skill.name}` });
+    } catch (error) {
+      setFailure(error, '删除技能失败');
+    } finally {
+      setTogglingSkill(null);
+    }
+  };
+
   const approveSkillSuggestion = async (suggestion: SkillSuggestion) => {
     setSkillSuggestionBusy(suggestion.id);
     try {
@@ -5936,6 +5956,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <span className="settings-badge error">
                         缺少依赖{item.missing_requirements ? ` · ${item.missing_requirements}` : ''}
                       </span>
+                    </div>
+                  ) : null}
+
+                  {item.source === 'workspace' ? (
+                    <div className="settings-mcp-card__footer">
+                      <button
+                        type="button"
+                        className="settings-button-danger"
+                        onClick={() => void deleteSkill(item)}
+                        disabled={busy}
+                        title="永久删除该技能目录"
+                      >
+                        删除技能
+                      </button>
                     </div>
                   ) : null}
                 </div>
