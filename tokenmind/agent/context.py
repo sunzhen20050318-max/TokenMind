@@ -29,11 +29,39 @@ class ContextBuilder:
 
     def __init__(self, workspace: Path, disabled_skills: list[str] | None = None):
         self.workspace = workspace
+        # Default (global) memory store — used for non-project sessions and
+        # as a fallback. Project sessions get their own per-project store
+        # built on-demand inside ``build_system_prompt``.
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace, disabled_skills=disabled_skills)
+        # Cache project-scoped stores so we don't recreate them every turn.
+        self._project_memory_stores: dict[str, MemoryStore] = {}
 
-    def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
-        """Build the system prompt from identity, bootstrap files, memory, and skills."""
+    def memory_for(self, project_id: str | None) -> MemoryStore:
+        """Return the MemoryStore for the given project (or the global one).
+
+        Project-scoped stores are cached per-project_id so repeated turns
+        in the same project don't re-create them.
+        """
+        if not project_id:
+            return self.memory
+        store = self._project_memory_stores.get(project_id)
+        if store is None:
+            store = MemoryStore(self.workspace, project_id=project_id)
+            self._project_memory_stores[project_id] = store
+        return store
+
+    def build_system_prompt(
+        self,
+        skill_names: list[str] | None = None,
+        project_id: str | None = None,
+    ) -> str:
+        """Build the system prompt from identity, bootstrap files, memory, and skills.
+
+        When ``project_id`` is provided, memory is loaded from that
+        project's isolated store rather than the global one — projects
+        and the global workspace have independent ``MEMORY.md``.
+        """
         # Refresh the skills loader so Settings toggles take effect on the next turn
         # without needing an agent restart. load_config() is a small JSON read.
         try:
@@ -50,7 +78,7 @@ class ContextBuilder:
         if bootstrap:
             parts.append(bootstrap)
 
-        memory = self.memory.get_memory_context()
+        memory = self.memory_for(project_id).get_memory_context()
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 
@@ -310,6 +338,7 @@ If the question is fully answerable from the current conversation, do not search
         channel: str | None = None,
         chat_id: str | None = None,
         current_role: str = "user",
+        project_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         sanitized_history: list[dict[str, Any]] = []
@@ -354,7 +383,7 @@ If the question is fully answerable from the current conversation, do not search
             user_message["attachments"] = attachments
 
         return [
-            {"role": "system", "content": self.build_system_prompt(skill_names)},
+            {"role": "system", "content": self.build_system_prompt(skill_names, project_id=project_id)},
             *sanitized_history,
             user_message,
         ]

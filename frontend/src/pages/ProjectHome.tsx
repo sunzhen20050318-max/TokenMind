@@ -12,8 +12,7 @@ interface ProjectHomeProps {
 const PROJECT_LABEL = '\u9879\u76ee';
 const PROJECT_SPACE_LABEL = '\u9879\u76ee\u7a7a\u95f4';
 const STARTER_SUFFIX = '\u4e2d\u7684\u65b0\u804a\u5929';
-const SECTION_CHAT = '\u804a\u5929';
-const SECTION_LOG = '\u9879\u76ee\u8bb0\u5f55';
+const SECTION_CHAT = '\u9879\u76ee\u4f1a\u8bdd';
 const FALLBACK_SESSION = '\u65b0\u5bf9\u8bdd';
 const FALLBACK_SUMMARY = '\u70b9\u51fb\u7ee7\u7eed\u8fd9\u6bb5\u9879\u76ee\u5185\u5bf9\u8bdd';
 const HEADER_COPY =
@@ -85,7 +84,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ onStartConversation, o
 
         <div className="project-home__section-tabs" aria-hidden="true">
           <span className="is-active">{SECTION_CHAT}</span>
-          <span>{SECTION_LOG}</span>
         </div>
 
         {entryState.showEmptyHint ? (

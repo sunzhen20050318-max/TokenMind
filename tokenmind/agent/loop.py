@@ -1781,6 +1781,7 @@ class AgentLoop:
                 current_message=msg.content, channel=channel, chat_id=chat_id,
                 current_role=current_role,
                 active_wiki=self._build_active_wiki_arg(),
+                project_id=session.metadata.get("project_id"),
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages, msg=msg)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -1822,7 +1823,13 @@ class AgentLoop:
             self.sessions.invalidate(session.key)
 
             if snapshot:
-                self._schedule_background(self.memory_consolidator.archive_messages(snapshot))
+                # Pass session so the snapshot lands in this project's
+                # isolated memory store (when applicable), not the global
+                # one. ``session.clear()`` above wiped messages but
+                # session.metadata.project_id is preserved.
+                self._schedule_background(
+                    self.memory_consolidator.archive_messages(snapshot, session=session)
+                )
 
             return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id,
                                   content="New session started.")
@@ -1862,6 +1869,7 @@ class AgentLoop:
             knowledge_chunks=knowledge_chunks,
             active_wiki=self._build_active_wiki_arg(),
             channel=msg.channel, chat_id=msg.chat_id,
+            project_id=session.metadata.get("project_id"),
         )
         raw_timeline_events: list[dict[str, Any]] = []
 

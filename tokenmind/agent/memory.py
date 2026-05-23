@@ -13,7 +13,11 @@ from loguru import logger
 
 from tokenmind.config.schema import TemplatesConfig
 from tokenmind.templates_engine import TemplateRenderer
-from tokenmind.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
+from tokenmind.utils.helpers import (
+    ensure_dir,
+    estimate_message_tokens,
+    estimate_prompt_tokens_chain,
+)
 
 if TYPE_CHECKING:
     from tokenmind.providers.base import LLMProvider
@@ -94,8 +98,18 @@ class MemoryStore:
         workspace: Path,
         templates_config: TemplatesConfig | None = None,
         template_renderer: TemplateRenderer | None = None,
+        project_id: str | None = None,
     ):
-        self.memory_dir = ensure_dir(workspace / "memory")
+        # Project-scoped memory lives under workspace/projects/<id>/memory
+        # so each project has its own isolated MEMORY.md + HISTORY.md. The
+        # global workspace/memory/ still exists for non-project sessions
+        # — pre-existing user memory there is untouched.
+        if project_id:
+            self.memory_dir = ensure_dir(workspace / "projects" / project_id / "memory")
+        else:
+            self.memory_dir = ensure_dir(workspace / "memory")
+        self.workspace = workspace
+        self.project_id = project_id
         self.memory_file = self.memory_dir / "MEMORY.md"
         self.history_file = self.memory_dir / "HISTORY.md"
         self._consecutive_failures = 0
@@ -274,11 +288,20 @@ class MemoryConsolidator:
         templates_config: TemplatesConfig | None = None,
         template_renderer: TemplateRenderer | None = None,
     ):
+        # Default (global) store — used for non-project sessions and as
+        # the public ``.store`` attribute existing callers / templates_config
+        # accessors hook into.
         self.store = MemoryStore(
             workspace,
             templates_config=templates_config,
             template_renderer=template_renderer,
         )
+        self.workspace = workspace
+        self._templates_config = templates_config
+        self._template_renderer = template_renderer
+        # Cache project-scoped stores so we don't recreate them on every
+        # consolidation pass.
+        self._project_stores: dict[str, MemoryStore] = {}
         self.provider = provider
         self.model = model
         self.sessions = sessions
@@ -286,6 +309,27 @@ class MemoryConsolidator:
         self._build_messages = build_messages
         self._get_tool_definitions = get_tool_definitions
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+
+    def _store_for_session(self, session: Session) -> MemoryStore:
+        """Pick the MemoryStore that owns this session's consolidated memory.
+
+        Sessions with ``metadata['project_id']`` write to a per-project
+        store under ``workspace/projects/<id>/memory/``; other sessions
+        write to the global ``workspace/memory/`` (legacy behaviour).
+        """
+        project_id = (session.metadata or {}).get("project_id") if session else None
+        if not project_id:
+            return self.store
+        store = self._project_stores.get(project_id)
+        if store is None:
+            store = MemoryStore(
+                self.workspace,
+                templates_config=self._templates_config,
+                template_renderer=self._template_renderer,
+                project_id=project_id,
+            )
+            self._project_stores[project_id] = store
+        return store
 
     @property
     def templates_config(self) -> TemplatesConfig:
@@ -299,9 +343,20 @@ class MemoryConsolidator:
         """Return the shared consolidation lock for one session."""
         return self._locks.setdefault(session_key, asyncio.Lock())
 
-    async def consolidate_messages(self, messages: list[dict[str, object]]) -> bool:
-        """Archive a selected message chunk into persistent memory."""
-        return await self.store.consolidate(messages, self.provider, self.model)
+    async def consolidate_messages(
+        self,
+        messages: list[dict[str, object]],
+        session: Session | None = None,
+    ) -> bool:
+        """Archive a selected message chunk into persistent memory.
+
+        When ``session`` is provided and it belongs to a project, the
+        consolidation lands in that project's isolated memory store
+        (``workspace/projects/<id>/memory/``). Otherwise it writes to
+        the global ``workspace/memory/`` — same as before.
+        """
+        store = self._store_for_session(session) if session is not None else self.store
+        return await store.consolidate(messages, self.provider, self.model)
 
     def pick_consolidation_boundary(
         self,
@@ -334,6 +389,7 @@ class MemoryConsolidator:
             current_message="[token-probe]",
             channel=channel,
             chat_id=chat_id,
+            project_id=(session.metadata or {}).get("project_id"),
         )
         return estimate_prompt_tokens_chain(
             self.provider,
@@ -342,12 +398,16 @@ class MemoryConsolidator:
             self._get_tool_definitions(),
         )
 
-    async def archive_messages(self, messages: list[dict[str, object]]) -> bool:
+    async def archive_messages(
+        self,
+        messages: list[dict[str, object]],
+        session: Session | None = None,
+    ) -> bool:
         """Archive messages with guaranteed persistence (retries until raw-dump fallback)."""
         if not messages:
             return True
         for _ in range(self.store._MAX_FAILURES_BEFORE_RAW_ARCHIVE):
-            if await self.consolidate_messages(messages):
+            if await self.consolidate_messages(messages, session=session):
                 return True
         return False
 
@@ -399,7 +459,7 @@ class MemoryConsolidator:
                     source,
                     len(chunk),
                 )
-                if not await self.consolidate_messages(chunk):
+                if not await self.consolidate_messages(chunk, session=session):
                     return
                 session.last_consolidated = end_idx
                 self.sessions.save(session)
