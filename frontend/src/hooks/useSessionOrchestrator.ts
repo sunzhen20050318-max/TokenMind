@@ -184,6 +184,32 @@ export function useSessionOrchestrator(): void {
             received_at_ms: Date.now(),
           });
           break;
+        case 'task_list_update':
+          // Replace the per-session task list snapshot. The bubble in
+          // chat picks up the new state and re-renders in place; older
+          // snapshots aren't kept (the agent always sends the full list).
+          store.setSessionTaskList(sessionId, {
+            task_list_id: msg.task_list_id,
+            tool_id: msg.tool_id,
+            tasks: Array.isArray(msg.tasks) ? msg.tasks : [],
+            updated_at_ms: Date.now(),
+          });
+          break;
+        case 'session_compacted':
+          // /compact pushed the visible offset; fold the archived prefix
+          // into a placeholder in ChatWindow.
+          store.applySessionCompacted(sessionId, msg.consolidated_offset || 0);
+          break;
+        case 'usage_updated':
+          // Backend just recorded a fresh prompt_tokens off the latest
+          // LLM response. Push it into the store so /status reflects it
+          // without a page reload.
+          store.applySessionUsage(sessionId, {
+            last_prompt_tokens: msg.last_prompt_tokens || 0,
+            last_prompt_at: msg.last_prompt_at,
+            last_prompt_model: msg.last_prompt_model,
+          });
+          break;
         case 'error':
           store.setSessionError(sessionId, msg.content);
           store.setSessionLoading(sessionId, false);

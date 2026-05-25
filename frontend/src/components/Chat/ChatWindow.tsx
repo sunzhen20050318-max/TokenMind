@@ -7,6 +7,11 @@ import { hasFileTransfer } from './inputAreaDrag';
 import { ToolChain } from './ToolIndicator';
 import { ToolApprovalModal } from './ToolApprovalModal';
 import { UserQuestionModal } from './UserQuestionModal';
+import { TaskListBubble } from './TaskListBubble';
+import { CommandCardModal, type CommandCardOption } from './CommandCardModal';
+import { StatusCard } from './StatusCard';
+import type { SlashCommandOption } from './SlashCommandMenu';
+import type { SlashSkillSummary } from '../../types';
 import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/chatStore';
 import {
   useSessionConnected,
@@ -276,9 +281,21 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
     clearPendingSessionStarter,
     pendingApproval,
     pendingUserQuestion,
+    taskList,
     pendingMessages,
+    consolidatedOffset,
+    compactSession,
+    personality,
+    planMode,
+    compactionThresholdTokens,
+    lastPromptTokens,
+    lastPromptAt,
+    lastPromptModel,
+    setSessionPersonality,
+    setSessionPlanMode,
     setSessionPendingApproval,
     setSessionPendingUserQuestion,
+    dismissSessionTaskList,
     enqueuePendingMessage,
     removePendingMessage,
     shiftPendingMessage,
@@ -376,6 +393,213 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
     respondToUserQuestion(sessionId, pendingUserQuestion.question_id, {});
     setSessionPendingUserQuestion(sessionId, null);
   }, [pendingUserQuestion, sessionId, setSessionPendingUserQuestion]);
+
+  // Stable callback so the TaskListBubble's auto-dismiss timer effect
+  // doesn't get its cleanup torn down on every parent re-render — a
+  // fresh inline arrow caused the timer to be cancelled before it
+  // could fire, defeating the 5-second auto-close behavior.
+  const dismissTaskListForSession = useCallback(() => {
+    dismissSessionTaskList(sessionId);
+  }, [sessionId, dismissSessionTaskList]);
+
+  // ── Slash command card options ─────────────────────────────────────
+  const personalityCardOptions = useMemo<CommandCardOption[]>(
+    () => [
+      {
+        value: '__default__',
+        label: '系统默认',
+        hint: '让模型用它自己的语气回答。',
+      },
+      {
+        value: 'pragmatic',
+        label: '务实 · pragmatic',
+        hint: '直接给结论或操作，不寒暄、不重复问题、不展开思路（默认推荐，省 token）',
+      },
+      {
+        value: 'warm',
+        label: '亲和 · warm',
+        hint: '语气温和、共情、可以解释你的思考。会比务实风格多花一些 token。',
+      },
+    ],
+    [],
+  );
+  // ── Slash commands ────────────────────────────────────────────────
+  // Built-in commands + workspace skills fetched on session change.
+  const [slashSkills, setSlashSkills] = useState<SlashSkillSummary[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api
+      .listSlashSkills()
+      .then((res) => {
+        if (alive) setSlashSkills(res.items || []);
+      })
+      .catch(() => {
+        // Skills are optional; ignore failures so the menu still shows
+        // built-in commands.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
+  const slashCommandList = useMemo<SlashCommandOption[]>(
+    () => [
+      { name: 'compact', description: '压缩较早的对话到 HISTORY.md / MEMORY.md' },
+      { name: 'status', description: '查看当前会话设置和上下文用量' },
+      { name: 'model', description: '切换当前会话使用的模型' },
+      { name: 'reasoning', description: '切换思考深度（低 / 中 / 高）' },
+      { name: 'personality', description: '切换回答风格（亲和 / 务实）' },
+      ...slashSkills.map((s) => ({
+        name: s.name,
+        description: `技能 · ${s.description}`,
+      })),
+    ],
+    [slashSkills],
+  );
+  type OpenCardKind = 'personality' | 'model' | 'reasoning' | 'status' | null;
+  const [openCard, setOpenCard] = useState<OpenCardKind>(null);
+  const closeOpenCard = useCallback(() => setOpenCard(null), []);
+  // Slash-command status banner shown just above the input.
+  //   pending: long-running op in flight (shows spinner, no auto-dismiss)
+  //   done:    successful finish (auto-dismiss after 3.5s)
+  //   error:   failed (auto-dismiss after 5s, slightly tinted)
+  type SlashToast = { kind: 'pending' | 'done' | 'error'; text: string };
+  const [slashToast, setSlashToast] = useState<SlashToast | null>(null);
+  const slashToastTimerRef = useRef<number | null>(null);
+  const setPendingSlashToast = useCallback((text: string) => {
+    setSlashToast({ kind: 'pending', text });
+    if (slashToastTimerRef.current !== null) {
+      window.clearTimeout(slashToastTimerRef.current);
+      slashToastTimerRef.current = null;
+    }
+  }, []);
+  const finishSlashToast = useCallback((kind: 'done' | 'error', text: string) => {
+    setSlashToast({ kind, text });
+    if (slashToastTimerRef.current !== null) {
+      window.clearTimeout(slashToastTimerRef.current);
+    }
+    slashToastTimerRef.current = window.setTimeout(() => {
+      setSlashToast(null);
+      slashToastTimerRef.current = null;
+    }, kind === 'error' ? 5000 : 3500);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (slashToastTimerRef.current !== null) {
+        window.clearTimeout(slashToastTimerRef.current);
+      }
+    };
+  }, []);
+  // Block double-fire of /compact while a previous one is still talking
+  // to the LLM — otherwise the second click stacks another expensive
+  // request behind the lock and the user sees ghost progress.
+  const compactBusyRef = useRef(false);
+  const dispatchSkill = useCallback(
+    async (name: string, args: string) => {
+      try {
+        const { body } = await api.getSkillBody(name);
+        const rendered = body.includes('$ARGS')
+          ? body.split('$ARGS').join(args)
+          : args.trim()
+            ? `${body.trimEnd()}\n\n${args}`
+            : body;
+        await handleSend(rendered);
+      } catch (e) {
+        finishSlashToast(
+          'error',
+          `加载技能失败：${e instanceof Error ? e.message : '未知错误'}`,
+        );
+      }
+    },
+    // handleSend is defined below — we declare its identity stable for
+    // this callback via the deps list. eslint may complain, but the ref
+    // is fine because handleSend itself reads other state through closures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [finishSlashToast],
+  );
+  const handleSlashCommand = useCallback(
+    async (name: string, args: string = '') => {
+      // 1) Skill dispatch — wins over built-ins so a workspace skill
+      // never gets shadowed by a typo collision (we surface a warning
+      // instead by checking the builtin set first).
+      const isBuiltin =
+        name === 'compact' ||
+        name === 'status' ||
+        name === 'model' ||
+        name === 'reasoning' ||
+        name === 'personality';
+      const isSkill = slashSkills.some((s) => s.name === name);
+      if (!isBuiltin && isSkill) {
+        await dispatchSkill(name, args);
+        return;
+      }
+      if (name === 'status') {
+        setOpenCard('status');
+        return;
+      }
+      if (name === 'model') {
+        setOpenCard('model');
+        return;
+      }
+      if (name === 'reasoning') {
+        setOpenCard('reasoning');
+        return;
+      }
+      if (name === 'personality') {
+        setOpenCard('personality');
+        return;
+      }
+      if (name === 'compact') {
+        if (compactBusyRef.current) {
+          finishSlashToast('error', '上一次 /compact 还在进行中…');
+          return;
+        }
+        compactBusyRef.current = true;
+        setPendingSlashToast('正在压缩对话历史，请稍候…（LLM 摘要中）');
+        // Snapshot the offset + messages BEFORE the call so we can
+        // translate the backend's raw-message count into a
+        // user-visible count (raw includes tool_call / tool_result
+        // messages that never show up as chat bubbles).
+        const prevOffset = useChatStore.getState().consolidatedOffset;
+        const prevMessages = useChatStore.getState().messages;
+        try {
+          const compactedRaw = await compactSession(sessionId);
+          if (compactedRaw > 0) {
+            const visibleCount = prevMessages
+              .slice(prevOffset, prevOffset + compactedRaw)
+              .filter(
+                (m) =>
+                  (m.role === 'user' ||
+                    (m.role === 'assistant' && !m.tool_calls?.length)) &&
+                  (typeof m.content !== 'string' || m.content.trim().length > 0),
+              ).length;
+            finishSlashToast(
+              'done',
+              `已固化 ${visibleCount} 条对话到 HISTORY.md / MEMORY.md`,
+            );
+          } else {
+            finishSlashToast('done', '当前没有可固化的较早对话');
+          }
+        } catch (e) {
+          finishSlashToast(
+            'error',
+            `压缩失败：${e instanceof Error ? e.message : '未知错误'}`,
+          );
+        } finally {
+          compactBusyRef.current = false;
+        }
+        return;
+      }
+      finishSlashToast('error', `未识别的命令：/${name}`);
+    },
+    [
+      compactSession,
+      sessionId,
+      setPendingSlashToast,
+      finishSlashToast,
+      slashSkills,
+      dispatchSkill,
+    ],
+  );
 
   // On mount/session change, hydrate the per-session exec-trust flag from
   // localStorage so the toggle reflects the persisted preference.
@@ -701,6 +925,35 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
     configured: provider.configured,
   }));
 
+  const modelCardOptions = useMemo<CommandCardOption[]>(
+    () =>
+      modelProviders
+        .filter((p) => p.configured)
+        .map((p) => ({
+          value: p.id,
+          label: p.name,
+          hint: p.id,
+        })),
+    [modelProviders],
+  );
+  const reasoningCardOptions = useMemo<CommandCardOption[]>(
+    () =>
+      REASONING_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        hint:
+          option.value === ''
+            ? '不携带 reasoning_effort 参数 — 推理模型按默认行为'
+            : `reasoning_effort = ${option.value}`,
+      })),
+    [],
+  );
+  const statusModelLabel = useMemo<string | null>(() => {
+    if (!activeModelId) return null;
+    const match = modelProviders.find((p) => p.id === activeModelId);
+    return match ? match.name : activeModelId;
+  }, [activeModelId, modelProviders]);
+
   const needsProviderSetup =
     modelProvidersStatus === 'ready' && !modelProviders.some((p) => p.configured);
 
@@ -917,6 +1170,152 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
             onSubmit={submitPendingUserQuestion}
             onCancel={cancelPendingUserQuestion}
           />
+          <TaskListBubble snapshot={taskList} onDismiss={dismissTaskListForSession} />
+          {openCard === 'personality' ? (
+            <CommandCardModal
+              title="PERSONALITY"
+              subtitle="选择回答风格"
+              icon="◇"
+              options={personalityCardOptions}
+              selectedValue={personality ?? '__default__'}
+              onSubmit={async (value) => {
+                const next = value === '__default__' ? null : (value as 'warm' | 'pragmatic');
+                closeOpenCard();
+                await setSessionPersonality(sessionId, next);
+                finishSlashToast(
+                  'done',
+                  `回答风格：${
+                    next === 'warm' ? '亲和' : next === 'pragmatic' ? '务实' : '系统默认'
+                  }`,
+                );
+              }}
+              onCancel={closeOpenCard}
+            />
+          ) : null}
+          {openCard === 'model' ? (
+            <CommandCardModal
+              title="MODEL"
+              subtitle="切换当前会话使用的模型"
+              icon="⌬"
+              options={modelCardOptions}
+              selectedValue={activeModelId}
+              onSubmit={async (value) => {
+                closeOpenCard();
+                try {
+                  await setActiveModel(value);
+                  const label = modelCardOptions.find((o) => o.value === value)?.label || value;
+                  finishSlashToast('done', `模型已切换：${label}`);
+                } catch (e) {
+                  finishSlashToast(
+                    'error',
+                    `切换失败：${e instanceof Error ? e.message : '未知错误'}`,
+                  );
+                }
+              }}
+              onCancel={closeOpenCard}
+              footerHint={
+                modelCardOptions.length === 0
+                  ? '尚未配置任何模型 — 去设置中心补全 API Key'
+                  : undefined
+              }
+            />
+          ) : null}
+          {openCard === 'reasoning' ? (
+            <CommandCardModal
+              title="REASONING"
+              subtitle="切换思考深度（仅对支持的模型生效）"
+              icon="◈"
+              options={reasoningCardOptions}
+              selectedValue={reasoningEffort || ''}
+              onSubmit={async (value) => {
+                closeOpenCard();
+                try {
+                  await handleReasoningChange(value);
+                  const label =
+                    reasoningCardOptions.find((o) => o.value === value)?.label || value || '关闭';
+                  finishSlashToast('done', `思考深度：${label}`);
+                } catch (e) {
+                  finishSlashToast(
+                    'error',
+                    `切换失败：${e instanceof Error ? e.message : '未知错误'}`,
+                  );
+                }
+              }}
+              onCancel={closeOpenCard}
+            />
+          ) : null}
+          {openCard === 'status' ? (
+            <StatusCard
+              model={statusModelLabel}
+              reasoning={reasoningEffort || null}
+              personality={personality}
+              planMode={planMode}
+              messageCount={messages.length}
+              consolidatedOffset={consolidatedOffset}
+              compactionThreshold={compactionThresholdTokens}
+              lastPromptTokens={lastPromptTokens}
+              lastPromptAt={lastPromptAt}
+              lastPromptModel={lastPromptModel}
+              onClose={closeOpenCard}
+            />
+          ) : null}
+          {slashToast ? (
+            <div
+              role="status"
+              aria-live={slashToast.kind === 'pending' ? 'polite' : 'assertive'}
+              style={{
+                marginBottom: '8px',
+                padding: '8px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                background: '#161616',
+                border: `1px solid ${
+                  slashToast.kind === 'error'
+                    ? 'rgba(217,108,108,0.45)'
+                    : 'rgba(255,255,255,0.18)'
+                }`,
+                borderRadius: '10px',
+                color: slashToast.kind === 'error' ? '#e8a8a8' : '#cfcfcf',
+                fontFamily:
+                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+                fontSize: '11.5px',
+              }}
+            >
+              <style>
+                {`
+                  @keyframes tk-slash-toast-spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}
+              </style>
+              {slashToast.kind === 'pending' ? (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+                  <circle cx="7" cy="7" r="5.5" stroke="rgba(232,232,232,0.25)" strokeWidth="1.5" fill="none" />
+                  <circle
+                    cx="7"
+                    cy="7"
+                    r="5.5"
+                    stroke="#e8e8e8"
+                    strokeWidth="1.5"
+                    fill="none"
+                    strokeDasharray="9 28"
+                    strokeLinecap="round"
+                    style={{
+                      transformOrigin: 'center',
+                      animation: 'tk-slash-toast-spin 1.2s linear infinite',
+                    }}
+                  />
+                </svg>
+              ) : slashToast.kind === 'done' ? (
+                <span style={{ color: '#e8e8e8', fontSize: '12px' }}>✓</span>
+              ) : (
+                <span style={{ color: '#d96c6c', fontSize: '12px' }}>!</span>
+              )}
+              <span style={{ flex: 1, minWidth: 0 }}>{slashToast.text}</span>
+            </div>
+          ) : null}
           <InputArea
             onSend={handleSend}
             onStop={stopMessage}
@@ -936,6 +1335,20 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
             onSendGuidance={(id, content) => {
               sendSessionGuidance(sessionId, content);
               removePendingMessage(sessionId, id);
+            }}
+            slashCommands={slashCommandList}
+            onSlashCommandSelect={(name, args) => {
+              void handleSlashCommand(name, args || '');
+            }}
+            planMode={planMode}
+            onTogglePlanMode={() => {
+              const next = !planMode;
+              void setSessionPlanMode(sessionId, next).then(() => {
+                finishSlashToast(
+                  'done',
+                  next ? '计划模式已开启' : '计划模式已关闭',
+                );
+              });
             }}
             composerMode={hasConversation ? 'active' : 'launch'}
             modelOptions={composerModelOptions}

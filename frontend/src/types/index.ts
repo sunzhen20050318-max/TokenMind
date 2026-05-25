@@ -80,6 +80,33 @@ export interface ChatHistoryResponse {
     duration?: number;
     detail?: string;
   }>;
+  /** Number of leading messages already archived to HISTORY.md/MEMORY.md
+   *  (mirrors backend ``Session.last_consolidated``). The UI folds these
+   *  into a placeholder rather than rendering them inline. */
+  consolidated_offset?: number;
+  /** Per-session reply-style preference set via /personality. */
+  personality?: 'warm' | 'pragmatic' | null;
+  /** Per-session plan-mode toggle. When on, the agent must call
+   *  ``task_list`` before non-trivial multi-step work. */
+  plan_mode?: boolean;
+  /** TokenMind's *soft* auto-/compact threshold (from
+   *  ``agents.defaults.context_window_tokens``). Not the model's
+   *  hardware context limit. */
+  compaction_threshold_tokens?: number;
+  /** Actual prompt-token count from the most recent LLM call
+   *  (input + cached). Precise, comes straight from the provider's
+   *  usage payload. ``null`` until the first call lands. */
+  last_prompt_tokens?: number | null;
+  last_prompt_at?: string | null;
+  last_prompt_model?: string | null;
+}
+
+export type SessionPersonality = 'warm' | 'pragmatic' | null;
+
+export interface SlashSkillSummary {
+  name: string;
+  description: string;
+  source: 'workspace' | 'builtin';
 }
 
 export interface SendMessageResponse {
@@ -296,6 +323,21 @@ export interface UserQuestionAnswer {
   notes?: string;
 }
 
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'paused';
+
+export interface TaskListItem {
+  id: string;
+  content: string;
+  status: TaskStatus;
+}
+
+export interface TaskListSnapshot {
+  task_list_id: string;
+  tool_id: string;
+  tasks: TaskListItem[];
+  updated_at_ms: number;
+}
+
 export interface StatusResponse {
   status: string;
   version: string;
@@ -321,5 +363,8 @@ export type WSMessageType =
   | { type: 'session_title_updated'; session_id: string; title: string; channel: string }
   | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
   | { type: 'user_question_required'; question_id: string; tool_id: string; questions: UserQuestionItem[]; channel: string }
+  | { type: 'task_list_update'; task_list_id: string; tool_id: string; tasks: TaskListItem[]; channel: string }
+  | { type: 'session_compacted'; session_id: string; consolidated_offset: number; messages_compacted: number; channel: string }
+  | { type: 'usage_updated'; session_id: string; last_prompt_tokens: number; last_prompt_at: string | null; last_prompt_model: string | null; channel: string }
   | { type: 'error'; content: string }
   | { type: 'pong' };

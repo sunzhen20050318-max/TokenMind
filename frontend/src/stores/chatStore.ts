@@ -7,6 +7,7 @@ import type {
   PendingUserQuestion,
   Project,
   Session,
+  TaskListSnapshot,
 } from '../types';
 import { api } from '../services/api';
 import type { CreativeSettings } from '../types/config';
@@ -75,6 +76,39 @@ export interface SessionSlice {
   pendingApproval: PendingToolApproval | null;
   pendingUserQuestion: PendingUserQuestion | null;
   /**
+   * Latest snapshot of the agent's task list for this session, or null
+   * if the agent has not surfaced one yet (or cleared it). Each call to
+   * the ``task_list`` tool replaces this; the UI renders the snapshot
+   * as a single in-place bubble in the chat thread.
+   */
+  taskList: TaskListSnapshot | null;
+  /**
+   * If the user manually dismissed (×) the task list bubble, we remember
+   * that id so subsequent updates from the agent within the same turn
+   * don't pop the bubble back. A fresh ``task_list_id`` (next turn)
+   * clears this implicitly.
+   */
+  dismissedTaskListId: string | null;
+  /**
+   * Number of leading messages that have been consolidated into
+   * HISTORY.md/MEMORY.md and are therefore not part of the LLM's
+   * working context anymore. The UI folds ``messages[0:consolidatedOffset]``
+   * into a single "已固化 N 条历史" placeholder. Mirrors the backend's
+   * ``Session.last_consolidated``.
+   */
+  consolidatedOffset: number;
+  /**
+   * Reply style chosen via /personality. ``null`` means "let the model
+   * use its default voice". Mirrors backend ``Session.personality``.
+   */
+  personality: 'warm' | 'pragmatic' | null;
+  /**
+   * Plan-mode toggle (input-bar button). When true, the system prompt
+   * tells the agent to call ``task_list`` before non-trivial multi-step
+   * work. Mirrors backend ``Session.plan_mode``.
+   */
+  planMode: boolean;
+  /**
    * Messages typed while the agent was busy. Auto-flushed (one at a time)
    * when ``isLoading`` flips back to ``false``. See ``ChatWindow`` for the
    * drain effect.
@@ -100,6 +134,11 @@ const EMPTY_SLICE: SessionSlice = {
   activeWikiKbId: null,
   pendingApproval: null,
   pendingUserQuestion: null,
+  taskList: null,
+  dismissedTaskListId: null,
+  consolidatedOffset: 0,
+  personality: null,
+  planMode: false,
   pendingMessages: [],
   sessionExecTrusted: false,
 };
@@ -125,12 +164,25 @@ interface ChatState {
   timelineEvents: TimelineEvent[];
   pendingApproval: PendingToolApproval | null;
   pendingUserQuestion: PendingUserQuestion | null;
+  taskList: TaskListSnapshot | null;
+  dismissedTaskListId: string | null;
+  consolidatedOffset: number;
+  personality: 'warm' | 'pragmatic' | null;
+  planMode: boolean;
   pendingMessages: PendingChatMessage[];
   sessionExecTrusted: boolean;
   sessionsState: Record<string, SessionSlice>;
   modelProviders: ModelProvider[];
   activeModelId: string | null;
   modelProvidersStatus: 'idle' | 'loading' | 'ready' | 'error';
+  /** TokenMind's *soft* auto-/compact threshold. NOT the model's
+   *  hardware context limit — sourced from ``agents.defaults.context_window_tokens``. */
+  compactionThresholdTokens: number | null;
+  /** Precise prompt-token count from the most recent LLM call (input +
+   *  cached), straight from the provider's usage payload. */
+  lastPromptTokens: number | null;
+  lastPromptAt: string | null;
+  lastPromptModel: string | null;
   creativeCapabilities: CreativeSettings | null;
   availableKnowledgeBases: KnowledgeBase[];
   linkedKnowledgeBaseIds: string[];
@@ -229,6 +281,28 @@ interface ChatState {
 
   setSessionPendingApproval: (sessionId: string, approval: PendingToolApproval | null) => void;
   setSessionPendingUserQuestion: (sessionId: string, question: PendingUserQuestion | null) => void;
+  setSessionTaskList: (sessionId: string, snapshot: TaskListSnapshot | null) => void;
+  dismissSessionTaskList: (sessionId: string) => void;
+  /** Apply a server-pushed compaction: bump the visible offset so the
+   *  consolidated portion folds into a placeholder. */
+  applySessionCompacted: (sessionId: string, offset: number) => void;
+  /** User-initiated /compact: POSTs to the backend then mirrors the new
+   *  offset locally. Returns the number of messages that were compacted
+   *  (0 if nothing eligible). */
+  compactSession: (sessionId: string) => Promise<number>;
+  /** /personality picker: PATCH the session and mirror locally. ``null``
+   *  resets to the system default. */
+  setSessionPersonality: (sessionId: string, personality: 'warm' | 'pragmatic' | null) => Promise<void>;
+  /** WS-driven update of last_prompt_tokens for the current session.
+   *  Ignored when ``sessionId`` doesn't match the foreground session
+   *  (background sessions re-hydrate from API on next switch). */
+  applySessionUsage: (
+    sessionId: string,
+    usage: { last_prompt_tokens: number; last_prompt_at: string | null; last_prompt_model: string | null },
+  ) => void;
+  /** Plan-mode toggle (input-bar button + /plan command later). PATCH +
+   *  mirror. */
+  setSessionPlanMode: (sessionId: string, enabled: boolean) => Promise<void>;
   enqueuePendingMessage: (sessionId: string, content: string) => void;
   removePendingMessage: (sessionId: string, id: string) => void;
   shiftPendingMessage: (sessionId: string) => PendingChatMessage | null;
@@ -255,12 +329,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentTurnId: null,
   pendingApproval: null,
   pendingUserQuestion: null,
+  taskList: null,
+  dismissedTaskListId: null,
+  consolidatedOffset: 0,
+  personality: null,
+  planMode: false,
   pendingMessages: [],
   sessionExecTrusted: false,
   sessionsState: {},
   modelProviders: [],
   activeModelId: null,
   modelProvidersStatus: 'idle',
+  compactionThresholdTokens: null,
+  lastPromptTokens: null,
+  lastPromptAt: null,
+  lastPromptModel: null,
   creativeCapabilities: null,
   availableKnowledgeBases: [],
   linkedKnowledgeBaseIds: [],
@@ -351,6 +434,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activeWikiKbId: state.activeWikiKbId,
         pendingApproval: state.pendingApproval,
         pendingUserQuestion: state.pendingUserQuestion,
+        taskList: state.taskList,
+        dismissedTaskListId: state.dismissedTaskListId,
+        consolidatedOffset: state.consolidatedOffset,
+        personality: state.personality,
+        planMode: state.planMode,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
       };
@@ -370,6 +458,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeWikiKbId: restored?.activeWikiKbId ?? null,
       pendingApproval: restored?.pendingApproval ?? null,
       pendingUserQuestion: restored?.pendingUserQuestion ?? null,
+      taskList: restored?.taskList ?? null,
+      dismissedTaskListId: restored?.dismissedTaskListId ?? null,
+      consolidatedOffset: restored?.consolidatedOffset ?? 0,
+      personality: restored?.personality ?? null,
+      planMode: restored?.planMode ?? false,
       pendingMessages: restored?.pendingMessages ?? [],
       sessionExecTrusted: restored?.sessionExecTrusted ?? false,
       error: null,
@@ -639,17 +732,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadHistory: async (sessionId) => {
     try {
       set({ isLoading: true });
-      const { messages, timeline_events } = await api.getHistory(sessionId);
+      const {
+        messages,
+        timeline_events,
+        consolidated_offset,
+        personality,
+        plan_mode,
+        compaction_threshold_tokens,
+        last_prompt_tokens,
+        last_prompt_at,
+        last_prompt_model,
+      } = await api.getHistory(sessionId);
       set({
         messages,
         timelineEvents: timeline_events || [],
         toolCalls: [],
         currentTurnId: null,
+        consolidatedOffset: consolidated_offset ?? 0,
+        personality: personality ?? null,
+        planMode: !!plan_mode,
+        compactionThresholdTokens: compaction_threshold_tokens || null,
+        lastPromptTokens: last_prompt_tokens || null,
+        lastPromptAt: last_prompt_at || null,
+        lastPromptModel: last_prompt_model || null,
         isLoading: false,
       });
     } catch (e) {
       // Session might not exist yet, that's ok
-      set({ messages: [], timelineEvents: [], toolCalls: [], isLoading: false });
+      set({
+        messages: [],
+        timelineEvents: [],
+        toolCalls: [],
+        consolidatedOffset: 0,
+        personality: null,
+        planMode: false,
+        isLoading: false,
+      });
     }
   },
 
@@ -1007,6 +1125,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activeWikiKbId: state.activeWikiKbId,
         pendingApproval: state.pendingApproval,
         pendingUserQuestion: state.pendingUserQuestion,
+        taskList: state.taskList,
+        dismissedTaskListId: state.dismissedTaskListId,
+        consolidatedOffset: state.consolidatedOffset,
+        personality: state.personality,
+        planMode: state.planMode,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
       };
@@ -1221,6 +1344,87 @@ export const useChatStore = create<ChatState>((set, get) => ({
     applySliceUpdate(set, get, sessionId, () => ({ pendingUserQuestion: question }));
   },
 
+  setSessionTaskList: (sessionId, snapshot) => {
+    applySliceUpdate(set, get, sessionId, (slice) => {
+      // If user dismissed the bubble for this exact id, swallow updates
+      // to avoid re-popping mid-turn. A fresh id (next turn) implicitly
+      // clears the dismissed flag.
+      if (snapshot && slice.dismissedTaskListId === snapshot.task_list_id) {
+        return {};
+      }
+      const clearedDismiss =
+        snapshot && slice.dismissedTaskListId && slice.dismissedTaskListId !== snapshot.task_list_id;
+      return clearedDismiss
+        ? { taskList: snapshot, dismissedTaskListId: null }
+        : { taskList: snapshot };
+    });
+  },
+
+  dismissSessionTaskList: (sessionId) => {
+    applySliceUpdate(set, get, sessionId, (slice) => ({
+      taskList: null,
+      dismissedTaskListId: slice.taskList?.task_list_id ?? slice.dismissedTaskListId,
+    }));
+  },
+
+  applySessionCompacted: (sessionId, offset) => {
+    if (typeof offset !== 'number' || offset < 0) return;
+    applySliceUpdate(set, get, sessionId, (slice) => {
+      // Never regress — concurrent multi-tab compaction or stale WS
+      // frames could otherwise unfold the placeholder.
+      const next = Math.max(slice.consolidatedOffset, offset);
+      if (next === slice.consolidatedOffset) return {};
+      return { consolidatedOffset: next };
+    });
+  },
+
+  compactSession: async (sessionId) => {
+    try {
+      const result = await api.compactSession(sessionId);
+      if (result.messages_compacted > 0) {
+        // The WS frame from the backend will redundantly call
+        // applySessionCompacted too; ours just makes the UI feel
+        // instant. Both are idempotent thanks to the max() guard above.
+        get().applySessionCompacted(sessionId, result.consolidated_offset);
+      }
+      return result.messages_compacted;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to compact session' });
+      return 0;
+    }
+  },
+
+  setSessionPersonality: async (sessionId, personality) => {
+    try {
+      await api.patchSession(sessionId, { personality });
+      applySliceUpdate(set, get, sessionId, () => ({ personality }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to set personality' });
+    }
+  },
+
+  applySessionUsage: (sessionId, usage) => {
+    // Only the foreground session is mirrored in top-level fields, and
+    // /status only reads from the foreground session anyway. Background
+    // sessions re-fetch their numbers via loadHistory when activated.
+    if (get().currentSession !== sessionId) return;
+    if (!usage.last_prompt_tokens || usage.last_prompt_tokens <= 0) return;
+    set({
+      lastPromptTokens: usage.last_prompt_tokens,
+      lastPromptAt: usage.last_prompt_at,
+      lastPromptModel: usage.last_prompt_model,
+    });
+  },
+
+  setSessionPlanMode: async (sessionId, enabled) => {
+    try {
+      await api.patchSession(sessionId, { plan_mode: enabled });
+      applySliceUpdate(set, get, sessionId, () => ({ planMode: enabled }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to set plan mode' });
+    }
+  },
+
   addSessionMessage: (sessionId, message) => {
     applySliceUpdate(set, get, sessionId, (slice) => ({
       messages: [...slice.messages, message],
@@ -1265,6 +1469,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             activeWikiKbId: state.activeWikiKbId,
             pendingApproval: state.pendingApproval,
             pendingUserQuestion: state.pendingUserQuestion,
+            taskList: state.taskList,
+            dismissedTaskListId: state.dismissedTaskListId,
+            consolidatedOffset: state.consolidatedOffset,
             pendingMessages: state.pendingMessages,
             sessionExecTrusted: state.sessionExecTrusted,
           } as SessionSlice)
@@ -1313,6 +1520,11 @@ function applySliceUpdate(
       activeWikiKbId: state.activeWikiKbId,
       pendingApproval: state.pendingApproval,
       pendingUserQuestion: state.pendingUserQuestion,
+      taskList: state.taskList,
+      dismissedTaskListId: state.dismissedTaskListId,
+      consolidatedOffset: state.consolidatedOffset,
+      personality: state.personality,
+      planMode: state.planMode,
       pendingMessages: state.pendingMessages,
       sessionExecTrusted: state.sessionExecTrusted,
     };

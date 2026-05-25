@@ -100,6 +100,26 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
       }
       wasActiveRef.current = isActive;
     }, [isActive]);
+
+    // Auto-scroll the timeline to the latest event as new ones arrive,
+    // but ONLY when the user is already near the bottom — otherwise we
+    // would yank them away from something they're reading further up.
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const eventCount = timelineEvents.length;
+    const toolCount = toolCalls.length;
+    useEffect(() => {
+      if (!isExpanded) return;
+      const el = scrollRef.current;
+      if (!el) return;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceFromBottom <= 80) {
+        // Defer one frame so the new event's DOM node is laid out and
+        // contributes to scrollHeight before we measure / scroll.
+        requestAnimationFrame(() => {
+          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        });
+      }
+    }, [eventCount, toolCount, isExpanded]);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const hasRunning = toolCalls.some((toolCall) => toolCall.status === 'running');
@@ -278,6 +298,7 @@ export const ToolChain: React.FC<ToolChainProps> = memo(
           </button>
 
           <div
+            ref={scrollRef}
             style={{
               maxHeight: isExpanded ? '420px' : '0',
               overflowY: 'auto',

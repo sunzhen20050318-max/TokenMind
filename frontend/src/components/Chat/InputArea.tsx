@@ -3,7 +3,10 @@ import type { UploadProgress } from '../../types';
 import type { KnowledgeBase } from '../../types/knowledge';
 import { KnowledgeMenu } from './KnowledgeMenu';
 import { hasFileTransfer } from './inputAreaDrag';
+import { SlashCommandMenu, type SlashCommandOption } from './SlashCommandMenu';
 import './inputArea.css';
+
+export type { SlashCommandOption } from './SlashCommandMenu';
 
 export interface DraftAttachment {
   id: string;
@@ -73,6 +76,23 @@ interface InputAreaProps {
    * to the running agent without spawning a new turn.
    */
   onSendGuidance?: (id: string, content: string) => void;
+  /**
+   * Available slash commands. When non-empty, typing ``/`` at the very
+   * start of the textarea opens a dropdown above the composer. Selecting
+   * an option calls ``onSlashCommandSelect`` with the bare command name
+   * (no leading slash). Free-form text typed after the command (e.g.
+   * ``/skill some text``) is delivered to the second arg on submit.
+   */
+  slashCommands?: ReadonlyArray<SlashCommandOption>;
+  onSlashCommandSelect?: (name: string, args?: string) => void;
+  /**
+   * Plan-mode toggle. When ``planMode`` is true the icon glows and the
+   * agent is forced (via system-prompt constraint) to call ``task_list``
+   * before non-trivial multi-step work. ``onTogglePlanMode`` flips the
+   * underlying session preference.
+   */
+  planMode?: boolean;
+  onTogglePlanMode?: () => void;
 }
 
 interface InlineSelectOption {
@@ -214,6 +234,10 @@ export const InputArea: React.FC<InputAreaProps> = ({
   pendingMessages = [],
   onCancelPendingMessage,
   onSendGuidance,
+  slashCommands = [],
+  onSlashCommandSelect,
+  planMode = false,
+  onTogglePlanMode,
 }) => {
   // Pending list collapses by default once it would dominate the screen.
   const [pendingExpanded, setPendingExpanded] = useState(false);
@@ -261,14 +285,85 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const reasoningPlaceholder =
     reasoningSelectOptions.find((option) => option.value === activeReasoning)?.label || '关闭';
 
+  // ── Slash-command menu ────────────────────────────────────────────────
+  // Open the menu only when the textarea starts with "/" and the user
+  // hasn't typed a space or newline yet — exactly the moment when the
+  // dropdown can still resolve to a single command. Pure derived state
+  // (no extra flag), so it auto-closes the instant the predicate breaks.
+  const slashOpen =
+    slashCommands.length > 0 &&
+    value.startsWith('/') &&
+    !value.includes(' ') &&
+    !value.includes('\n');
+  const slashQuery = slashOpen ? value.slice(1).toLowerCase() : '';
+  const slashMatches = useMemo<SlashCommandOption[]>(() => {
+    if (!slashOpen) return [];
+    if (!slashQuery) return [...slashCommands];
+    return slashCommands.filter((c) => c.name.toLowerCase().includes(slashQuery));
+  }, [slashOpen, slashQuery, slashCommands]);
+  const [slashIndex, setSlashIndex] = useState(0);
+  useEffect(() => {
+    // Reset the highlight whenever the visible match-set shifts so the
+    // selection never points past the end of the list.
+    setSlashIndex(0);
+  }, [slashQuery, slashMatches.length]);
+
+  const dispatchSlashCommand = (option: SlashCommandOption, args: string = '') => {
+    onSlashCommandSelect?.(option.name, args);
+    onChange('');
+  };
+
+  // Recognise ``/<name>`` or ``/<name> <args...>`` typed by hand —
+  // the dropdown auto-closes once a space appears, but the user may
+  // still want to fire the command. We only intercept names that are
+  // actually registered (otherwise random text starting with "/" would
+  // be eaten).
+  const tryDispatchTypedSlash = (raw: string): boolean => {
+    if (!slashCommands.length) return false;
+    const match = raw.match(/^\/([\w\-:]+)(?:\s+([\s\S]+))?$/);
+    if (!match) return false;
+    const [, name, args] = match;
+    const cmd = slashCommands.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    if (!cmd) return false;
+    onSlashCommandSelect?.(cmd.name, args ?? '');
+    onChange('');
+    return true;
+  };
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    const trimmed = value.trim();
+    if (trimmed && tryDispatchTypedSlash(trimmed)) {
+      return;
+    }
     if (canSubmit) {
-      void onSend(value.trim());
+      void onSend(trimmed);
     }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (slashOpen && slashMatches.length > 0) {
+      if (event.nativeEvent.isComposing) {
+        // IME composition (Chinese pinyin etc.) — let it through.
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        onChange('');
+        return;
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSlashIndex((i) => Math.min(slashMatches.length - 1, i + 1));
+        return;
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSlashIndex((i) => Math.max(0, i - 1));
+        return;
+      } else if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        const cmd = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
+        if (cmd) dispatchSlashCommand(cmd);
+        return;
+      }
+    }
     if (event.key !== 'Enter') return;
     if (event.nativeEvent.isComposing) return;
     if (event.shiftKey) return;
@@ -456,6 +551,15 @@ export const InputArea: React.FC<InputAreaProps> = ({
         </div>
       ) : null}
 
+      {slashOpen && slashMatches.length > 0 ? (
+        <SlashCommandMenu
+          options={slashMatches}
+          selectedIndex={Math.min(slashIndex, slashMatches.length - 1)}
+          onHover={setSlashIndex}
+          onSelect={dispatchSlashCommand}
+        />
+      ) : null}
+
       <div
         className={`composer__surface ${effectiveDragActive ? 'is-drag-active' : ''}`}
         onDragEnter={handleDragEnter}
@@ -546,6 +650,39 @@ export const InputArea: React.FC<InputAreaProps> = ({
                 options={reasoningSelectOptions}
                 onSelect={(next) => onSelectReasoning?.(next)}
               />
+              {onTogglePlanMode ? (
+                <>
+                  <span className="composer__controls-divider" />
+                  <button
+                    type="button"
+                    disabled={!!disabled || !!isUploading}
+                    onClick={onTogglePlanMode}
+                    aria-pressed={planMode}
+                    aria-label={planMode ? '关闭计划模式' : '开启计划模式'}
+                    title={
+                      planMode
+                        ? '计划模式开启 — Agent 会先列任务再执行（点击关闭）'
+                        : '开启计划模式 — Agent 会在多步任务前先列出 task_list'
+                    }
+                    className="composer__inline-trigger"
+                    style={planMode ? { color: '#fafafa' } : undefined}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      style={planMode ? { color: '#fafafa' } : undefined}
+                    >
+                      <rect x="4" y="5" width="16" height="14" rx="2" />
+                      <path d="M8 9h8" />
+                      <path d="M8 13h5" />
+                      <path d="M8 17h3" />
+                    </svg>
+                    <span>计划{planMode ? ' · 开' : ''}</span>
+                  </button>
+                </>
+              ) : null}
             </div>
 
             {isStreaming ? (

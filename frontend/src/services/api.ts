@@ -691,8 +691,17 @@ export const api = {
 
   async patchSession(
     sessionId: string,
-    payload: { active_wiki_kb_id?: string | null },
-  ): Promise<{ session_id: string; active_wiki_kb_id: string | null }> {
+    payload: {
+      active_wiki_kb_id?: string | null;
+      personality?: 'warm' | 'pragmatic' | null;
+      plan_mode?: boolean;
+    },
+  ): Promise<{
+    session_id: string;
+    active_wiki_kb_id: string | null;
+    personality: 'warm' | 'pragmatic' | null;
+    plan_mode: boolean;
+  }> {
     const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -700,6 +709,40 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Failed to patch session: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listSlashSkills(): Promise<{ items: import('../types').SlashSkillSummary[] }> {
+    const res = await fetch(`${API_BASE}/skills/slash`);
+    if (!res.ok) {
+      throw new Error(`Failed to list slash skills: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getSkillBody(name: string): Promise<{ name: string; body: string }> {
+    const res = await fetch(`${API_BASE}/skills/${encodeURIComponent(name)}/body`);
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to load skill body: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async compactSession(sessionId: string): Promise<{
+    session_id: string;
+    previous_offset: number;
+    consolidated_offset: number;
+    messages_compacted: number;
+  }> {
+    const res = await fetch(
+      `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/compact`,
+      { method: 'POST' },
+    );
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to compact session: ${res.statusText}`);
     }
     return res.json();
   },
