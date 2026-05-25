@@ -1,10 +1,12 @@
 """Skills loader for agent capabilities."""
 
+import glob
 import importlib.util
 import json
 import os
 import re
 import shutil
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -16,6 +18,66 @@ def _has_python_package(name: str) -> bool:
         return importlib.util.find_spec(name) is not None
     except (ImportError, ValueError):
         return False
+
+
+@lru_cache(maxsize=128)
+def _has_bin(name: str) -> bool:
+    """Check for a CLI binary, with platform-aware fallbacks for cases
+    where the executable lives inside a GUI install whose author forgot
+    to put it on PATH:
+
+    * macOS — CLIs hidden inside ``/Applications/Foo.app/Contents/...``
+      (LibreOffice's ``soffice`` is the canonical example).
+    * Windows — installers that default to ``C:\\Program Files\\Foo\\``
+      without offering "Add to PATH" (LibreOffice's ``soffice.exe``
+      lives at ``C:\\Program Files\\LibreOffice\\program\\soffice.exe``).
+
+    Cached because SkillsLoader can be re-instantiated several times per
+    turn and we don't want to re-glob install roots each call.
+    """
+    if shutil.which(name):
+        return True
+
+    patterns: tuple[str, ...] = ()
+    if sys.platform == "darwin":
+        home_apps = str(Path.home() / "Applications")
+        patterns = (
+            f"/Applications/*/Contents/MacOS/{name}",
+            f"/Applications/*/Contents/Resources/{name}",
+            f"/Applications/*/Contents/Resources/bin/{name}",
+            f"/Applications/*/Contents/Resources/app/bin/{name}",
+            f"{home_apps}/*/Contents/MacOS/{name}",
+        )
+    elif sys.platform == "win32":
+        exe = name if name.lower().endswith(".exe") else f"{name}.exe"
+        roots: list[str] = []
+        for env_key in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+            value = os.environ.get(env_key)
+            if value:
+                roots.append(value)
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if local_appdata:
+            roots.append(os.path.join(local_appdata, "Programs"))
+        # Skip duplicates that creep in when the 32-bit and 64-bit env
+        # vars resolve to the same directory on a 32-bit-only host.
+        seen: set[str] = set()
+        ordered_roots: list[str] = []
+        for r in roots:
+            if r not in seen:
+                seen.add(r)
+                ordered_roots.append(r)
+        subdirs = ("", "bin", "program")  # "program" = LibreOffice layout
+        patterns = tuple(
+            f"{root}/*/{sub + '/' if sub else ''}{exe}"
+            for root in ordered_roots
+            for sub in subdirs
+        )
+
+    for pattern in patterns:
+        for match in glob.iglob(pattern):
+            if os.access(match, os.X_OK):
+                return True
+    return False
 
 # Default builtin skills directory (relative to this file)
 BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills"
@@ -193,7 +255,7 @@ class SkillsLoader:
         missing = []
         requires = skill_meta.get("requires", {})
         for b in requires.get("bins", []):
-            if not shutil.which(b):
+            if not _has_bin(b):
                 missing.append(f"CLI: {b}")
         for env in requires.get("env", []):
             if not os.environ.get(env):
@@ -273,7 +335,7 @@ class SkillsLoader:
         """
         requires = skill_meta.get("requires", {})
         for b in requires.get("bins", []):
-            if not shutil.which(b):
+            if not _has_bin(b):
                 return False
         for env in requires.get("env", []):
             if not os.environ.get(env):
