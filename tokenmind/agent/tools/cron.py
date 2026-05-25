@@ -114,7 +114,12 @@ class CronTool(Tool):
             except (KeyError, Exception):
                 return f"Error: unknown timezone '{tz}'"
 
-        # Build schedule
+        # Build schedule. Keep one-shot ``at`` jobs in the store after
+        # they run (disabled, with last_status filled in) so the user
+        # can find them in the task center's "已完成" tab. Previously
+        # we set delete_after_run=True for one-shots, which made the
+        # job vanish from disk the moment it executed — the user then
+        # had no way to see "did my reminder fire?".
         delete_after = False
         if every_seconds:
             schedule = CronSchedule(kind="every", every_ms=every_seconds * 1000)
@@ -129,7 +134,6 @@ class CronTool(Tool):
                 return f"Error: invalid ISO datetime format '{at}'. Expected format: YYYY-MM-DDTHH:MM:SS"
             at_ms = int(dt.timestamp() * 1000)
             schedule = CronSchedule(kind="at", at_ms=at_ms)
-            delete_after = True
         else:
             return "Error: either every_seconds, cron_expr, or at is required"
 
