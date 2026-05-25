@@ -360,6 +360,58 @@ class SkillsLoader:
                 result.append(s["name"])
         return result
 
+    @staticmethod
+    def _is_truthy(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ("true", "yes", "1", "on")
+        return False
+
+    def list_slash_skills(self) -> list[dict[str, str]]:
+        """Return skills that opted in to the slash menu via ``slash: true``.
+
+        The flag can live either at the top level of the YAML frontmatter
+        (``slash: true``) or inside the ``tokenmind`` JSON metadata block
+        (``"slash": true``). Only skills that also meet their declared
+        requirements are returned so the UI never shows commands that
+        will fail when dispatched.
+        """
+        out: list[dict[str, str]] = []
+        for s in self.list_skills(filter_unavailable=True):
+            name = s["name"]
+            meta = self.get_skill_metadata(name) or {}
+            tk = self._parse_tokenmind_metadata(meta.get("metadata", ""))
+            if not (self._is_truthy(meta.get("slash")) or self._is_truthy(tk.get("slash"))):
+                continue
+            description = (
+                meta.get("description")
+                or tk.get("description")
+                or self._get_skill_description(name)
+                or name
+            )
+            out.append(
+                {
+                    "name": name,
+                    "description": description,
+                    "source": s["source"],
+                }
+            )
+        out.sort(key=lambda item: (0 if item["source"] == "workspace" else 1, item["name"]))
+        return out
+
+    def load_skill_body(self, name: str) -> str | None:
+        """Return the skill markdown body (frontmatter stripped).
+
+        Used when a slash skill is dispatched: the body is rendered as the
+        user prompt the agent receives, with ``$ARGS`` substituted (caller
+        does the substitution).
+        """
+        content = self.load_skill(name)
+        if content is None:
+            return None
+        return self._strip_frontmatter(content)
+
     def get_skill_metadata(self, name: str) -> dict | None:
         """
         Get metadata from a skill's frontmatter.

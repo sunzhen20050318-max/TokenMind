@@ -411,6 +411,50 @@ class MemoryConsolidator:
                 return True
         return False
 
+    async def force_consolidate(self, session: Session) -> tuple[int, int]:
+        """Force-compact session history regardless of token threshold.
+
+        Triggered by the user-initiated ``/compact`` command. Picks the
+        latest safe user-turn boundary inside the unconsolidated portion
+        and archives everything before it into HISTORY.md/MEMORY.md,
+        advancing ``session.last_consolidated`` so the LLM no longer sees
+        the compacted chunk. The most recent user turn is preserved for
+        conversational continuity.
+
+        Returns ``(previous_offset, new_offset)``. When nothing is
+        eligible (e.g. only one turn left, or no message at all) the two
+        values are equal and the caller should report "nothing to compact".
+        """
+        previous_offset = session.last_consolidated
+        if not session.messages:
+            return (previous_offset, previous_offset)
+
+        lock = self.get_lock(session.key)
+        async with lock:
+            # Pass a huge token budget so pick_consolidation_boundary
+            # returns the *latest* user-msg boundary it can find — i.e.
+            # we consolidate as much as legally possible while keeping
+            # the most recent user turn intact.
+            boundary = self.pick_consolidation_boundary(session, tokens_to_remove=10**12)
+            if boundary is None:
+                return (previous_offset, session.last_consolidated)
+            end_idx = boundary[0]
+            chunk = session.messages[session.last_consolidated:end_idx]
+            if not chunk:
+                return (previous_offset, session.last_consolidated)
+            logger.info(
+                "Force consolidate {}: {} msgs ({} → {})",
+                session.key,
+                len(chunk),
+                session.last_consolidated,
+                end_idx,
+            )
+            if not await self.consolidate_messages(chunk, session=session):
+                return (previous_offset, session.last_consolidated)
+            session.last_consolidated = end_idx
+            self.sessions.save(session)
+            return (previous_offset, end_idx)
+
     async def maybe_consolidate_by_tokens(self, session: Session) -> None:
         """Loop: archive old messages until prompt fits within half the context window."""
         if not session.messages or self.context_window_tokens <= 0:

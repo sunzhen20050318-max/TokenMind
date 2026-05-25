@@ -26,6 +26,7 @@ from tokenmind.agent.skills import BUILTIN_SKILLS_DIR
 from tokenmind.agent.streaming import AgentStreamingHandler
 from tokenmind.agent.subagent import SubagentManager
 from tokenmind.agent.tools.ask_user import AskUserQuestionTool
+from tokenmind.agent.tools.task_list import TaskListTool
 from tokenmind.agent.tools.cron import CronTool
 from tokenmind.agent.tools.deliver_attachment import DeliverAttachmentTool
 from tokenmind.agent.tools.file_state import FileStates
@@ -294,6 +295,7 @@ class AgentLoop:
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(AskUserQuestionTool())
+        self.tools.register(TaskListTool())
         self.tools.register(DeliverAttachmentTool(store=self.attachments, retention=timedelta(days=30)))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
@@ -374,25 +376,61 @@ class AgentLoop:
                 return
             project_id: str | None = None
             sid = session_key or ""
+            session = None
             if sid:
                 try:
                     session = self.sessions.get_or_create(sid)
                     project_id = session.project_id
                 except Exception:
+                    session = None
                     project_id = None
+            input_tokens = int(usage.get("input_tokens", 0) or 0)
+            cached_input_tokens = int(usage.get("cached_input_tokens", 0) or 0)
             self.usage_recorder.record(
                 UsageRecord(
                     session_id=sid or "unknown",
                     provider=self.provider.provider_name,
                     model=model or self.model,
-                    input_tokens=int(usage.get("input_tokens", 0) or 0),
-                    cached_input_tokens=int(usage.get("cached_input_tokens", 0) or 0),
+                    input_tokens=input_tokens,
+                    cached_input_tokens=cached_input_tokens,
                     cache_write_tokens=int(usage.get("cache_write_tokens", 0) or 0),
                     output_tokens=int(usage.get("output_tokens", 0) or 0),
                     reasoning_tokens=int(usage.get("reasoning_tokens", 0) or 0),
                     project_id=project_id,
                 )
             )
+            # Stash the full prompt size (uncached + cached = what the
+            # model actually saw) so the /status card can report an
+            # authoritative number instead of a chars/4 estimate.
+            if session is not None:
+                prompt_tokens = input_tokens + cached_input_tokens
+                if prompt_tokens > 0:
+                    session.record_last_prompt(prompt_tokens, model or self.model)
+                    try:
+                        self.sessions.save(session)
+                    except Exception:
+                        logger.exception("Failed to persist last_prompt_tokens for %s", sid)
+                    # Push to any open WebSocket(s) so the /status card
+                    # reflects the new number without needing a page
+                    # reload. Fire-and-forget — usage telemetry must
+                    # never block chat output.
+                    channel, _, chat_id = sid.partition(":")
+                    self._schedule_background(
+                        self.bus.publish_outbound(
+                            OutboundMessage(
+                                channel=channel or "web",
+                                chat_id=sid,
+                                content="",
+                                metadata={
+                                    "_usage_updated": True,
+                                    "_session_id": sid,
+                                    "_last_prompt_tokens": prompt_tokens,
+                                    "_last_prompt_at": session.last_prompt_at,
+                                    "_last_prompt_model": model or self.model,
+                                },
+                            )
+                        )
+                    )
         except Exception:
             logger.exception("Failed to record token usage")
 
@@ -787,6 +825,118 @@ class AgentLoop:
         finally:
             self._pending_questions.pop(question_id, None)
 
+    async def _publish_task_list(
+        self,
+        *,
+        msg: InboundMessage,
+        tool_id: str,
+        tasks: list[dict],
+    ) -> None:
+        """Push an updated task list to the Web UI.
+
+        Unlike approval / ask_user_question this is fire-and-forget — we
+        don't block the agent waiting on the user; we just snapshot the
+        new state and let execution continue. The stable per-session
+        ``task_list_id`` lets the front-end update the same bubble in
+        place across multiple calls.
+        """
+        normalized: list[dict] = []
+        for item in tasks:
+            if not isinstance(item, dict):
+                continue
+            tid = str(item.get("id") or "").strip()
+            content = str(item.get("content") or "").strip()
+            status = str(item.get("status") or "pending").strip()
+            if not tid or not content:
+                continue
+            if status not in ("pending", "in_progress", "completed", "paused"):
+                status = "pending"
+            normalized.append({"id": tid, "content": content, "status": status})
+
+        # Per-turn id so a user dismiss (× button) doesn't get stuck —
+        # next turn gets a fresh id and the bubble can pop again. We use
+        # the inbound message_id when present (Web channel always sends
+        # one), falling back to a monotonic counter on the session.
+        turn_marker = str((msg.metadata or {}).get("message_id") or "").strip()
+        if not turn_marker:
+            try:
+                _session_for_seq = self.sessions.get_or_create(msg.session_key)
+                seq = int(_session_for_seq.metadata.get("_task_list_seq") or 0) + 1
+                _session_for_seq.metadata["_task_list_seq"] = seq
+                turn_marker = f"seq{seq}"
+            except Exception:
+                turn_marker = f"ts{int(time.time() * 1000)}"
+        task_list_id = f"tl:{msg.session_key}:{turn_marker}"
+        # Persist the latest snapshot on the session so a page refresh
+        # can restore it. We deliberately replace rather than append —
+        # the tool always sends the full list.
+        try:
+            session = self.sessions.get_or_create(msg.session_key)
+            session.metadata["task_list"] = {
+                "id": task_list_id,
+                "tool_id": tool_id,
+                "tasks": normalized,
+            }
+            self.sessions.save(session)
+        except Exception:
+            logger.exception("Failed to persist task_list for session {}", msg.session_key)
+
+        self.audit.record(
+            "tool.task_list.updated",
+            "ok",
+            session_key=msg.session_key,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            actor=msg.sender_id,
+            details={"tool_id": tool_id, "count": len(normalized)},
+        )
+        await self.bus.publish_outbound(OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content="",
+            metadata={
+                "_task_list_update": True,
+                "_task_list_id": task_list_id,
+                "_tool_id": tool_id,
+                "_tasks": normalized,
+            },
+        ))
+
+    async def _pause_active_task_list(self, msg: InboundMessage) -> None:
+        """At the end of a turn, flip any ``in_progress`` tasks to ``paused``.
+
+        Without this, if the agent forgets to issue a final ``task_list``
+        update before its turn ends (or hits ``finish_reason='length'``
+        even after the auto-continuation budget is spent), the UI spinner
+        on the in-progress row keeps spinning forever and the bubble
+        never reaches its auto-collapse state. The paused snapshot lets
+        the front-end stop the spinner and surface a "stopped" hint
+        while preserving the user's ability to manually dismiss.
+        """
+        try:
+            session = self.sessions.get_or_create(msg.session_key)
+        except Exception:
+            return
+        tl = session.metadata.get("task_list")
+        if not isinstance(tl, dict):
+            return
+        tasks = tl.get("tasks") or []
+        if not any(isinstance(t, dict) and t.get("status") == "in_progress" for t in tasks):
+            return
+        paused_tasks: list[dict] = []
+        for t in tasks:
+            if not isinstance(t, dict):
+                continue
+            patched = dict(t)
+            if patched.get("status") == "in_progress":
+                patched["status"] = "paused"
+            paused_tasks.append(patched)
+        await self._publish_task_list(
+            msg=msg,
+            tool_id=str(tl.get("tool_id") or ""),
+            tasks=paused_tasks,
+        )
+
     async def _handle_user_question_response(self, msg: InboundMessage) -> None:
         """Resolve a pending ``ask_user_question`` reply from the frontend."""
         question_id = str((msg.metadata or {}).get("question_id") or "").strip()
@@ -839,6 +989,11 @@ class AgentLoop:
         final_content = None
         tools_used: list[str] = []
         repeated_tool_errors: dict[str, int] = {}
+        # Count how many times we've auto-continued after a max_tokens
+        # truncation in this turn. Bounded so the loop can't burn through
+        # API budget if the model keeps emitting infinitely.
+        length_continuations = 0
+        _MAX_LENGTH_CONTINUATIONS = 2
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -972,7 +1127,19 @@ class AgentLoop:
                             continue
                     logger.info(f"[TOOL] {tool_call.name} START (id={tool_call.id})")
                     start_time = time.monotonic()
-                    if tool_call.name == "ask_user_question" and msg is not None and msg.channel == "web":
+                    if tool_call.name == "task_list" and msg is not None and msg.channel == "web":
+                        tasks = (tool_call.arguments or {}).get("tasks") or []
+                        if not isinstance(tasks, list) or not tasks:
+                            result = "Error: task_list requires a non-empty 'tasks' array."
+                        else:
+                            await self._publish_task_list(
+                                msg=msg,
+                                tool_id=tool_call.id,
+                                tasks=tasks,
+                            )
+                            completed = sum(1 for t in tasks if isinstance(t, dict) and t.get("status") == "completed")
+                            result = f"Task list updated: {completed}/{len(tasks)} completed."
+                    elif tool_call.name == "ask_user_question" and msg is not None and msg.channel == "web":
                         # Bypass tools.execute — the loop owns the round-trip
                         # so it has the InboundMessage context (session/chat)
                         # needed to deliver the question over WS.
@@ -1075,6 +1242,28 @@ class AgentLoop:
                     messages, clean, reasoning_content=response.reasoning_content,
                     thinking_blocks=response.thinking_blocks,
                 )
+                # The model hit max_tokens mid-content — ask it to pick
+                # up where it left off rather than letting the user see
+                # a truncated half-sentence. Bounded retry so a buggy
+                # provider can't burn budget indefinitely.
+                if (
+                    response.finish_reason == "length"
+                    and length_continuations < _MAX_LENGTH_CONTINUATIONS
+                    and clean
+                ):
+                    length_continuations += 1
+                    logger.info(
+                        "LLM hit max_tokens; auto-continuing ({}/{})",
+                        length_continuations,
+                        _MAX_LENGTH_CONTINUATIONS,
+                    )
+                    messages.append({
+                        "role": "user",
+                        "content": "[请从你刚才被截断的地方接着说完，不要重新开始]",
+                    })
+                    if on_progress:
+                        await on_progress("（上一段回答被截断，自动续写中…）")
+                    continue
                 final_content = clean
                 break
 
@@ -1922,6 +2111,8 @@ class AgentLoop:
                 current_role=current_role,
                 active_wiki=self._build_active_wiki_arg(),
                 project_id=session.metadata.get("project_id"),
+                personality=session.personality,
+                plan_mode=session.plan_mode,
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages, msg=msg)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -2010,6 +2201,8 @@ class AgentLoop:
             active_wiki=self._build_active_wiki_arg(),
             channel=msg.channel, chat_id=msg.chat_id,
             project_id=session.metadata.get("project_id"),
+            personality=session.personality,
+            plan_mode=session.plan_mode,
         )
         raw_timeline_events: list[dict[str, Any]] = []
 
@@ -2074,6 +2267,10 @@ class AgentLoop:
         final_content, tools_used, all_msgs = await self._run_agent_loop(
             initial_messages, msg=msg, on_progress=on_progress or _bus_progress,
         )
+        # Turn over — if the model walked away with an in-progress task
+        # still marked as such, flip it to paused so the UI stops the
+        # spinner instead of looking like work is ongoing.
+        await self._pause_active_task_list(msg)
         assistant_attachments: list[dict[str, Any]] = []
         if attachment_tool := self.tools.get("deliver_attachment"):
             if isinstance(attachment_tool, DeliverAttachmentTool):

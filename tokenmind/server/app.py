@@ -1413,9 +1413,60 @@ class ChatService:
     async def get_history(self, session_id: str) -> dict:
         """Get chat history for a session."""
         session = self.session_manager.get_or_create(session_id)
+        compaction_threshold = int(getattr(self.agent_loop, "context_window_tokens", 0) or 0)
         return {
             "messages": [self._serialize_history_message_for_ui(message) for message in session.messages] if session else [],
             "timeline_events": session.timeline_events if session else [],
+            "consolidated_offset": session.last_consolidated if session else 0,
+            "personality": session.personality if session else None,
+            "plan_mode": session.plan_mode if session else False,
+            "compaction_threshold_tokens": compaction_threshold,
+            "last_prompt_tokens": session.last_prompt_tokens if session else None,
+            "last_prompt_at": session.last_prompt_at if session else None,
+            "last_prompt_model": session.last_prompt_model if session else None,
+        }
+
+    async def compact_session(self, session_id: str) -> dict:
+        """Force-compact the session into HISTORY.md/MEMORY.md.
+
+        Returns the new ``consolidated_offset`` so the frontend can fold
+        the archived portion of the chat. Also publishes a
+        ``_session_compacted`` outbound message so other WS subscribers
+        (e.g. additional tabs) re-render.
+        """
+        from tokenmind.bus.events import OutboundMessage
+
+        consolidator = getattr(self.agent_loop, "memory_consolidator", None)
+        if consolidator is None:
+            raise HTTPException(status_code=503, detail="memory consolidator unavailable")
+        session = self.session_manager.get_or_create(session_id)
+        previous_offset, new_offset = await consolidator.force_consolidate(session)
+        messages_compacted = max(0, new_offset - previous_offset)
+        channel, chat_id = (
+            session_id.split(":", 1) if ":" in session_id else ("web", session_id)
+        )
+        if messages_compacted > 0:
+            try:
+                await self.bus.publish_outbound(
+                    OutboundMessage(
+                        channel=channel,
+                        chat_id=session_id,
+                        content="",
+                        metadata={
+                            "_session_compacted": True,
+                            "_session_id": session_id,
+                            "_consolidated_offset": new_offset,
+                            "_messages_compacted": messages_compacted,
+                        },
+                    )
+                )
+            except Exception:
+                logger.exception("Failed to publish session_compacted frame for %s", session_id)
+        return {
+            "session_id": session_id,
+            "previous_offset": previous_offset,
+            "consolidated_offset": new_offset,
+            "messages_compacted": messages_compacted,
         }
 
     def _serialize_history_message_for_ui(self, message: dict[str, Any]) -> dict[str, Any]:
@@ -1628,8 +1679,13 @@ class ChatService:
           - ``active_wiki_kb_id``: must reference a wiki-type KB (or ``None``
             to clear). When switching between active wikis the previous KB's
             name is recorded in ``session.metadata['_previous_wiki_kb_name']``.
+          - ``personality``: ``"warm"`` / ``"pragmatic"`` / ``None``. Drives
+            the reply-style section ContextBuilder injects into the system prompt.
+          - ``plan_mode``: ``True`` / ``False`` / ``None``. When enabled, the agent
+            must call ``task_list`` before multi-step work.
         """
         session = self.session_manager.get_or_create(session_id)
+        dirty = False
         if "active_wiki_kb_id" in updates:
             new_kb_id = updates["active_wiki_kb_id"]
             if new_kb_id is not None:
@@ -1644,10 +1700,23 @@ class ChatService:
                     except KeyError:
                         pass
             session.set_active_wiki_kb_id(new_kb_id)
+            dirty = True
+        if "personality" in updates:
+            value = updates["personality"]
+            if value is not None and value not in ("warm", "pragmatic"):
+                raise ValueError("personality must be 'warm', 'pragmatic', or null")
+            session.set_personality(value)
+            dirty = True
+        if "plan_mode" in updates:
+            session.set_plan_mode(bool(updates["plan_mode"]))
+            dirty = True
+        if dirty:
             self.session_manager.save(session)
         return {
             "session_id": session_id,
             "active_wiki_kb_id": session.active_wiki_kb_id,
+            "personality": session.personality,
+            "plan_mode": session.plan_mode,
         }
 
     def ensure_session(self, session_id: str, title: str | None = None) -> dict:

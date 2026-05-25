@@ -50,10 +50,26 @@ class RenameSessionResponse(BaseModel):
 
 
 class SessionPatchPayload(BaseModel):
-    """Patch payload for partially updating a session."""
+    """Patch payload for partially updating a session.
+
+    All fields are optional; ``model_dump(exclude_unset=True)`` makes
+    omission distinguishable from explicit ``None`` so callers can
+    selectively clear preferences (e.g. ``personality: null``).
+    """
 
     active_wiki_kb_id: str | None = None
-    # Add more patchable fields here later if needed.
+    # Per-session slash-command preferences:
+    personality: str | None = None  # "warm" | "pragmatic" | None (clear)
+    plan_mode: bool | None = None    # True / False / None (no change)
+
+
+class CompactSessionResponse(BaseModel):
+    """Response model for the /compact slash command."""
+
+    session_id: str
+    previous_offset: int
+    consolidated_offset: int
+    messages_compacted: int
 
 
 @router.get("", response_model=SessionListResponse)
@@ -131,6 +147,26 @@ async def rename_session(
         return RenameSessionResponse(**result)
     except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/{session_id}/compact", response_model=CompactSessionResponse)
+async def compact_session(
+    session_id: str,
+    service: Any = Depends(get_chat_service),
+) -> CompactSessionResponse:
+    """Force-compact session history into HISTORY.md/MEMORY.md.
+
+    Triggered by the user-initiated ``/compact`` slash command. Returns
+    the new ``consolidated_offset`` so the frontend can fold the
+    archived portion of the chat.
+    """
+    try:
+        result = await service.compact_session(session_id)
+        return CompactSessionResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.patch("/{session_id}")

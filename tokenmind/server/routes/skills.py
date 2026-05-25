@@ -55,6 +55,23 @@ class SkillToggleRequest(BaseModel):
     enabled: bool = Field(..., description="Whether the skill should be enabled")
 
 
+class SlashSkillSummary(BaseModel):
+    """Skill exposed as a ``/<name>`` slash command in the chat composer."""
+
+    name: str
+    description: str
+    source: str
+
+
+class SlashSkillListResponse(BaseModel):
+    items: list[SlashSkillSummary]
+
+
+class SkillBodyResponse(BaseModel):
+    name: str
+    body: str
+
+
 def _loader() -> SkillsLoader:
     config = load_config()
     workspace = Path(config.agents.defaults.workspace).expanduser()
@@ -112,6 +129,45 @@ async def list_skills() -> SkillListResponse:
     disabled = set(config.skills.disabled)
     loader = _loader()
     return SkillListResponse(items=_summaries(loader, disabled))
+
+
+@router.get("/slash", response_model=SlashSkillListResponse)
+async def list_slash_skills() -> SlashSkillListResponse:
+    """Skills opted-in to the slash menu (``slash: true`` frontmatter).
+
+    Slash skills are user-triggered shortcuts: typing ``/<name>`` in the
+    composer dispatches the skill's body as the user prompt (with optional
+    ``$ARGS`` substitution). Disabled skills and skills whose
+    ``requires:`` are unmet are excluded so the menu never offers broken
+    commands.
+    """
+    loader = _loader()
+    items = [
+        SlashSkillSummary(
+            name=item["name"],
+            description=item["description"],
+            source=item["source"],
+        )
+        for item in loader.list_slash_skills()
+    ]
+    return SlashSkillListResponse(items=items)
+
+
+@router.get("/{name}/body", response_model=SkillBodyResponse)
+async def get_skill_body(name: str) -> SkillBodyResponse:
+    """Return the markdown body of a skill (frontmatter stripped).
+
+    The frontend uses this when dispatching ``/<skill-name>`` so it can
+    perform ``$ARGS`` substitution client-side and ship the rendered
+    prompt as a normal user message.
+    """
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Skill name cannot be empty")
+    loader = _loader()
+    body = loader.load_skill_body(name)
+    if body is None:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+    return SkillBodyResponse(name=name, body=body)
 
 
 @router.get("/suggestions", response_model=SkillSuggestionListResponse)

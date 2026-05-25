@@ -55,12 +55,18 @@ class ContextBuilder:
         self,
         skill_names: list[str] | None = None,
         project_id: str | None = None,
+        personality: str | None = None,
+        plan_mode: bool = False,
     ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills.
 
         When ``project_id`` is provided, memory is loaded from that
         project's isolated store rather than the global one — projects
         and the global workspace have independent ``MEMORY.md``.
+
+        ``personality`` (one of ``warm`` / ``pragmatic``) and
+        ``plan_mode`` come from per-session slash-command preferences
+        and inject extra constraints into the prompt.
         """
         # Refresh the skills loader so Settings toggles take effect on the next turn
         # without needing an agent restart. load_config() is a small JSON read.
@@ -101,7 +107,58 @@ Skills with available="false" need dependencies installed first - you can try in
 
         parts.append(self._get_memory_file_search_policy())
 
+        personality_block = self._get_personality_block(personality)
+        if personality_block:
+            parts.append(personality_block)
+
+        plan_mode_block = self._get_plan_mode_block(plan_mode)
+        if plan_mode_block:
+            parts.append(plan_mode_block)
+
         return "\n\n---\n\n".join(parts)
+
+    @staticmethod
+    def _get_personality_block(personality: str | None) -> str | None:
+        """Return the personality/voice constraint, if the user picked one.
+
+        ``warm`` -> empathetic, willing to explain, light small talk
+        ``pragmatic`` -> terse, conclusion-first, no filler
+        Anything else -> let the model use its default voice.
+        """
+        if personality == "warm":
+            return (
+                "# Reply Style — Warm\n\n"
+                "Respond with a warm, empathetic tone. You may briefly acknowledge what "
+                "the user is feeling, explain your reasoning when it adds clarity, and use "
+                "gentle phrasing. Do not pad responses — warmth means care, not verbosity. "
+                "It is fine to spend a few extra tokens making the answer feel human."
+            )
+        if personality == "pragmatic":
+            return (
+                "# Reply Style — Pragmatic\n\n"
+                "Be terse and direct. Lead with the conclusion or the action. Skip pleasantries, "
+                "skip restating the question, skip narrating your process. If the answer is one "
+                "line, give one line. Do not soften with hedges unless uncertainty is genuinely "
+                "the point."
+            )
+        return None
+
+    @staticmethod
+    def _get_plan_mode_block(plan_mode: bool) -> str | None:
+        """Return the plan-mode hard constraint when the user toggled it on."""
+        if not plan_mode:
+            return None
+        return (
+            "# Plan Mode (Required)\n\n"
+            "This session is in **plan mode**. For any non-trivial request you receive:\n"
+            "1. First call the ``task_list`` tool with 3-10 concrete steps describing how "
+            "you intend to fulfil the request.\n"
+            "2. Mark steps ``in_progress`` as you work them, and ``completed`` immediately "
+            "after each finishes.\n"
+            "3. Do not skip ``task_list`` and dive straight into tools for multi-step tasks.\n\n"
+            "Exemptions: trivial single-shot questions (greeting, a single fact lookup, "
+            "answering with no tool use) may skip the task list entirely. Use judgement."
+        )
 
     def _get_identity(self) -> str:
         """Get the core identity section."""
@@ -339,6 +396,8 @@ If the question is fully answerable from the current conversation, do not search
         chat_id: str | None = None,
         current_role: str = "user",
         project_id: str | None = None,
+        personality: str | None = None,
+        plan_mode: bool = False,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         sanitized_history: list[dict[str, Any]] = []
@@ -383,7 +442,15 @@ If the question is fully answerable from the current conversation, do not search
             user_message["attachments"] = attachments
 
         return [
-            {"role": "system", "content": self.build_system_prompt(skill_names, project_id=project_id)},
+            {
+                "role": "system",
+                "content": self.build_system_prompt(
+                    skill_names,
+                    project_id=project_id,
+                    personality=personality,
+                    plan_mode=plan_mode,
+                ),
+            },
             *sanitized_history,
             user_message,
         ]

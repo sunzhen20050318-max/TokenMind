@@ -41,6 +41,17 @@ class ChatHistoryResponse(BaseModel):
     session_id: str
     messages: list[dict[str, Any]]
     timeline_events: list[dict[str, Any]] = []
+    consolidated_offset: int = 0
+    personality: str | None = None
+    plan_mode: bool = False
+    # TokenMind's *soft* threshold for auto /compact, not the model's
+    # hard context limit. Sourced from ``agents.defaults.context_window_tokens``.
+    compaction_threshold_tokens: int = 0
+    # The actual prompt-token count from the most recent LLM call
+    # (input + cached input). ``None`` until the first call lands.
+    last_prompt_tokens: int | None = None
+    last_prompt_at: str | None = None
+    last_prompt_model: str | None = None
 
 
 class UploadFilesResponse(BaseModel):
@@ -120,6 +131,13 @@ async def get_chat_history(
             session_id=session_id,
             messages=history.get("messages", []),
             timeline_events=history.get("timeline_events", []),
+            consolidated_offset=history.get("consolidated_offset", 0),
+            personality=history.get("personality"),
+            plan_mode=bool(history.get("plan_mode", False)),
+            compaction_threshold_tokens=int(history.get("compaction_threshold_tokens", 0)),
+            last_prompt_tokens=history.get("last_prompt_tokens"),
+            last_prompt_at=history.get("last_prompt_at"),
+            last_prompt_model=history.get("last_prompt_model"),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -73,6 +73,75 @@ class Session:
             self.metadata.pop("active_wiki_kb_id", None)
         self.updated_at = datetime.now()
 
+    # ── Per-session preferences set via slash commands ───────────────
+    # All optional; absence means "use global default". Kept in
+    # ``metadata`` so they round-trip through the existing JSONL
+    # persistence without schema migrations.
+
+    @property
+    def personality(self) -> str | None:
+        """Reply style: ``warm`` (more empathetic, costlier) or
+        ``pragmatic`` (terse). ``None`` falls back to the system default."""
+        value = self.metadata.get("personality")
+        if isinstance(value, str) and value in ("warm", "pragmatic"):
+            return value
+        return None
+
+    def set_personality(self, personality: str | None) -> None:
+        if personality in ("warm", "pragmatic"):
+            self.metadata["personality"] = personality
+        else:
+            self.metadata.pop("personality", None)
+        self.updated_at = datetime.now()
+
+    @property
+    def plan_mode(self) -> bool:
+        """When True, the agent is required to call ``task_list`` before
+        taking action. Defaults to off so existing sessions behave the
+        same as before this feature."""
+        return bool(self.metadata.get("plan_mode", False))
+
+    def set_plan_mode(self, enabled: bool) -> None:
+        if enabled:
+            self.metadata["plan_mode"] = True
+        else:
+            self.metadata.pop("plan_mode", None)
+        self.updated_at = datetime.now()
+
+    # ── Most recent LLM call usage (populated by AgentLoop._record_usage) ──
+    # Used by the /status card to show a *precise* prompt-size figure —
+    # this is the actual number the API counted, not the frontend's
+    # chars/4 estimate. Absence means "no LLM call has completed yet".
+
+    @property
+    def last_prompt_tokens(self) -> int | None:
+        value = self.metadata.get("_last_prompt_tokens")
+        return int(value) if isinstance(value, (int, float)) and value > 0 else None
+
+    @property
+    def last_prompt_at(self) -> str | None:
+        value = self.metadata.get("_last_prompt_at")
+        return value if isinstance(value, str) and value else None
+
+    @property
+    def last_prompt_model(self) -> str | None:
+        value = self.metadata.get("_last_prompt_model")
+        return value if isinstance(value, str) and value else None
+
+    def record_last_prompt(self, tokens: int, model: str | None) -> None:
+        """Cache the prompt-token count from the most recent LLM call.
+
+        Called from ``AgentLoop._record_usage`` so the /status card has an
+        authoritative number to show. We don't bump ``updated_at`` for
+        this — it's metadata bookkeeping, not user-visible activity.
+        """
+        if tokens <= 0:
+            return
+        self.metadata["_last_prompt_tokens"] = int(tokens)
+        self.metadata["_last_prompt_at"] = datetime.now().isoformat()
+        if model:
+            self.metadata["_last_prompt_model"] = model
+
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
         msg = {

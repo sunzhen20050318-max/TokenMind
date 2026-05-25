@@ -97,12 +97,52 @@ class WebChannel(BaseChannel):
             )
             return
 
+        if msg.metadata.get("_task_list_update"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "task_list_update",
+                    "task_list_id": msg.metadata.get("_task_list_id"),
+                    "tool_id": msg.metadata.get("_tool_id"),
+                    "tasks": msg.metadata.get("_tasks") or [],
+                    "channel": msg.channel,
+                },
+            )
+            return
+
         if msg.metadata.get("_approval_error"):
             await self._ws_manager.send_to_session(
                 session_key=msg.chat_id,
                 message={
                     "type": "error",
                     "content": msg.content,
+                    "channel": msg.channel,
+                },
+            )
+            return
+
+        if msg.metadata.get("_session_compacted"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "session_compacted",
+                    "session_id": msg.metadata.get("_session_id") or msg.chat_id,
+                    "consolidated_offset": msg.metadata.get("_consolidated_offset", 0),
+                    "messages_compacted": msg.metadata.get("_messages_compacted", 0),
+                    "channel": msg.channel,
+                },
+            )
+            return
+
+        if msg.metadata.get("_usage_updated"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "usage_updated",
+                    "session_id": msg.metadata.get("_session_id") or msg.chat_id,
+                    "last_prompt_tokens": msg.metadata.get("_last_prompt_tokens"),
+                    "last_prompt_at": msg.metadata.get("_last_prompt_at"),
+                    "last_prompt_model": msg.metadata.get("_last_prompt_model"),
                     "channel": msg.channel,
                 },
             )
