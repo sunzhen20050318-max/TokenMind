@@ -5,6 +5,7 @@ interface SessionRestoreStateOptions {
     | 'chat'
     | 'knowledge'
     | 'assets'
+    | 'browser'
     | 'music'
     | 'voice-clone'
     | 'tts'

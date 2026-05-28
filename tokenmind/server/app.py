@@ -46,6 +46,7 @@ from tokenmind.server.frontend import (
 )
 from tokenmind.server.routes import (
     assets_router,
+    browser_router,
     chat_router,
     config_router,
     creative_router,
@@ -1788,6 +1789,11 @@ def create_app(
     set_cron_service(getattr(agent_loop, "cron_service", None))
     set_usage_recorder(getattr(agent_loop, "usage_recorder", None))
 
+    from tokenmind.server.dependencies import set_opencli_service, set_site_registry
+
+    set_opencli_service(getattr(agent_loop, "opencli_service", None))
+    set_site_registry(getattr(agent_loop, "site_registry", None))
+
     # Create FastAPI app
     app = FastAPI(
         title="TokenMind Web UI",
@@ -1850,6 +1856,7 @@ def create_app(
 
     # Include routers
     app.include_router(assets_router)
+    app.include_router(browser_router)
     app.include_router(chat_router)
     app.include_router(config_router)
     app.include_router(creative_router)

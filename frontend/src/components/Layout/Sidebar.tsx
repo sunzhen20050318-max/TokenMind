@@ -16,6 +16,7 @@ export type SidebarMainView =
   | 'chat'
   | 'knowledge'
   | 'assets'
+  | 'browser'
   | 'music'
   | 'voice-clone'
   | 'tts'
@@ -88,6 +89,7 @@ function SidebarIcon({
     | 'chats'
     | 'knowledge'
     | 'assets'
+    | 'browser'
     | 'music'
     | 'voice'
     | 'video'
@@ -149,6 +151,18 @@ function SidebarIcon({
         <rect x="13.5" y="3.5" width="7" height="7" rx="1.4" />
         <rect x="3.5" y="13.5" width="7" height="7" rx="1.4" />
         <rect x="13.5" y="13.5" width="7" height="7" rx="1.4" />
+      </svg>
+    );
+  }
+
+  if (id === 'browser') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <line x1="3" y1="9" x2="21" y2="9" />
+        <circle cx="6.2" cy="6.5" r="0.6" fill="currentColor" />
+        <circle cx="8.4" cy="6.5" r="0.6" fill="currentColor" />
+        <circle cx="10.6" cy="6.5" r="0.6" fill="currentColor" />
       </svg>
     );
   }
@@ -797,6 +811,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>资产库</span>
             </button>
 
+            <button
+              className={`shell-sidebar__nav-item ${mainView === 'browser' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onSelectMainView('browser')}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="browser" />
+              </span>
+              <span>浏览器</span>
+            </button>
+
             <div className={`shell-sidebar__project-shell ${projectsExpanded ? 'is-open' : ''} ${isProjectViewActive ? 'is-active' : ''}`}>
               <button
                 className={`shell-sidebar__group-toggle ${projectsExpanded ? 'is-open' : ''} ${
@@ -1090,6 +1115,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="shell-sidebar__icon">
                 <SidebarIcon id="assets" />
+              </span>
+            </button>
+
+            <button
+              className={`shell-sidebar__collapsed-button ${mainView === 'browser' ? 'is-active' : ''}`}
+              type="button"
+              title="浏览器"
+              onClick={() => {
+                onSelectMainView('browser');
+                setSessionMenuOpen(false);
+              }}
+            >
+              <span className="shell-sidebar__icon">
+                <SidebarIcon id="browser" />
               </span>
             </button>
 

@@ -81,6 +81,34 @@ def get_usage_recorder() -> Any:
     return _usage_recorder
 
 
+_opencli_service: Any = None
+
+
+def set_opencli_service(service: Any) -> None:
+    """Set the global OpenCLI service instance."""
+    global _opencli_service
+    _opencli_service = service
+
+
+def get_opencli_service() -> Any:
+    """Get the global OpenCLI service instance."""
+    return _opencli_service
+
+
+_site_registry: Any = None
+
+
+def set_site_registry(registry: Any) -> None:
+    """Set the global SiteRegistry instance (user-curated login state)."""
+    global _site_registry
+    _site_registry = registry
+
+
+def get_site_registry() -> Any:
+    """Get the global SiteRegistry instance."""
+    return _site_registry
+
+
 _app: Any = None
 
 

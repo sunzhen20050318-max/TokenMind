@@ -63,6 +63,18 @@ import type {
   WikiPageListResponse,
 } from '../types/knowledge';
 import type { UsageAggregateResponse, UsageQuery } from '../types/usage';
+import type {
+  BrowserInstallResponse,
+  BrowserProfileListResponse,
+  BrowserRegistryAddRequest,
+  BrowserRegistryEntry,
+  BrowserRegistryListResponse,
+  BrowserRegistryUpdateRequest,
+  BrowserRunRequest,
+  BrowserRunResponse,
+  BrowserSiteListResponse,
+  BrowserStatusResponse,
+} from '../types/browser';
 
 const API_BASE = '/api';
 
@@ -1149,6 +1161,135 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Failed to update session knowledge links: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async getBrowserStatus(refresh = false): Promise<BrowserStatusResponse> {
+    const res = await fetch(`${API_BASE}/browser/status${refresh ? '?refresh=true' : ''}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load browser status: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listBrowserSites(refresh = false): Promise<BrowserSiteListResponse> {
+    const res = await fetch(`${API_BASE}/browser/sites${refresh ? '?refresh=true' : ''}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load browser sites: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listBrowserProfiles(refresh = false): Promise<BrowserProfileListResponse> {
+    const res = await fetch(`${API_BASE}/browser/profiles${refresh ? '?refresh=true' : ''}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load browser profiles: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async setBrowserProfile(aliasOrId: string): Promise<BrowserRunResponse> {
+    const res = await fetch(`${API_BASE}/browser/profiles/use`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias_or_id: aliasOrId }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to switch profile: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async runBrowserCommand(payload: BrowserRunRequest): Promise<BrowserRunResponse> {
+    const res = await fetch(`${API_BASE}/browser/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      let detail: unknown = res.statusText;
+      try {
+        const body = await res.json();
+        detail = body.detail ?? body;
+      } catch {
+        // keep res.statusText
+      }
+      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    }
+    return res.json();
+  },
+
+  async installBrowserCli(): Promise<BrowserInstallResponse> {
+    const res = await fetch(`${API_BASE}/browser/install`, { method: 'POST' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(typeof body.detail === 'string' ? body.detail : `安装失败 (${res.status})`);
+    }
+    return res.json();
+  },
+
+  async listSiteRegistry(): Promise<BrowserRegistryListResponse> {
+    const res = await fetch(`${API_BASE}/browser/sites_registry`);
+    if (!res.ok) {
+      throw new Error(`Failed to load site registry: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async addSiteRegistry(payload: BrowserRegistryAddRequest): Promise<BrowserRegistryEntry> {
+    const res = await fetch(`${API_BASE}/browser/sites_registry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(typeof body.detail === 'string' ? body.detail : `添加站点失败 (${res.status})`);
+    }
+    return res.json();
+  },
+
+  async updateSiteRegistry(
+    id: string,
+    payload: BrowserRegistryUpdateRequest
+  ): Promise<BrowserRegistryEntry> {
+    const res = await fetch(`${API_BASE}/browser/sites_registry/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(typeof body.detail === 'string' ? body.detail : `更新站点失败 (${res.status})`);
+    }
+    return res.json();
+  },
+
+  async removeSiteRegistry(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/browser/sites_registry/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok && res.status !== 204) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(typeof body.detail === 'string' ? body.detail : `删除站点失败 (${res.status})`);
+    }
+  },
+
+  async openSiteForLogin(id: string): Promise<BrowserRunResponse> {
+    const res = await fetch(`${API_BASE}/browser/sites_registry/${encodeURIComponent(id)}/open`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = body.detail;
+      throw new Error(
+        typeof detail === 'string'
+          ? detail
+          : detail && typeof detail.message === 'string'
+            ? detail.message
+            : `打开站点失败 (${res.status})`
+      );
     }
     return res.json();
   },

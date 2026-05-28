@@ -8,6 +8,7 @@ import { UpdateModal } from './components/Updates/UpdateModal';
 import { Sidebar } from './components/Layout/Sidebar';
 import { ChatWindow } from './components/Chat/ChatWindow';
 import { createProjectConversation } from './components/Projects/projectEntryFlow';
+import { BrowserPage } from './pages/Browser';
 import { KnowledgePage } from './pages/Knowledge';
 import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
@@ -154,6 +155,7 @@ const App: React.FC = () => {
     | 'chat'
     | 'knowledge'
     | 'assets'
+    | 'browser'
     | 'music'
     | 'voice-clone'
     | 'tts'
@@ -392,6 +394,15 @@ const App: React.FC = () => {
               />
             ) : mainView === 'knowledge' ? (
               <KnowledgePage isActive />
+            ) : mainView === 'browser' ? (
+              <BrowserPage
+                onStartChat={(prompt) => {
+                  const sessionId = `web:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                  queuePendingSessionStarter(sessionId, prompt);
+                  setCurrentSession(sessionId);
+                  setMainView('chat');
+                }}
+              />
             ) : mainView === 'music' ? (
               <MusicPage
                 capability={creativeCapabilities?.music}
@@ -441,6 +452,7 @@ const App: React.FC = () => {
               <ChatWindow
                 sessionId={currentSession}
                 onNavigateToSettings={() => setMainView('settings')}
+                onNavigateToBrowser={() => setMainView('browser')}
               />
             ) : (
               <div className="app-main__empty">点击左侧“新建对话”开始新的会话</div>
