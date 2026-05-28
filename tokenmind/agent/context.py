@@ -10,6 +10,7 @@ from typing import Any
 
 from tokenmind.agent.memory import MemoryStore
 from tokenmind.agent.skills import SkillsLoader
+from tokenmind.config.schema import MemoryConfig
 from tokenmind.utils.helpers import build_assistant_message, current_time_str, detect_image_mime
 
 
@@ -27,12 +28,18 @@ class ContextBuilder:
     _ACTIVE_WIKI_TAG = "[Active Wiki Knowledge Base]"
     _ACTIVE_WIKI_END_TAG = "[/Active Wiki Knowledge Base]"
 
-    def __init__(self, workspace: Path, disabled_skills: list[str] | None = None):
+    def __init__(
+        self,
+        workspace: Path,
+        disabled_skills: list[str] | None = None,
+        memory_config: MemoryConfig | None = None,
+    ):
         self.workspace = workspace
+        self.memory_config = memory_config or MemoryConfig()
         # Default (global) memory store — used for non-project sessions and
         # as a fallback. Project sessions get their own per-project store
         # built on-demand inside ``build_system_prompt``.
-        self.memory = MemoryStore(workspace)
+        self.memory = MemoryStore(workspace, memory_config=self.memory_config)
         self.skills = SkillsLoader(workspace, disabled_skills=disabled_skills)
         # Cache project-scoped stores so we don't recreate them every turn.
         self._project_memory_stores: dict[str, MemoryStore] = {}
@@ -47,7 +54,9 @@ class ContextBuilder:
             return self.memory
         store = self._project_memory_stores.get(project_id)
         if store is None:
-            store = MemoryStore(self.workspace, project_id=project_id)
+            store = MemoryStore(
+                self.workspace, project_id=project_id, memory_config=self.memory_config
+            )
             self._project_memory_stores[project_id] = store
         return store
 

@@ -97,6 +97,21 @@ def build_assistant_message(
     return msg
 
 
+def estimate_text_tokens(text: str) -> int:
+    """Estimate token count of a plain string with tiktoken (cl100k_base).
+
+    Falls back to a chars/4 heuristic if tiktoken is unavailable. Used by the
+    memory layer to enforce summary / purification size caps.
+    """
+    if not text:
+        return 0
+    try:
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text, disallowed_special=()))
+    except Exception:
+        return max(1, len(text) // 4)
+
+
 def estimate_prompt_tokens(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,

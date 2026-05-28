@@ -191,6 +191,22 @@ class TemplatesConfig(Base):
     memory_prompt: str | None = None
 
 
+class MemoryConfig(Base):
+    """Long-term memory summary + purification settings.
+
+    MEMORY.md is the append-only source of truth; it is NOT injected into the
+    system prompt directly. Instead the consolidation pass also emits a
+    compressed summary (capped at ``summary_max_tokens``) and that summary is
+    what every turn sees. MEMORY.md itself is periodically purified back under
+    ``purify_max_tokens`` so it never grows without bound.
+    """
+
+    summary_enabled: bool = True
+    summary_max_tokens: int = 4000  # cap for the injected long-term summary
+    purify_max_tokens: int = 10000  # MEMORY.md is compressed back under this
+    purify_interval_days: int = 7  # min days between MEMORY.md purifications (<=0 disables)
+
+
 class MCPServerConfig(Base):
     """MCP server connection configuration (stdio or HTTP)."""
 
@@ -239,6 +255,7 @@ class Config(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
 
     @property
