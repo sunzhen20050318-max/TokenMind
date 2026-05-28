@@ -1,3 +1,5 @@
+import type { KnowledgeBase, KnowledgeDocument } from './knowledge';
+
 export interface Attachment {
   id?: string;
   name: string;
@@ -59,11 +61,15 @@ export interface Project {
   created_at: string;
   updated_at: string;
   session_count: number;
+  knowledge_base_id?: string | null;
+  instructions?: string;
 }
 
 export interface ProjectDetailResponse {
   project: Project;
   sessions: Session[];
+  knowledge_base?: KnowledgeBase | null;
+  documents?: KnowledgeDocument[];
 }
 
 export interface ChatHistoryResponse {

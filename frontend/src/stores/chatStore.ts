@@ -116,6 +116,15 @@ export interface SessionSlice {
    */
   pendingMessages: PendingChatMessage[];
   sessionExecTrusted: boolean;
+  /**
+   * Token-usage snapshot from this session's most recent LLM call, shown in
+   * /status. Per-session: snapshotted on navigation away and restored on
+   * return so a fresh session doesn't inherit a previous session's numbers.
+   * ``loadHistory`` reloads them from the backend for sessions not in memory.
+   */
+  lastPromptTokens: number | null;
+  lastPromptAt: string | null;
+  lastPromptModel: string | null;
 }
 
 export interface PendingChatMessage {
@@ -142,6 +151,9 @@ const EMPTY_SLICE: SessionSlice = {
   planMode: false,
   pendingMessages: [],
   sessionExecTrusted: false,
+  lastPromptTokens: null,
+  lastPromptAt: null,
+  lastPromptModel: null,
 };
 
 interface ChatState {
@@ -206,6 +218,7 @@ interface ChatState {
   loadProjects: () => Promise<void>;
   openProject: (projectId: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
+  setActiveProjectInstructions: (instructions: string) => void;
   leaveProject: () => void;
   setLoading: (loading: boolean) => void;
   setConnected: (connected: boolean) => void;
@@ -449,6 +462,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         planMode: state.planMode,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
+        lastPromptTokens: state.lastPromptTokens,
+        lastPromptAt: state.lastPromptAt,
+        lastPromptModel: state.lastPromptModel,
       };
     }
 
@@ -473,6 +489,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       planMode: restored?.planMode ?? false,
       pendingMessages: restored?.pendingMessages ?? [],
       sessionExecTrusted: restored?.sessionExecTrusted ?? false,
+      lastPromptTokens: restored?.lastPromptTokens ?? null,
+      lastPromptAt: restored?.lastPromptAt ?? null,
+      lastPromptModel: restored?.lastPromptModel ?? null,
       error: null,
       activeProjectId: shouldTreatAsProject ? resolvedProjectId : null,
       activeProject: shouldTreatAsProject ? resolvedProject : null,
@@ -602,6 +621,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to delete project' });
     }
+  },
+
+  setActiveProjectInstructions: (instructions) => {
+    set((state) => {
+      const next = state.activeProject ? { ...state.activeProject, instructions } : state.activeProject;
+      return {
+        activeProject: next,
+        projects: state.projects.map((project) =>
+          project.id === state.activeProjectId ? { ...project, instructions } : project,
+        ),
+      };
+    });
   },
 
   leaveProject: () => {
@@ -774,6 +805,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         consolidatedOffset: 0,
         personality: null,
         planMode: false,
+        lastPromptTokens: null,
+        lastPromptAt: null,
+        lastPromptModel: null,
         isLoading: false,
       });
     }
@@ -1140,6 +1174,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         planMode: state.planMode,
         pendingMessages: state.pendingMessages,
         sessionExecTrusted: state.sessionExecTrusted,
+        lastPromptTokens: state.lastPromptTokens,
+        lastPromptAt: state.lastPromptAt,
+        lastPromptModel: state.lastPromptModel,
       };
     }
     return state.sessionsState[sessionId] ?? EMPTY_SLICE;
@@ -1539,6 +1576,9 @@ function applySliceUpdate(
       planMode: state.planMode,
       pendingMessages: state.pendingMessages,
       sessionExecTrusted: state.sessionExecTrusted,
+      lastPromptTokens: state.lastPromptTokens,
+      lastPromptAt: state.lastPromptAt,
+      lastPromptModel: state.lastPromptModel,
     };
     const patch = updater(currentSlice);
     set(patch);

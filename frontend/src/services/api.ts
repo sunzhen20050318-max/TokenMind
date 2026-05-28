@@ -180,6 +180,113 @@ export const api = {
     return res.json();
   },
 
+  async updateProjectInstructions(
+    projectId: string,
+    instructions: string
+  ): Promise<{ project: Project }> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instructions }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to update project instructions: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async listProjectDocuments(projectId: string): Promise<{ documents: KnowledgeDocument[] }> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/documents`);
+    if (!res.ok) {
+      throw new Error(`Failed to load project documents: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async uploadProjectDocuments(
+    projectId: string,
+    files: File[],
+    onProgress?: (progress: UploadProgress) => void
+  ): Promise<{ documents: KnowledgeDocument[] }> {
+    const formData = new FormData();
+    const fallbackTotal = files.reduce((sum, file) => sum + file.size, 0);
+    files.forEach((file) => formData.append('files', file));
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/projects/${encodeURIComponent(projectId)}/documents`, true);
+
+      xhr.upload.onprogress = (event) => {
+        const total = event.lengthComputable ? event.total : fallbackTotal;
+        if (!total) return;
+        onProgress?.({
+          loaded: event.loaded,
+          total,
+          percent: Math.min(100, Math.round((event.loaded / total) * 100)),
+        });
+      };
+
+      xhr.onerror = () => reject(new Error('Failed to upload project documents'));
+
+      xhr.onload = () => {
+        let payload: { documents: KnowledgeDocument[] } | { detail?: string } | null = null;
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch {
+          payload = null;
+        }
+        if (xhr.status >= 200 && xhr.status < 300 && payload) {
+          onProgress?.({ loaded: fallbackTotal, total: fallbackTotal, percent: 100 });
+          resolve(payload as { documents: KnowledgeDocument[] });
+          return;
+        }
+        const detail =
+          payload && typeof payload === 'object' && 'detail' in payload && typeof payload.detail === 'string'
+            ? payload.detail
+            : `Failed to upload project documents: ${xhr.statusText}`;
+        reject(new Error(detail));
+      };
+
+      xhr.send(formData);
+    });
+  },
+
+  async deleteProjectDocument(projectId: string, documentId: string): Promise<{ success: boolean }> {
+    const res = await fetch(
+      `${API_BASE}/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`,
+      { method: 'DELETE' }
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to delete project document: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async addProjectUrlSource(projectId: string, url: string): Promise<{ document: KnowledgeDocument }> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/sources/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      throw new Error(detail?.detail || `Failed to add URL source: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
+  async recompileProjectWiki(projectId: string): Promise<{ processed: number }> {
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/recompile`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.detail || `Failed to recompile project wiki: ${res.statusText}`);
+    }
+    return res.json();
+  },
+
   async deleteSession(sessionId: string): Promise<void> {
     const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
