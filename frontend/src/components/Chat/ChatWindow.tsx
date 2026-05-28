@@ -5,6 +5,7 @@ import { TypingIndicator } from './TypingIndicator';
 import { InputArea, type DraftAttachment, type ComposerReasoningOption } from './InputArea';
 import { hasFileTransfer } from './inputAreaDrag';
 import { ToolChain } from './ToolIndicator';
+import { BrowserHandoffModal } from './BrowserHandoffModal';
 import { ToolApprovalModal } from './ToolApprovalModal';
 import { UserQuestionModal } from './UserQuestionModal';
 import { TaskListBubble } from './TaskListBubble';
@@ -16,6 +17,7 @@ import { useChatStore, type TimelineEvent, type ToolCall } from '../../stores/ch
 import {
   useSessionConnected,
   isSessionExecTrusted,
+  respondToBrowserHandoff,
   respondToToolApproval,
   respondToUserQuestion,
   sendMessage as sendChatMessage,
@@ -30,6 +32,7 @@ import './chatWindow.css';
 interface ChatWindowProps {
   sessionId: string;
   onNavigateToSettings?: () => void;
+  onNavigateToBrowser?: () => void;
 }
 
 interface VisibleMessageEntry {
@@ -253,7 +256,7 @@ function getGreeting(): string {
   return '晚上好，现在想处理什么？';
 }
 
-export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToSettings }) => {
+export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToSettings, onNavigateToBrowser }) => {
   const {
     messages,
     isLoading,
@@ -280,6 +283,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
     pendingSessionStarter,
     clearPendingSessionStarter,
     pendingApproval,
+    pendingBrowserHandoff,
+    setPendingBrowserHandoff,
     pendingUserQuestion,
     taskList,
     pendingMessages,
@@ -378,6 +383,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
     },
     [pendingApproval, sessionId, setSessionPendingApproval],
   );
+  const handleBrowserHandoffComplete = useCallback(() => {
+    if (!pendingBrowserHandoff) return;
+    respondToBrowserHandoff(pendingBrowserHandoff.session_id, pendingBrowserHandoff.handoff_id, true);
+    setPendingBrowserHandoff(null);
+  }, [pendingBrowserHandoff, setPendingBrowserHandoff]);
+  const handleBrowserHandoffCancel = useCallback(() => {
+    if (!pendingBrowserHandoff) return;
+    respondToBrowserHandoff(pendingBrowserHandoff.session_id, pendingBrowserHandoff.handoff_id, false);
+    setPendingBrowserHandoff(null);
+  }, [pendingBrowserHandoff, setPendingBrowserHandoff]);
   const submitPendingUserQuestion = useCallback(
     (answers: Record<string, { selected: string | string[]; notes?: string }>) => {
       if (!pendingUserQuestion) return;
@@ -448,6 +463,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
       { name: 'model', description: '切换当前会话使用的模型' },
       { name: 'reasoning', description: '切换思考深度（低 / 中 / 高）' },
       { name: 'personality', description: '切换回答风格（亲和 / 务实）' },
+      { name: 'browser', description: '打开浏览器自动化页面（OpenCLI）' },
       ...slashSkills.map((s) => ({
         name: s.name,
         description: `技能 · ${s.description}`,
@@ -526,7 +542,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
         name === 'status' ||
         name === 'model' ||
         name === 'reasoning' ||
-        name === 'personality';
+        name === 'personality' ||
+        name === 'browser';
       const isSkill = slashSkills.some((s) => s.name === name);
       if (!isBuiltin && isSkill) {
         await dispatchSkill(name, args);
@@ -546,6 +563,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
       }
       if (name === 'personality') {
         setOpenCard('personality');
+        return;
+      }
+      if (name === 'browser') {
+        if (onNavigateToBrowser) {
+          onNavigateToBrowser();
+        } else {
+          finishSlashToast('error', '当前界面不支持跳转到浏览器页面');
+        }
         return;
       }
       if (name === 'compact') {
@@ -1164,6 +1189,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
             onReject={rejectPendingTool}
             onTrustAndApprove={trustAndApprovePendingTool}
             onRedirect={redirectPendingTool}
+          />
+          <BrowserHandoffModal
+            handoff={pendingBrowserHandoff && pendingBrowserHandoff.session_id === sessionId ? pendingBrowserHandoff : null}
+            onComplete={handleBrowserHandoffComplete}
+            onCancel={handleBrowserHandoffCancel}
           />
           <UserQuestionModal
             question={pendingUserQuestion}

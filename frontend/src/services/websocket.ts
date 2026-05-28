@@ -245,6 +245,18 @@ class WebSocketPool {
     );
   }
 
+  respondToBrowserHandoff(sessionId: string, handoffId: string, completed: boolean): void {
+    const ws = this.socketFor(sessionId);
+    if (!ws) return;
+    ws.send(
+      JSON.stringify({
+        type: 'browser_handoff',
+        handoff_id: handoffId,
+        completed,
+      }),
+    );
+  }
+
   respondToUserQuestion(
     sessionId: string,
     questionId: string,
@@ -343,6 +355,9 @@ export const wsService = {
   },
   respondToToolApproval(sessionId: string, approvalId: string, approved: boolean): void {
     wsPool.respondToToolApproval(sessionId, approvalId, approved);
+  },
+  respondToBrowserHandoff(sessionId: string, handoffId: string, completed: boolean): void {
+    wsPool.respondToBrowserHandoff(sessionId, handoffId, completed);
   },
   isConnected(sessionId: string): boolean {
     return wsPool.isConnected(sessionId);

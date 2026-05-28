@@ -184,6 +184,16 @@ export function useSessionOrchestrator(): void {
             received_at_ms: Date.now(),
           });
           break;
+        case 'browser_handoff_required':
+          store.setPendingBrowserHandoff({
+            session_id: sessionId,
+            handoff_id: msg.handoff_id,
+            reason: msg.reason,
+            instructions: msg.instructions,
+            timeout_s: msg.timeout_s,
+            received_at_ms: Date.now(),
+          });
+          break;
         case 'task_list_update':
           // Replace the per-session task list snapshot. The bubble in
           // chat picks up the new state and re-renders in place; older
@@ -353,6 +363,14 @@ export function respondToToolApproval(
   approved: boolean,
 ): void {
   wsPool.respondToToolApproval(sessionId, approvalId, approved);
+}
+
+export function respondToBrowserHandoff(
+  sessionId: string,
+  handoffId: string,
+  completed: boolean,
+): void {
+  wsPool.respondToBrowserHandoff(sessionId, handoffId, completed);
 }
 
 export function respondToUserQuestion(

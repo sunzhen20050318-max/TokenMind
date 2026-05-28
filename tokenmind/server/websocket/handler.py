@@ -118,6 +118,34 @@ async def websocket_handler(
                 )
                 await inbound_queue.put(msg)
 
+            elif msg_type == "browser_handoff":
+                from tokenmind.bus.events import InboundMessage
+
+                handoff_id = str(msg_data.get("handoff_id") or "").strip()
+                completed = bool(msg_data.get("completed"))
+                if not handoff_id:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": "Missing handoff_id",
+                    })
+                    continue
+
+                msg = InboundMessage(
+                    channel="web",
+                    sender_id="web_user",
+                    chat_id=session_key,
+                    content="/browser-handoff",
+                    media=[],
+                    metadata={
+                        "websocket": True,
+                        "control": "browser_handoff",
+                        "handoff_id": handoff_id,
+                        "completed": completed,
+                    },
+                    session_key_override=session_key,
+                )
+                await inbound_queue.put(msg)
+
             elif msg_type == "user_question_response":
                 from tokenmind.bus.events import InboundMessage
 

@@ -3,6 +3,7 @@ import type {
   Attachment,
   Message,
   MessageCitation,
+  PendingBrowserHandoff,
   PendingToolApproval,
   PendingUserQuestion,
   Project,
@@ -183,6 +184,11 @@ interface ChatState {
   lastPromptTokens: number | null;
   lastPromptAt: string | null;
   lastPromptModel: string | null;
+  /** Global single-handoff state. The browser tool requests a handoff
+   *  when it hits a login / verification gate; the user resolves it via
+   *  the modal. Carries session_id so the modal only shows in the
+   *  originating chat. */
+  pendingBrowserHandoff: PendingBrowserHandoff | null;
   creativeCapabilities: CreativeSettings | null;
   availableKnowledgeBases: KnowledgeBase[];
   linkedKnowledgeBaseIds: string[];
@@ -300,6 +306,7 @@ interface ChatState {
     sessionId: string,
     usage: { last_prompt_tokens: number; last_prompt_at: string | null; last_prompt_model: string | null },
   ) => void;
+  setPendingBrowserHandoff: (handoff: PendingBrowserHandoff | null) => void;
   /** Plan-mode toggle (input-bar button + /plan command later). PATCH +
    *  mirror. */
   setSessionPlanMode: (sessionId: string, enabled: boolean) => Promise<void>;
@@ -342,6 +349,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelProvidersStatus: 'idle',
   compactionThresholdTokens: null,
   lastPromptTokens: null,
+  pendingBrowserHandoff: null,
   lastPromptAt: null,
   lastPromptModel: null,
   creativeCapabilities: null,
@@ -1414,6 +1422,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       lastPromptAt: usage.last_prompt_at,
       lastPromptModel: usage.last_prompt_model,
     });
+  },
+
+  setPendingBrowserHandoff: (handoff) => {
+    set({ pendingBrowserHandoff: handoff });
   },
 
   setSessionPlanMode: async (sessionId, enabled) => {

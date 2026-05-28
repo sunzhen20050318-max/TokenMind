@@ -318,6 +318,15 @@ export interface PendingUserQuestion {
   received_at_ms?: number;
 }
 
+export interface PendingBrowserHandoff {
+  session_id: string;
+  handoff_id: string;
+  reason: string;
+  instructions: string;
+  timeout_s?: number;
+  received_at_ms: number;
+}
+
 export interface UserQuestionAnswer {
   selected: string | string[];
   notes?: string;
@@ -362,6 +371,7 @@ export type WSMessageType =
   | { type: 'guidance_received'; content: string; channel: string }
   | { type: 'session_title_updated'; session_id: string; title: string; channel: string }
   | { type: 'approval_required'; approval_id: string; tool_id: string; tool_name: string; command: string; risk_reason: string; working_dir: string; timeout_s?: number; channel: string }
+  | { type: 'browser_handoff_required'; handoff_id: string; reason: string; instructions: string; timeout_s?: number; channel: string }
   | { type: 'user_question_required'; question_id: string; tool_id: string; questions: UserQuestionItem[]; channel: string }
   | { type: 'task_list_update'; task_list_id: string; tool_id: string; tasks: TaskListItem[]; channel: string }
   | { type: 'session_compacted'; session_id: string; consolidated_offset: number; messages_compacted: number; channel: string }

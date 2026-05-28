@@ -84,6 +84,20 @@ class WebChannel(BaseChannel):
             )
             return
 
+        if msg.metadata.get("_browser_handoff_required"):
+            await self._ws_manager.send_to_session(
+                session_key=msg.chat_id,
+                message={
+                    "type": "browser_handoff_required",
+                    "handoff_id": msg.metadata.get("_handoff_id"),
+                    "reason": msg.metadata.get("_handoff_reason"),
+                    "instructions": msg.metadata.get("_handoff_instructions"),
+                    "timeout_s": msg.metadata.get("_handoff_timeout_s"),
+                    "channel": msg.channel,
+                },
+            )
+            return
+
         if msg.metadata.get("_question_required"):
             await self._ws_manager.send_to_session(
                 session_key=msg.chat_id,
