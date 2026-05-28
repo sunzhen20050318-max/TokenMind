@@ -1478,15 +1478,16 @@ class ChatService:
         return serialized
 
     async def list_sessions(self) -> list[dict]:
-        """List all sessions."""
+        """List all sessions, including ones that belong to a project.
+
+        Project sessions carry their ``project_id`` in the serialized summary
+        so the web UI can surface them in the global recent list and still
+        open them inside their project workspace.
+        """
         result = []
         for summary in self.session_manager.list_sessions():
-            if summary.get("project_id"):
-                continue
             session_id = summary.get("key", "")
             session = self.session_manager.get_or_create(session_id)
-            if getattr(session, "project_id", None):
-                continue
             result.append(self._serialize_session_summary(session_id, session, summary))
         return sorted(result, key=lambda item: item.get("updated_at") or "", reverse=True)
 
@@ -1517,10 +1518,90 @@ class ChatService:
         project = self.projects.get_project(project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
+        knowledge_base: dict[str, Any] | None = None
+        documents: list[dict[str, Any]] = []
+        if project.knowledge_base_id:
+            try:
+                detail = self.get_knowledge_base_detail(project.knowledge_base_id)
+                knowledge_base = detail.get("knowledge_base")
+                documents = detail.get("documents", [])
+            except KeyError:
+                # Stored KB was deleted out from under the project — treat as
+                # having no KB; a fresh one is created on the next upload.
+                knowledge_base = None
         return {
             "project": project.model_dump(),
             "sessions": self.list_project_sessions(project_id),
+            "knowledge_base": knowledge_base,
+            "documents": documents,
         }
+
+    def ensure_project_wiki(self, project_id: str) -> str:
+        """Return the project's wiki KB id, lazily creating it on first use.
+
+        Recreates the KB if the project's stored id points to a base that no
+        longer exists.
+        """
+        project = self.projects.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project.knowledge_base_id:
+            try:
+                self.knowledge.get_knowledge_base(project.knowledge_base_id)
+                return project.knowledge_base_id
+            except KeyError:
+                pass  # stored KB gone; fall through and recreate
+        self._sync_knowledge_config()
+        kb = self.knowledge.create_knowledge_base(
+            f"项目：{project.name}",
+            f"项目「{project.name}」的知识库",
+            type="wiki",
+            project_id=project_id,
+        )
+        self.projects.update_project(project_id, knowledge_base_id=kb.id)
+        return kb.id
+
+    def update_project_instructions(self, project_id: str, instructions: str) -> dict[str, Any]:
+        try:
+            project = self.projects.update_project(project_id, instructions=instructions)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Project not found") from exc
+        return {"project": project.model_dump()}
+
+    async def upload_project_documents(self, project_id: str, files: list[Any]) -> dict[str, Any]:
+        kb_id = self.ensure_project_wiki(project_id)
+        return await self.upload_knowledge_documents(kb_id, files)
+
+    async def add_project_url_source(self, project_id: str, url: str) -> dict[str, Any]:
+        kb_id = self.ensure_project_wiki(project_id)
+        return await self.add_url_source(kb_id, url)
+
+    def list_project_documents(self, project_id: str) -> dict[str, Any]:
+        project = self.projects.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if not project.knowledge_base_id:
+            return {"documents": []}
+        try:
+            return {"documents": self.get_knowledge_base_detail(project.knowledge_base_id).get("documents", [])}
+        except KeyError:
+            return {"documents": []}
+
+    def delete_project_document(self, project_id: str, document_id: str) -> dict[str, Any]:
+        project = self.projects.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if not project.knowledge_base_id:
+            raise HTTPException(status_code=404, detail="Project has no knowledge base")
+        return self.delete_knowledge_document(project.knowledge_base_id, document_id)
+
+    async def recompile_project_wiki(self, project_id: str) -> dict[str, Any]:
+        project = self.projects.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if not project.knowledge_base_id:
+            raise HTTPException(status_code=400, detail="Project has no knowledge base yet")
+        return await self.recompile_wiki_sources(project.knowledge_base_id)
 
     def rename_project(self, project_id: str, name: str) -> dict[str, Any]:
         try:
@@ -1595,6 +1676,15 @@ class ChatService:
         session_ids = [item["session_id"] for item in self.list_project_sessions(project_id)]
         for session_id in session_ids:
             self._delete_session_now(session_id, audit_event="project.session.deleted")
+
+        # Remove the project's owned wiki KB so it doesn't linger orphaned.
+        if project.knowledge_base_id:
+            try:
+                self.knowledge.delete_knowledge_base(
+                    project.knowledge_base_id, session_manager=self.session_manager
+                )
+            except KeyError:
+                pass
 
         try:
             self.projects.delete_project(project_id)

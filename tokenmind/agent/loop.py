@@ -49,6 +49,7 @@ from tokenmind.bus.events import InboundMessage, OutboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.creative.image_generation import ImageGenerationService
 from tokenmind.knowledge import KnowledgeService
+from tokenmind.projects.store import ProjectStore
 from tokenmind.providers.base import LLMProvider
 from tokenmind.server.attachments import AttachmentStore
 from tokenmind.session.manager import Session, SessionManager
@@ -217,6 +218,10 @@ class AgentLoop:
         self.knowledge.set_wiki_llm(provider=provider, model=self.model)
         self.template_renderer = TemplateRenderer()
         self.sessions = session_manager or SessionManager(workspace)
+        # Project store (file-backed) used to resolve a session's project for
+        # its default wiki KB + custom instructions. Reads the same JSON the
+        # ChatService writes, so a separate instance stays consistent.
+        self.projects = ProjectStore(self.sessions.workspace)
         self.attachments = AttachmentStore(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -365,6 +370,11 @@ class AgentLoop:
         except Exception:
             return None
         kb_id = session.active_wiki_kb_id
+        # Fall back to the session's project wiki KB when no explicit active
+        # wiki is set, so project sessions browse their project KB by default
+        # (the user can still switch to another wiki, which takes precedence).
+        if not kb_id:
+            kb_id = self._project_wiki_kb_id(session.project_id)
         if not kb_id:
             return None
         try:
@@ -374,6 +384,26 @@ class AgentLoop:
         if kb.type != "wiki" or not kb.root_path:
             return None
         return {"kb_root": Path(kb.root_path), "kb_name": kb.name, "kb_id": kb.id}
+
+    def _project_wiki_kb_id(self, project_id: str | None) -> str | None:
+        """Return the wiki KB id owned by the given project, if any."""
+        if not project_id:
+            return None
+        try:
+            project = self.projects.get_project(project_id)
+        except Exception:
+            return None
+        return project.knowledge_base_id if project else None
+
+    def _project_instructions(self, project_id: str | None) -> str | None:
+        """Return the custom instructions for the given project, if any."""
+        if not project_id:
+            return None
+        try:
+            project = self.projects.get_project(project_id)
+        except Exception:
+            return None
+        return project.instructions if project else None
 
     def _build_active_wiki_arg(self) -> dict | None:
         """Return the active_wiki dict for ContextBuilder.build_messages, or None."""
@@ -2286,6 +2316,7 @@ class AgentLoop:
                 project_id=session.metadata.get("project_id"),
                 personality=session.personality,
                 plan_mode=session.plan_mode,
+                instructions=self._project_instructions(session.metadata.get("project_id")),
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages, msg=msg)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -2376,6 +2407,7 @@ class AgentLoop:
             project_id=session.metadata.get("project_id"),
             personality=session.personality,
             plan_mode=session.plan_mode,
+            instructions=self._project_instructions(session.metadata.get("project_id")),
         )
         raw_timeline_events: list[dict[str, Any]] = []
 

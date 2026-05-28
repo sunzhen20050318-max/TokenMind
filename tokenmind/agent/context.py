@@ -66,6 +66,7 @@ class ContextBuilder:
         project_id: str | None = None,
         personality: str | None = None,
         plan_mode: bool = False,
+        instructions: str | None = None,
     ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills.
 
@@ -96,6 +97,9 @@ class ContextBuilder:
         memory = self.memory_for(project_id).get_memory_context()
         if memory:
             parts.append(f"# Memory\n\n{memory}")
+
+        if instructions and instructions.strip():
+            parts.append(f"# Project Instructions\n\n{instructions.strip()}")
 
         always_skills = self.skills.get_always_skills()
         if always_skills:
@@ -407,6 +411,7 @@ If the question is fully answerable from the current conversation, do not search
         project_id: str | None = None,
         personality: str | None = None,
         plan_mode: bool = False,
+        instructions: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         sanitized_history: list[dict[str, Any]] = []
@@ -458,6 +463,7 @@ If the question is fully answerable from the current conversation, do not search
                     project_id=project_id,
                     personality=personality,
                     plan_mode=plan_mode,
+                    instructions=instructions,
                 ),
             },
             *sanitized_history,

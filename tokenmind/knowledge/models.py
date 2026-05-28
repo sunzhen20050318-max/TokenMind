@@ -17,6 +17,9 @@ class KnowledgeBaseRecord(BaseModel):
     type: Literal["rag", "wiki"] = "rag"
     status: str = "ready"
     enabled: bool = True
+    # When set, this KB is owned by a project and is hidden from the global
+    # knowledge-base list (managed from that project's page instead).
+    project_id: str | None = None
     # RAG 字段
     document_count: int = 0
     # Wiki 字段（rag 类型保持默认值）

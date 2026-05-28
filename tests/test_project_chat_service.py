@@ -25,7 +25,7 @@ def make_service(tmp_path: Path) -> ChatService:
     )
 
 
-def test_list_sessions_excludes_project_sessions(tmp_path: Path) -> None:
+def test_list_sessions_includes_project_sessions_with_project_id(tmp_path: Path) -> None:
     service = make_service(tmp_path)
     normal = service.session_manager.get_or_create("web:normal")
     normal.add_message("user", "Normal chat")
@@ -38,7 +38,10 @@ def test_list_sessions_excludes_project_sessions(tmp_path: Path) -> None:
 
     sessions = asyncio.run(service.list_sessions())
 
-    assert [item["session_id"] for item in sessions] == ["web:normal"]
+    by_id = {item["session_id"]: item for item in sessions}
+    assert set(by_id) == {"web:normal", "web:project"}
+    assert by_id["web:normal"]["project_id"] is None
+    assert by_id["web:project"]["project_id"] == "proj_1"
 
 
 def test_move_session_to_project_preserves_history(tmp_path: Path) -> None:

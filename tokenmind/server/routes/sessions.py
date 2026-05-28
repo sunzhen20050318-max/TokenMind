@@ -21,6 +21,7 @@ class SessionInfo(BaseModel):
     message_count: int = 0
     first_message: str | None = None
     title: str | None = None
+    project_id: str | None = None
 
 
 class SessionListResponse(BaseModel):

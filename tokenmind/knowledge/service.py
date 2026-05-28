@@ -327,6 +327,7 @@ class KnowledgeService:
         *,
         type: str = "rag",
         language: str = "zh",
+        project_id: str | None = None,
     ) -> KnowledgeBaseRecord:
         from tokenmind.knowledge.wiki_paths import ensure_wiki_structure, get_kb_root
 
@@ -350,6 +351,7 @@ class KnowledgeService:
                 type=type,
                 language=language,
                 root_path=root_path,
+                project_id=project_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -1601,8 +1603,14 @@ class KnowledgeService:
         return self._rerank_hits(query, fused[: max(limit * 3, self.rerank_top_n)])[:limit]
 
     def get_knowledge_overview(self) -> dict[str, list[dict]]:
+        # Project-owned KBs are managed from their project page and are
+        # intentionally excluded from the global knowledge-base list.
         return {
-            "items": [item.model_dump() for item in self.list_knowledge_bases()],
+            "items": [
+                item.model_dump()
+                for item in self.list_knowledge_bases()
+                if item.project_id is None
+            ],
         }
 
     def get_knowledge_base_detail(self, knowledge_base_id: str) -> dict[str, dict | list[dict]]:

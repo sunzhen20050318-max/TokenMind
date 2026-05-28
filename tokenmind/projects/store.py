@@ -62,6 +62,28 @@ class ProjectStore:
                 return ProjectRecord(**item)
         raise KeyError(project_id)
 
+    def update_project(
+        self,
+        project_id: str,
+        *,
+        knowledge_base_id: str | None = None,
+        instructions: str | None = None,
+    ) -> ProjectRecord:
+        """Patch mutable project fields. Only arguments that are not ``None``
+        are applied, so callers can update instructions and KB id
+        independently. Always bumps ``updated_at``."""
+        items = self._load()
+        for item in items:
+            if item.get("id") == project_id:
+                if knowledge_base_id is not None:
+                    item["knowledge_base_id"] = knowledge_base_id
+                if instructions is not None:
+                    item["instructions"] = instructions
+                item["updated_at"] = now_iso()
+                self._save(items)
+                return ProjectRecord(**item)
+        raise KeyError(project_id)
+
     def delete_project(self, project_id: str) -> ProjectRecord:
         items = self._load()
         for index, item in enumerate(items):

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import inspect
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from tokenmind.server.dependencies import get_chat_service
@@ -16,6 +19,14 @@ class CreateProjectRequest(BaseModel):
 
 class RenameProjectRequest(BaseModel):
     name: str
+
+
+class UpdateProjectRequest(BaseModel):
+    instructions: str | None = None
+
+
+class AddUrlSourceRequest(BaseModel):
+    url: str
 
 
 class CreateProjectSessionRequest(BaseModel):
@@ -47,9 +58,83 @@ async def rename_project(project_id: str, request: RenameProjectRequest, service
     return service.rename_project(project_id, request.name)
 
 
+@router.patch("/{project_id}")
+async def update_project(
+    project_id: str,
+    request: UpdateProjectRequest,
+    service=Depends(get_chat_service),
+) -> dict:
+    """Patch mutable project fields. Currently only custom instructions."""
+    if request.instructions is None:
+        return service.get_project_detail(project_id)
+    return service.update_project_instructions(project_id, request.instructions)
+
+
 @router.delete("/{project_id}")
 async def delete_project(project_id: str, service=Depends(get_chat_service)) -> dict:
     return service.delete_project(project_id)
+
+
+@router.get("/{project_id}/documents")
+async def list_project_documents(project_id: str, service=Depends(get_chat_service)) -> dict:
+    return service.list_project_documents(project_id)
+
+
+@router.post("/{project_id}/documents")
+async def upload_project_documents(
+    project_id: str,
+    files: list[UploadFile] = File(...),
+    service: Any = Depends(get_chat_service),
+) -> dict:
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+    try:
+        result = service.upload_project_documents(project_id, files)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to upload project documents: {exc}") from exc
+
+
+@router.post("/{project_id}/sources/url")
+async def add_project_url_source(
+    project_id: str,
+    request: AddUrlSourceRequest,
+    service=Depends(get_chat_service),
+) -> dict:
+    """Fetch a public URL (currently: mp.weixin.qq.com) and register it as a
+    wiki source on the project's knowledge base."""
+    try:
+        return await service.add_project_url_source(project_id, request.url)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/{project_id}/documents/{document_id}")
+async def delete_project_document(
+    project_id: str,
+    document_id: str,
+    service=Depends(get_chat_service),
+) -> dict:
+    try:
+        return service.delete_project_document(project_id, document_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/recompile")
+async def recompile_project_wiki(project_id: str, service=Depends(get_chat_service)) -> dict:
+    try:
+        return await service.recompile_project_wiki(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{project_id}/sessions")
