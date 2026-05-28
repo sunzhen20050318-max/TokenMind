@@ -84,6 +84,25 @@ class PendingApproval:
 
 
 @dataclass
+class PendingBrowserHandoff:
+    """A browser tool call paused while the user takes over Chrome.
+
+    Used when the model hits a login/captcha/verification gate and
+    invokes ``browser(action='handoff')``. The future resolves to True
+    when the user clicks "I'm done", False on cancel/timeout.
+    """
+
+    handoff_id: str
+    session_key: str
+    chat_id: str
+    channel: str
+    reason: str
+    instructions: str
+    requested_at: float
+    future: asyncio.Future[bool]
+
+
+@dataclass
 class PendingQuestion:
     """One ``ask_user_question`` tool call waiting for the user's answers."""
 
@@ -134,12 +153,14 @@ class AgentLoop:
         templates_config: TemplatesConfig | None = None,
         config_path: Path | None = None,
         creative_config: CreativeConfig | None = None,
+        memory_config: MemoryConfig | None = None,
     ):
         from tokenmind.config.loader import load_config
         from tokenmind.config.schema import (
             CreativeConfig,
             ExecToolConfig,
             KnowledgeConfig,
+            MemoryConfig,
             TemplatesConfig,
             WebSearchConfig,
         )
@@ -159,6 +180,7 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.knowledge_config = knowledge_config or KnowledgeConfig()
         self.templates_config = templates_config or TemplatesConfig()
+        self.memory_config = memory_config or MemoryConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         if creative_config is not None:
@@ -171,7 +193,7 @@ class AgentLoop:
         else:
             self.creative_config = CreativeConfig()
 
-        self.context = ContextBuilder(workspace)
+        self.context = ContextBuilder(workspace, memory_config=self.memory_config)
         self.knowledge = KnowledgeService(
             workspace,
             vector_backend=self.knowledge_config.vector_backend,
@@ -217,6 +239,7 @@ class AgentLoop:
         self._background_tasks: set[asyncio.Task] = set()
         self._processing_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._pending_approvals: dict[str, PendingApproval] = {}
+        self._pending_handoffs: dict[str, PendingBrowserHandoff] = {}
         self._pending_questions: dict[str, PendingQuestion] = {}
         # Tracks the session_key of whichever per-session task is currently
         # running on this asyncio context. Wiki tools use this (via
@@ -244,6 +267,13 @@ class AgentLoop:
         self._title_in_flight: set[str] = set()
         self.audit = AuditLogger(workspace)
         self.usage_recorder = UsageRecorder(workspace / "usage.sqlite3")
+        from tokenmind.config.loader import get_app_dir
+        from tokenmind.integrations.opencli import OpenCLIService, SiteRegistry
+
+        self.opencli_service = OpenCLIService(audit=self.audit)
+        # SiteRegistry lives next to config.json (per-user, not per-workspace)
+        # because the login state belongs to the Chrome profile, not the repo.
+        self.site_registry = SiteRegistry(get_app_dir() / "sites.json")
         self.memory_consolidator = MemoryConsolidator(
             workspace=workspace,
             provider=provider,
@@ -254,6 +284,7 @@ class AgentLoop:
             get_tool_definitions=self.tools.get_definitions,
             templates_config=self.templates_config,
             template_renderer=self.template_renderer,
+            memory_config=self.memory_config,
         )
         self._register_default_tools()
         self._sync_creative_tools()
@@ -293,6 +324,14 @@ class AgentLoop:
         ))
         self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
+        from tokenmind.agent.tools.browser import BrowserTool
+
+        self.tools.register(BrowserTool(
+            service=self.opencli_service,
+            get_session_key=get_sk,
+            request_handoff=self._request_browser_handoff,
+            site_registry=self.site_registry,
+        ))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(AskUserQuestionTool())
         self.tools.register(TaskListTool())
@@ -564,29 +603,43 @@ class AgentLoop:
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
-    def _should_confirm_high_risk_exec(
+    def _should_confirm_high_risk_tool(
         self,
         msg: InboundMessage | None,
         tool_name: str,
         args: dict[str, Any],
-    ) -> tuple[bool, str | None, str]:
-        """Determine whether a tool call should pause for user confirmation."""
-        if msg is None:
-            return False, None, ""
-        if tool_name != "exec" or not self.exec_config.confirm_high_risk:
-            return False, None, ""
-        if msg.channel != "web":
-            return False, None, ""
+    ) -> tuple[bool, str | None, str, str]:
+        """Determine whether a tool call should pause for user confirmation.
 
-        command = str(args.get("command") or "").strip()
-        if not command:
-            return False, None, ""
+        Returns ``(should_confirm, reason, display_command, working_dir)``.
+        ``working_dir`` is empty for tools that don't operate inside a
+        filesystem path.
+        """
+        if msg is None or msg.channel != "web":
+            return False, None, "", ""
+        if not self.exec_config.confirm_high_risk:
+            return False, None, "", ""
 
-        working_dir = str(args.get("working_dir") or self.workspace)
-        reason = ExecTool.get_high_risk_reason(command) or (
-            "Shell commands can modify files, install software, access the network, or change the local environment."
-        )
-        return True, reason, working_dir
+        if tool_name == "exec":
+            command = str(args.get("command") or "").strip()
+            if not command:
+                return False, None, "", ""
+
+            working_dir = str(args.get("working_dir") or self.workspace)
+            reason = ExecTool.get_high_risk_reason(command) or (
+                "Shell commands can modify files, install software, access the network, or change the local environment."
+            )
+            return True, reason, command, working_dir
+
+        if tool_name == "browser":
+            from tokenmind.agent.tools.browser import BrowserTool
+
+            reason = BrowserTool.get_high_risk_reason(args)
+            if not reason:
+                return False, None, "", ""
+            return True, reason, BrowserTool.format_display(args), ""
+
+        return False, None, "", ""
 
     async def _request_tool_approval(
         self,
@@ -683,6 +736,112 @@ class AgentLoop:
         finally:
             self._pending_approvals.pop(approval_id, None)
 
+    async def _request_browser_handoff(
+        self,
+        *,
+        reason: str,
+        instructions: str,
+        session_key: str | None = None,
+    ) -> bool:
+        """Pause the agent loop and ask the user to take over the browser.
+
+        Called by ``BrowserTool`` when the model invokes
+        ``browser(action='handoff')``. Publishes a
+        ``_browser_handoff_required`` outbound frame the web UI shows as
+        a modal, then awaits the resolution future the frontend sets via
+        a ``control=browser_handoff`` inbound message.
+        """
+        sk = session_key or self._current_session_key.get(None)
+        if not sk:
+            logger.warning("browser handoff requested with no active session")
+            return False
+
+        channel, _, chat_id = sk.partition(":")
+        if not chat_id:
+            channel, chat_id = "web", sk
+        else:
+            # session_key like "web:1779683214457-qecxwl" → restore chat_id
+            # to include the channel prefix because that's what the WS
+            # connection key uses (see WebChannel.send routing).
+            chat_id = sk
+
+        handoff_id = f"{sk}:handoff:{int(time.monotonic() * 1000)}"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        pending = PendingBrowserHandoff(
+            handoff_id=handoff_id,
+            session_key=sk,
+            chat_id=chat_id,
+            channel=channel,
+            reason=reason,
+            instructions=instructions,
+            requested_at=time.monotonic(),
+            future=future,
+        )
+        self._pending_handoffs[handoff_id] = pending
+
+        timeout_s = 600  # 10 min — login flows take time
+
+        self.audit.record(
+            "tool.browser.handoff_requested",
+            "pending",
+            session_key=sk,
+            channel=channel,
+            chat_id=chat_id,
+            details={
+                "handoff_id": handoff_id,
+                "reason": reason,
+                "instructions": instructions,
+            },
+        )
+        await self.bus.publish_outbound(OutboundMessage(
+            channel=channel,
+            chat_id=chat_id,
+            content=instructions,
+            metadata={
+                "_browser_handoff_required": True,
+                "_handoff_id": handoff_id,
+                "_handoff_reason": reason,
+                "_handoff_instructions": instructions,
+                "_handoff_timeout_s": timeout_s,
+            },
+        ))
+        try:
+            completed = await asyncio.wait_for(future, timeout=timeout_s)
+            self.audit.record(
+                "tool.browser.handoff_resolved",
+                "completed" if completed else "cancelled",
+                session_key=sk,
+                channel=channel,
+                chat_id=chat_id,
+                details={"handoff_id": handoff_id},
+            )
+            return completed
+        except asyncio.TimeoutError:
+            self.audit.record(
+                "tool.browser.handoff_resolved",
+                "timeout",
+                session_key=sk,
+                channel=channel,
+                chat_id=chat_id,
+                details={"handoff_id": handoff_id},
+            )
+            return False
+        finally:
+            self._pending_handoffs.pop(handoff_id, None)
+
+    async def _handle_browser_handoff(self, msg: InboundMessage) -> None:
+        """Resolve a pending browser handoff from the frontend."""
+        handoff_id = str((msg.metadata or {}).get("handoff_id") or "").strip()
+        completed = bool((msg.metadata or {}).get("completed"))
+        pending = self._pending_handoffs.get(handoff_id)
+        if not handoff_id or not pending:
+            return
+        if pending.session_key != msg.session_key:
+            return
+        if not pending.future.done():
+            pending.future.set_result(completed)
+
     async def _handle_tool_approval(self, msg: InboundMessage) -> None:
         """Resolve a pending high-risk tool approval from the frontend."""
         approval_id = str((msg.metadata or {}).get("approval_id") or "").strip()
@@ -759,6 +918,13 @@ class AgentLoop:
                 pending.future.set_result(False)
                 cancelled += 1
             self._pending_approvals.pop(approval_id, None)
+        for handoff_id, h_pending in list(self._pending_handoffs.items()):
+            if h_pending.session_key != session_key:
+                continue
+            if not h_pending.future.done():
+                h_pending.future.set_result(False)
+                cancelled += 1
+            self._pending_handoffs.pop(handoff_id, None)
         return cancelled
 
     async def _request_user_question(
@@ -1079,7 +1245,12 @@ class AgentLoop:
                             tool_id=tool_call.id,
                             tool_name=tool_call.name,
                         )
-                    should_confirm, risk_reason, working_dir = self._should_confirm_high_risk_exec(
+                    (
+                        should_confirm,
+                        risk_reason,
+                        display_command,
+                        working_dir,
+                    ) = self._should_confirm_high_risk_tool(
                         msg, tool_call.name, tool_call.arguments or {}
                     )
                     if should_confirm:
@@ -1093,7 +1264,7 @@ class AgentLoop:
                             msg=msg,
                             tool_id=tool_call.id,
                             tool_name=tool_call.name,
-                            command=str((tool_call.arguments or {}).get("command") or full_command),
+                            command=display_command or full_command,
                             reason=risk_reason or "This command needs confirmation.",
                             working_dir=working_dir,
                         )
@@ -1304,6 +1475,8 @@ class AgentLoop:
                 await self._handle_restart(msg)
             elif (msg.metadata or {}).get("control") == "tool_approval":
                 await self._handle_tool_approval(msg)
+            elif (msg.metadata or {}).get("control") == "browser_handoff":
+                await self._handle_browser_handoff(msg)
             elif (msg.metadata or {}).get("control") == "user_question_response":
                 await self._handle_user_question_response(msg)
             elif (msg.metadata or {}).get("control") == "guidance":

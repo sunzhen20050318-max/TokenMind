@@ -78,7 +78,7 @@ async def test_safe_exec_still_requires_approval_on_web(tmp_path: Path) -> None:
         session_key_override="web:session-1",
     )
 
-    should_confirm, reason, working_dir = loop._should_confirm_high_risk_exec(
+    should_confirm, reason, display_command, working_dir = loop._should_confirm_high_risk_tool(
         msg,
         "exec",
         {"command": "python -c \"print('hello')\""},
@@ -86,6 +86,7 @@ async def test_safe_exec_still_requires_approval_on_web(tmp_path: Path) -> None:
 
     assert should_confirm is True
     assert "Shell commands can modify files" in (reason or "")
+    assert display_command == "python -c \"print('hello')\""
     assert working_dir == str(tmp_path)
 
 

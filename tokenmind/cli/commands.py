@@ -690,6 +690,7 @@ def gateway(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         templates_config=config.templates,
+        memory_config=config.memory,
         config_path=get_config_path(),
         creative_config=config.creative,
     )
@@ -829,6 +830,7 @@ def web(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         templates_config=config.templates,
+        memory_config=config.memory,
         config_path=get_config_path(),
         creative_config=config.creative,
     )
@@ -1030,6 +1032,7 @@ def agent(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         templates_config=config.templates,
+        memory_config=config.memory,
         config_path=get_config_path(),
         creative_config=config.creative,
     )
@@ -1380,6 +1383,56 @@ def status():
             else:
                 has_key = bool(p.api_key)
                 console.print(f"{spec.label}: {'[green]✓[/green]' if has_key else '[dim]not set[/dim]'}")
+
+        _print_opencli_status()
+
+
+def _print_opencli_status() -> None:
+    """Probe and render OpenCLI / browser-bridge readiness."""
+    import asyncio
+
+    try:
+        from tokenmind.integrations.opencli import detect_installation
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"OpenCLI: [yellow]check skipped ({exc})[/yellow]")
+        return
+
+    try:
+        install = asyncio.run(detect_installation())
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"OpenCLI: [yellow]probe failed ({exc})[/yellow]")
+        return
+
+    if install.ready:
+        version = install.opencli_version or "installed"
+        console.print(f"OpenCLI: [green]✓ {version}[/green]")
+        console.print(
+            f"Browser bridge: [green]✓ daemon on :{install.daemon_port}[/green]"
+            + (f" · {len(install.profiles)} profile(s)" if install.profiles else "")
+        )
+        return
+
+    if not install.opencli_installed:
+        console.print("OpenCLI: [dim]not installed[/dim]")
+    else:
+        version = install.opencli_version or "?"
+        console.print(f"OpenCLI: [yellow]installed ({version}) but not ready[/yellow]")
+
+    if not install.node_ok:
+        node_part = install.node_version or "missing"
+        console.print(f"  Node.js: [yellow]{node_part} (need ≥ 20)[/yellow]")
+
+    if install.opencli_installed and install.node_ok and not install.daemon_running:
+        console.print(
+            f"  Browser bridge: [yellow]daemon not running on :{install.daemon_port}[/yellow]"
+        )
+
+    for step in install.missing_steps:
+        console.print(f"  → {step.title}")
+        if step.command:
+            console.print(f"    [dim]{step.command}[/dim]")
+        if step.url:
+            console.print(f"    [dim]{step.url}[/dim]")
 
 
 # ============================================================================
