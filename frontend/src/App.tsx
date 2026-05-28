@@ -13,6 +13,7 @@ import { KnowledgePage } from './pages/Knowledge';
 import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
 import { ProjectHome } from './pages/ProjectHome';
+import { ProjectsGrid } from './pages/ProjectsGrid';
 import { SettingsPage } from './pages/Settings';
 import type { SectionId } from './pages/Settings';
 // UsagePage pulls in ECharts (~190kB gz). Lazy-load so the main bundle stays
@@ -140,6 +141,7 @@ const App: React.FC = () => {
     activeProjectId,
     activeProject,
     openProject,
+    leaveProject,
     queuePendingSessionStarter,
     availableKnowledgeBases,
     loadKnowledgeBases,
@@ -161,6 +163,7 @@ const App: React.FC = () => {
     | 'tts'
     | 'voice-design'
     | 'video'
+    | 'project-list'
     | 'project-home'
     | 'project-chat'
     | 'settings'
@@ -420,6 +423,15 @@ const App: React.FC = () => {
               <Suspense fallback={<div className="app-main__empty">加载中…</div>}>
                 <UsagePage />
               </Suspense>
+            ) : mainView === 'project-list' ? (
+              <ProjectsGrid
+                onOpenProject={(projectId) => {
+                  void openProject(projectId).then(() => {
+                    setMainView('project-home');
+                  });
+                }}
+                onProjectCreated={() => setMainView('project-home')}
+              />
             ) : mainView === 'project-home' ? (
               <ProjectHome
                 onStartConversation={async (message) => {
@@ -446,6 +458,10 @@ const App: React.FC = () => {
                 onOpenSession={(sessionId) => {
                   setCurrentSession(sessionId);
                   setMainView('project-chat');
+                }}
+                onBack={() => {
+                  leaveProject();
+                  setMainView('project-list');
                 }}
               />
             ) : currentSession ? (

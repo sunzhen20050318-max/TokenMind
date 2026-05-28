@@ -59,7 +59,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({ onClose,
         </label>
 
         <div className="project-modal__tip">
-          项目会把属于它的聊天收进单独空间，项目中的聊天不会出现在全局最近列表。
+          项目会把属于它的聊天收进单独空间，方便集中管理；这些聊天同样会出现在左侧全局最近列表里。
         </div>
 
         {error ? <div className="project-modal__error">{error}</div> : null}

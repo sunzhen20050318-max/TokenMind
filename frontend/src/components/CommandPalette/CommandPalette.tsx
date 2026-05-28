@@ -14,6 +14,7 @@ export type NavTarget =
   | 'tts'
   | 'voice-design'
   | 'video'
+  | 'project-list'
   | 'project-home'
   | 'settings'
   | 'tasks'
@@ -45,6 +46,7 @@ const NAV_ITEMS: Array<{ id: NavTarget; label: string; hint?: string }> = [
   { id: 'chat', label: '聊天', hint: '回到对话' },
   { id: 'knowledge', label: '知识库' },
   { id: 'assets', label: '资产库' },
+  { id: 'project-list', label: '项目', hint: '查看全部项目' },
   { id: 'tasks', label: '定时任务' },
   { id: 'usage', label: '用量' },
   { id: 'music', label: '音乐工作室' },

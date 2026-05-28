@@ -132,7 +132,7 @@
 }
 
 .shell-sidebar__top {
-  padding: 14px 12px 10px;
+  padding: 10px 12px 8px;
   /* Allow the flex column to shrink __top when needed; we *don't* put
      overflow-y here because the 更多 popover is position: absolute inside
      __nav and would be clipped. The variable-height piece (project
@@ -141,7 +141,7 @@
 }
 
 .shell-sidebar__brand {
-  padding: 2px 6px 16px;
+  padding: 2px 6px 8px;
 }
 
 .shell-sidebar__brand-row {
@@ -285,12 +285,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 13px;
+  padding: 7px 12px;
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 14px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   color: #f4f4f6;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -328,53 +328,12 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 14px;
+  margin-top: 8px;
 }
 
 .shell-sidebar__group {
   margin-top: 6px;
   padding-top: 4px;
-}
-
-.shell-sidebar__project-shell {
-  margin-top: 4px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-
-/* Highlight only the toggle when the project view is active; no outer box. */
-.shell-sidebar__project-shell.is-open,
-.shell-sidebar__project-shell.is-active {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-
-.shell-sidebar__group-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 10px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background: transparent;
-  color: #cfd1d8;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
-}
-
-.shell-sidebar__group-toggle:hover,
-.shell-sidebar__group-toggle.is-open,
-.shell-sidebar__group-toggle.is-active {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.03);
-  color: #f4f5f7;
 }
 
 .shell-sidebar__group-label {
@@ -423,282 +382,15 @@
   color: #ffffff;
 }
 
-.shell-sidebar__project-directory {
-  display: grid;
-  gap: 1px;
-  margin-top: 2px;
-  padding: 0 0 4px 10px;
-  /* Cap so an expanded list with many projects/sessions can't push the
-     设置中心 footer off the bottom of `.app-main` (which clips with
-     overflow: hidden). The directory scrolls internally past the cap. */
-  max-height: min(40vh, 320px);
-  overflow-y: auto;
-}
-
-.shell-sidebar__project-directory-head {
-  margin: 0;
-  padding: 0 0 4px;
-}
-
-.shell-sidebar__project-create {
-  width: 100%;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: #8a8d95;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.shell-sidebar__project-create:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: #f0f1f3;
-}
-
-.shell-sidebar__project-create.is-quiet {
-  margin-bottom: 0;
-}
-
-.shell-sidebar__project-node {
-  display: grid;
-  gap: 0;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-
-.shell-sidebar__project-node.is-open {
-  border: none;
-  background: transparent;
-  box-shadow: none;
-}
-
-.shell-sidebar__project-head {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-}
-
-.shell-sidebar__project-row {
-  position: relative;
-  flex: 1;
-  width: auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: #c6c8ce;
-  font-size: 12.5px;
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.shell-sidebar__project-row:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: #f0f1f3;
-}
-
-.shell-sidebar__project-row.is-active {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
-}
-
-.shell-sidebar__project-node.is-open .shell-sidebar__project-row {
-  background: transparent;
-  color: #f0f1f3;
-}
-
-.shell-sidebar__project-node.is-open .shell-sidebar__project-row:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.shell-sidebar__project-row.is-active::before {
-  content: none;
-}
-
-.shell-sidebar__project-row-icon {
-  width: 13px;
-  height: 13px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #7d818b;
-  flex: 0 0 auto;
-}
-
-.shell-sidebar__project-row-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.shell-sidebar__project-row-label {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shell-sidebar__project-row-caret {
-  color: #777c86;
-  font-size: 11px;
-  transition: transform 0.16s ease, color 0.16s ease;
-}
-
-.shell-sidebar__project-row-caret.is-open {
-  transform: rotate(180deg);
-  color: #e9ebf0;
-}
-
-/* Caret split out from the project-row label so the label is dedicated
-   to navigation (→ project-home). The caret button toggles the inline
-   session list expand/collapse without leaving the current view.
-   Lives as a direct sibling of .project-row (not inside .project-actions)
-   so it's always visible — users can read the expand/collapse state at
-   a glance without hovering the project row. */
-.shell-sidebar__project-caret {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: #777c86;
-  font-size: 11px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: transform 0.16s ease, color 0.16s ease, background-color 0.16s ease;
-}
-
-.shell-sidebar__project-caret:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #e9ebf0;
-}
-
-.shell-sidebar__project-caret.is-open {
-  transform: rotate(180deg);
-  color: #e9ebf0;
-}
-
-.shell-sidebar__project-actions,
-.shell-sidebar__project-session-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.16s ease;
-}
-
-.shell-sidebar__project-node:hover .shell-sidebar__project-actions,
-.shell-sidebar__project-node:focus-within .shell-sidebar__project-actions,
-.shell-sidebar__project-session-item:hover .shell-sidebar__project-session-actions,
-.shell-sidebar__project-session-item:focus-within .shell-sidebar__project-session-actions,
-.shell-sidebar__project-session-item.is-active .shell-sidebar__project-session-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.shell-sidebar__project-action {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: #848893;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.shell-sidebar__project-action:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #f0f1f3;
-}
-
-.shell-sidebar__project-action svg {
-  width: 13px;
-  height: 13px;
-}
-
-.shell-sidebar__project-session-list {
-  display: grid;
-  gap: 1px;
-  margin: 2px 0 2px 14px;
-  padding: 0 0 2px 8px;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.shell-sidebar__project-node.is-open .shell-sidebar__project-session-list {
-  margin-top: 2px;
-}
-
-.shell-sidebar__project-session-item {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-}
-
-.shell-sidebar__project-session {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-  padding: 5px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: #9094a0;
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.shell-sidebar__project-session:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: #eceef2;
-}
-
-.shell-sidebar__project-session.is-active {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
-}
-
-.shell-sidebar__project-empty {
-  padding: 6px 10px 2px;
-  color: #6d7078;
-  font-size: 12px;
-}
-
 .shell-sidebar__nav-item,
 .shell-sidebar__settings {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 10px;
+  padding: 6px 10px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 9px;
   background: transparent;
   color: #cfd1d8;
   font-size: 13px;
@@ -1008,8 +700,23 @@
 
 .shell-sidebar__session-meta {
   margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: #777982;
   font-size: 11px;
+}
+
+.shell-sidebar__session-project {
+  max-width: 40%;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #aab0bd;
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shell-sidebar__session-actions {
