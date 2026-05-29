@@ -3,7 +3,6 @@ import { GroupedVirtuoso } from 'react-virtuoso';
 import { BrandMark } from '../BrandMark';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
-import { CreativeTasksDock } from '../CreativeTasksDock/CreativeTasksDock';
 import { MoveSessionToProjectModal } from '../Projects/MoveSessionToProjectModal';
 import { OverlayPortal } from '../Overlay/OverlayPortal';
 import './sidebar.css';
@@ -13,19 +12,12 @@ export type SidebarMainView =
   | 'knowledge'
   | 'assets'
   | 'browser'
-  | 'music'
-  | 'voice-clone'
-  | 'tts'
-  | 'voice-design'
-  | 'video'
   | 'project-list'
   | 'project-home'
   | 'project-chat'
   | 'settings'
   | 'tasks'
   | 'usage';
-
-const VOICE_VIEWS: SidebarMainView[] = ['voice-clone', 'tts', 'voice-design'];
 
 // User-resizable sidebar bounds. Max equals the original fixed width so the
 // pinned sidebar never grows beyond its current footprint; min keeps the
@@ -87,9 +79,6 @@ function SidebarIcon({
     | 'knowledge'
     | 'assets'
     | 'browser'
-    | 'music'
-    | 'voice'
-    | 'video'
     | 'project'
     | 'more'
     | 'task'
@@ -168,35 +157,6 @@ function SidebarIcon({
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
-      </svg>
-    );
-  }
-
-  if (id === 'music') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M9 18V6.5L19 4v11.5" />
-        <circle cx="7" cy="18" r="2.5" />
-        <circle cx="17" cy="15.5" r="2.5" />
-      </svg>
-    );
-  }
-
-  if (id === 'voice') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3Z" />
-        <path d="M18 11a6 6 0 0 1-12 0" />
-        <path d="M12 17v3" />
-      </svg>
-    );
-  }
-
-  if (id === 'video') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <rect x="3" y="5" width="14" height="14" rx="3" />
-        <path d="m17 10 4-2v8l-4-2" />
       </svg>
     );
   }
@@ -761,13 +721,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="shell-sidebar__more" ref={moreMenuRef}>
               <button
                 className={`shell-sidebar__nav-item shell-sidebar__more-toggle ${
-                  mainView === 'music' ||
-                  mainView === 'video' ||
-                  mainView === 'tasks' ||
-                  mainView === 'usage' ||
-                  VOICE_VIEWS.includes(mainView)
-                    ? 'is-active'
-                    : ''
+                  mainView === 'tasks' || mainView === 'usage' ? 'is-active' : ''
                 }`}
                 type="button"
                 onClick={() => setMoreMenuOpen((value) => !value)}
@@ -784,76 +738,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {moreMenuOpen ? (
                 <div className="shell-sidebar__more-popover" role="menu">
-                  <button
-                    className={`shell-sidebar__more-item ${mainView === 'music' ? 'is-active' : ''}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onSelectMainView('music');
-                      setMoreMenuOpen(false);
-                    }}
-                  >
-                    <span className="shell-sidebar__icon">
-                      <SidebarIcon id="music" />
-                    </span>
-                    <span>音乐</span>
-                  </button>
-                  <button
-                    className={`shell-sidebar__more-item ${mainView === 'voice-clone' ? 'is-active' : ''}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onSelectMainView('voice-clone');
-                      setMoreMenuOpen(false);
-                    }}
-                  >
-                    <span className="shell-sidebar__icon">
-                      <SidebarIcon id="voice" />
-                    </span>
-                    <span>声音克隆</span>
-                  </button>
-                  <button
-                    className={`shell-sidebar__more-item ${mainView === 'tts' ? 'is-active' : ''}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onSelectMainView('tts');
-                      setMoreMenuOpen(false);
-                    }}
-                  >
-                    <span className="shell-sidebar__icon">
-                      <SidebarIcon id="voice" />
-                    </span>
-                    <span>语音合成</span>
-                  </button>
-                  <button
-                    className={`shell-sidebar__more-item ${mainView === 'voice-design' ? 'is-active' : ''}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onSelectMainView('voice-design');
-                      setMoreMenuOpen(false);
-                    }}
-                  >
-                    <span className="shell-sidebar__icon">
-                      <SidebarIcon id="voice" />
-                    </span>
-                    <span>音色设计</span>
-                  </button>
-                  <button
-                    className={`shell-sidebar__more-item ${mainView === 'video' ? 'is-active' : ''}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onSelectMainView('video');
-                      setMoreMenuOpen(false);
-                    }}
-                  >
-                    <span className="shell-sidebar__icon">
-                      <SidebarIcon id="video" />
-                    </span>
-                    <span>视频</span>
-                  </button>
                   <button
                     className={`shell-sidebar__more-item ${mainView === 'tasks' ? 'is-active' : ''}`}
                     type="button"
@@ -1006,8 +890,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ) : (
         <div className="shell-sidebar__collapsed-spacer" />
       )}
-
-      <CreativeTasksDock collapsed={collapsed} onSelectMainView={onSelectMainView} />
 
       <div className="shell-sidebar__footer">
         <button

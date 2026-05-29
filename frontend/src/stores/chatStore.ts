@@ -11,7 +11,6 @@ import type {
   TaskListSnapshot,
 } from '../types';
 import { api } from '../services/api';
-import type { CreativeSettings } from '../types/config';
 import type { KnowledgeBase } from '../types/knowledge';
 
 export interface ToolCall {
@@ -201,7 +200,6 @@ interface ChatState {
    *  the modal. Carries session_id so the modal only shows in the
    *  originating chat. */
   pendingBrowserHandoff: PendingBrowserHandoff | null;
-  creativeCapabilities: CreativeSettings | null;
   availableKnowledgeBases: KnowledgeBase[];
   linkedKnowledgeBaseIds: string[];
   activeWikiKbId: string | null;
@@ -247,8 +245,6 @@ interface ChatState {
   fetchModelProviders: () => Promise<void>;
   setActiveModel: (providerId: string, model?: string) => Promise<void>;
   updateProviderConfig: (providerId: string, config: { apiKey: string; apiBase: string }) => Promise<void>;
-  loadCreativeCapabilities: () => Promise<void>;
-  setCreativeCapabilities: (creative: CreativeSettings) => void;
   loadKnowledgeBases: () => Promise<void>;
   loadLinkedKnowledgeBases: (sessionId: string) => Promise<void>;
   setLinkedKnowledgeBases: (knowledgeBaseIds: string[]) => Promise<void>;
@@ -365,7 +361,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingBrowserHandoff: null,
   lastPromptAt: null,
   lastPromptModel: null,
-  creativeCapabilities: null,
   availableKnowledgeBases: [],
   linkedKnowledgeBaseIds: [],
   activeWikiKbId: null,
@@ -1100,19 +1095,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to update provider config' });
     }
-  },
-
-  loadCreativeCapabilities: async () => {
-    try {
-      const config = await api.getConfig();
-      set({ creativeCapabilities: config.creative });
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Failed to load creative capabilities' });
-    }
-  },
-
-  setCreativeCapabilities: (creative) => {
-    set({ creativeCapabilities: creative });
   },
 
   loadKnowledgeBases: async () => {

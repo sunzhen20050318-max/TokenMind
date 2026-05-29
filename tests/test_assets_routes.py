@@ -137,26 +137,6 @@ async def test_list_assets_filters_by_category_and_favorite(monkeypatch, tmp_pat
     )
     assert {item.id for item in videos.items} == {video_record["id"]}
 
-    music = await assets_module.list_assets(
-        category="music", store=store, project_lookup=_no_project
-    )
-    assert {item.id for item in music.items} == {audio_record["id"]}
-
-    tts = await assets_module.list_assets(
-        category="tts", store=store, project_lookup=_no_project
-    )
-    assert {item.id for item in tts.items} == {tts_record["id"]}
-
-    clones = await assets_module.list_assets(
-        category="voice_clone", store=store, project_lookup=_no_project
-    )
-    assert {item.id for item in clones.items} == {clone_record["id"]}
-
-    designs = await assets_module.list_assets(
-        category="voice_design", store=store, project_lookup=_no_project
-    )
-    assert {item.id for item in designs.items} == {design_record["id"]}
-
     audio = await assets_module.list_assets(
         category="audio", store=store, project_lookup=_no_project
     )

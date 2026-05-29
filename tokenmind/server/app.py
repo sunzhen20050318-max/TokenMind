@@ -7,7 +7,7 @@ import hmac
 import mimetypes
 import shutil
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +22,6 @@ from tokenmind.bus.events import InboundMessage
 from tokenmind.bus.queue import MessageBus
 from tokenmind.config.loader import load_config
 from tokenmind.config.schema import KnowledgeConfig, UploadsConfig
-from tokenmind.creative.music_generation import MusicGenerationService
-from tokenmind.creative.tts import SYSTEM_VOICES, TtsService
-from tokenmind.creative.voice_clone import VoiceCloneService
-from tokenmind.creative.voice_clone_store import VoiceCloneRecord, VoiceCloneStore
-from tokenmind.creative.voice_design import VoiceDesignService
 from tokenmind.knowledge import KnowledgeService
 from tokenmind.projects import ProjectStore
 from tokenmind.server.attachments import AttachmentStore, categorize_attachment
@@ -49,7 +44,6 @@ from tokenmind.server.routes import (
     browser_router,
     chat_router,
     config_router,
-    creative_router,
     cron_router,
     knowledge_router,
     memory_router,
@@ -117,7 +111,6 @@ class ChatService:
         self.projects = ProjectStore(session_manager.workspace)
         self.audit = AuditLogger(session_manager.workspace)
         self.attachments = AttachmentStore(session_manager.workspace)
-        self.voice_clones = VoiceCloneStore(session_manager.workspace)
         self._response_futures: dict[str, asyncio.Future] = {}
         self._last_upload_cleanup_at: datetime | None = None
         self._knowledge_tasks: set[asyncio.Task[Any]] = set()
@@ -647,342 +640,6 @@ class ChatService:
 
     def retain_attachment(self, attachment_id: str) -> dict[str, Any]:
         return self.attachments.retain(attachment_id)
-
-    async def generate_music(
-        self,
-        *,
-        prompt: str,
-        lyrics: str | None = None,
-        lyrics_optimizer: bool = False,
-        is_instrumental: bool = False,
-        count: int = 1,
-        reference_audio_base64: str | None = None,
-        reference_audio_name: str | None = None,
-    ) -> dict[str, Any]:
-        """Generate music through the configured creative music capability."""
-        config = load_config()
-        has_reference_audio = bool((reference_audio_base64 or "").strip())
-        capability = config.creative.music_cover if has_reference_audio else config.creative.music
-        if not MusicGenerationService.is_configured(capability):
-            if has_reference_audio:
-                raise ValueError("Music cover generation is not configured or enabled")
-            raise ValueError("Music generation is not configured or enabled")
-
-        service = MusicGenerationService(capability)
-        normalized_count = max(1, min(4, int(count or 1)))
-        attachments: list[dict[str, Any]] = []
-        results: list[dict[str, Any]] = []
-
-        for _ in range(normalized_count):
-            result = await service.generate(
-                prompt=prompt,
-                lyrics=lyrics,
-                lyrics_optimizer=lyrics_optimizer,
-                is_instrumental=is_instrumental,
-                reference_audio_base64=reference_audio_base64,
-            )
-            attachment = self.create_generated_attachment(
-                "creative:music",
-                filename=result.filename,
-                content=result.data,
-                mime_type=result.mime_type,
-                message_id="creative-music",
-            )
-            attachments.append(attachment)
-            results.append(
-                {
-                    "filename": result.filename,
-                    "mime_type": result.mime_type,
-                    "model": result.model,
-                    "provider": result.provider,
-                    "duration_ms": result.duration_ms,
-                    "trace_id": result.trace_id,
-                    "reference_audio_name": reference_audio_name,
-                }
-            )
-
-        if not attachments or not results:
-            raise RuntimeError("Music generation returned no results")
-
-        return {
-            "attachment": attachments[0],
-            "result": results[0],
-            "attachments": attachments,
-            "results": results,
-        }
-
-    async def upload_voice_clone_audio(
-        self,
-        *,
-        audio_bytes: bytes,
-        filename: str,
-        content_type: str | None,
-    ) -> dict[str, Any]:
-        """Upload a clone source audio sample through the configured voice_clone capability."""
-        config = load_config()
-        capability = config.creative.voice_clone
-        if not VoiceCloneService.is_configured(capability):
-            raise ValueError("Voice clone capability is not configured or enabled")
-
-        service = VoiceCloneService(capability)
-        uploaded = await service.upload_audio(
-            audio_bytes=audio_bytes,
-            filename=filename,
-            content_type=content_type,
-        )
-        return {
-            "file_id": uploaded.file_id,
-            "filename": uploaded.filename,
-            "bytes": uploaded.bytes,
-            "created_at": uploaded.created_at,
-        }
-
-    async def create_voice_clone(
-        self,
-        *,
-        file_id: int,
-        voice_id: str | None,
-        preview_text: str | None,
-        need_noise_reduction: bool,
-        need_volume_normalization: bool,
-        language_boost: str | None,
-        source_filename: str | None = None,
-    ) -> dict[str, Any]:
-        """Clone a voice, archive the demo audio locally, and persist a record."""
-        config = load_config()
-        capability = config.creative.voice_clone
-        if not VoiceCloneService.is_configured(capability):
-            raise ValueError("Voice clone capability is not configured or enabled")
-
-        service = VoiceCloneService(capability)
-        result = await service.clone_voice(
-            file_id=file_id,
-            voice_id=voice_id,
-            preview_text=preview_text,
-            need_noise_reduction=need_noise_reduction,
-            need_volume_normalization=need_volume_normalization,
-            language_boost=language_boost,
-        )
-
-        demo_attachment_id: str | None = None
-        if result.demo_audio_url:
-            try:
-                audio_bytes, mime_type = await service.download_demo_audio(result.demo_audio_url)
-                ext = "mp3" if mime_type.endswith("mpeg") else mime_type.split("/")[-1]
-                filename = f"voice-demo-{result.voice_id}.{ext}"
-                attachment = self.create_generated_attachment(
-                    "creative:voice_clone",
-                    filename=filename,
-                    content=audio_bytes,
-                    mime_type=mime_type,
-                    message_id=f"voice-clone-{result.voice_id}",
-                    preview_text=preview_text,
-                )
-                retained = self.retain_attachment(attachment["id"])
-                demo_attachment_id = retained.get("id") or attachment["id"]
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "Failed to archive voice clone demo audio for voice_id {}",
-                    result.voice_id,
-                )
-
-        record = VoiceCloneRecord(
-            voice_id=result.voice_id,
-            model=result.model,
-            provider=result.provider,
-            created_at=datetime.now(timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z"),
-            preview_text=(preview_text or "").strip() or None,
-            source_filename=source_filename,
-            demo_audio_url=result.demo_audio_url,
-            demo_attachment_id=demo_attachment_id,
-            last_kept_alive_at=None,
-        )
-        self.voice_clones.upsert(record)
-
-        return {
-            **record.to_dict(),
-            "input_sensitive": result.input_sensitive,
-            "input_sensitive_type": result.input_sensitive_type,
-            "trace_id": result.trace_id,
-        }
-
-    async def design_voice(
-        self,
-        *,
-        prompt: str,
-        preview_text: str,
-        voice_id: str | None = None,
-        display_name: str | None = None,
-    ) -> dict[str, Any]:
-        """Design a new voice from a text prompt and persist the generated audio."""
-        config = load_config()
-        capability = config.creative.voice_design
-        # Fall back to voice_clone / tts capability so users with one MiniMax key
-        # don't have to duplicate their credentials across entries.
-        if not VoiceDesignService.is_configured(capability):
-            capability = config.creative.voice_clone
-        if not VoiceDesignService.is_configured(capability):
-            capability = config.creative.tts
-        if not VoiceDesignService.is_configured(capability):
-            raise ValueError("Voice design is not configured or enabled")
-
-        service = VoiceDesignService(capability)
-        result = await service.design_voice(
-            prompt=prompt,
-            preview_text=preview_text,
-            voice_id=voice_id,
-        )
-
-        attachment = self.create_generated_attachment(
-            "creative:voice_design",
-            filename=f"voice-design-{result.voice_id}.mp3",
-            content=result.trial_audio,
-            mime_type=result.mime_type,
-            message_id=f"voice-design-{result.voice_id}",
-            preview_text=preview_text,
-        )
-        retained = self.retain_attachment(attachment["id"])
-        demo_attachment_id = retained.get("id") or attachment["id"]
-
-        record = VoiceCloneRecord(
-            voice_id=result.voice_id,
-            model=result.model,
-            provider=result.provider,
-            created_at=datetime.now(timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z"),
-            preview_text=preview_text.strip() or None,
-            source_filename=None,
-            demo_audio_url=None,
-            demo_attachment_id=demo_attachment_id,
-            last_kept_alive_at=None,
-            source="design",
-            display_name=(display_name or "").strip() or None,
-            notes=prompt.strip() or None,
-        )
-        self.voice_clones.upsert(record)
-
-        return {
-            **record.to_dict(),
-            "trace_id": result.trace_id,
-        }
-
-    def list_voice_clones(self) -> list[dict[str, Any]]:
-        """List all persisted voice clone records."""
-        return [record.to_dict() for record in self.voice_clones.list()]
-
-    def delete_voice_clone(self, voice_id: str) -> dict[str, Any] | None:
-        """Delete a local voice clone record (and its demo attachment if present)."""
-        record = self.voice_clones.get(voice_id)
-        if record is None:
-            return None
-        if record.demo_attachment_id:
-            try:
-                existing = self.attachments.get_record(record.demo_attachment_id)
-                if existing is not None:
-                    self.attachments.mark_expired(record.demo_attachment_id)
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "Failed to expire demo attachment {} for voice_id {}",
-                    record.demo_attachment_id,
-                    voice_id,
-                )
-        self.voice_clones.delete(voice_id)
-        return record.to_dict()
-
-    async def synthesize_voice(
-        self,
-        *,
-        text: str,
-        voice_id: str,
-        model: str | None = None,
-        speed: float = 1.0,
-        volume: float = 1.0,
-        pitch: int = 0,
-        emotion: str | None = None,
-    ) -> dict[str, Any]:
-        """Synthesize ``text`` with ``voice_id`` and persist the audio as an attachment."""
-        config = load_config()
-        capability = config.creative.tts
-        # Fall back to the voice_clone capability so users who only configured one
-        # MiniMax key can still do TTS without setting the same key twice.
-        if not TtsService.is_configured(capability):
-            capability = config.creative.voice_clone
-        if not TtsService.is_configured(capability):
-            raise ValueError("Voice synthesis is not configured or enabled")
-
-        service = TtsService(capability)
-        result = await service.synthesize(
-            text=text,
-            voice_id=voice_id,
-            model=model,
-            speed=speed,
-            volume=volume,
-            pitch=pitch,
-            emotion=emotion,
-        )
-        attachment = self.create_generated_attachment(
-            "creative:tts",
-            filename=result.filename,
-            content=result.data,
-            mime_type=result.mime_type,
-            message_id=f"tts-{result.voice_id}",
-            preview_text=text.strip()[:500],
-        )
-        retained = self.retain_attachment(attachment["id"])
-        attachment_id = retained.get("id") or attachment["id"]
-
-        return {
-            "voice_id": result.voice_id,
-            "model": result.model,
-            "provider": result.provider,
-            "filename": result.filename,
-            "mime_type": result.mime_type,
-            "usage_characters": result.usage_characters,
-            "trace_id": result.trace_id,
-            "attachment_id": attachment_id,
-            "attachment": retained,
-        }
-
-    def list_tts_voices(self) -> dict[str, list[dict[str, Any]]]:
-        """Aggregate cloned voices and built-in system voices for the TTS picker."""
-        cloned: list[dict[str, Any]] = []
-        for record in self.voice_clones.list():
-            payload = record.to_dict()
-            payload["kind"] = "cloned"
-            payload["label"] = record.voice_id
-            cloned.append(payload)
-        system: list[dict[str, Any]] = [
-            {
-                "kind": "system",
-                "voice_id": voice.voice_id,
-                "label": voice.label,
-                "gender": voice.gender,
-                "description": voice.description,
-            }
-            for voice in SYSTEM_VOICES
-        ]
-        return {"cloned": cloned, "system": system}
-
-    async def keep_alive_voice_clone(self, voice_id: str) -> dict[str, Any]:
-        """Call MiniMax TTS with a short text to reset the 7-day inactivity timer."""
-        config = load_config()
-        capability = config.creative.voice_clone
-        if not VoiceCloneService.is_configured(capability):
-            raise ValueError("Voice clone capability is not configured or enabled")
-
-        record = self.voice_clones.get(voice_id)
-        if record is None:
-            raise ValueError(f"Voice clone '{voice_id}' not found")
-
-        service = VoiceCloneService(capability)
-        await service.keep_alive_voice(voice_id=voice_id)
-        updated = self.voice_clones.mark_kept_alive(voice_id)
-        return updated.to_dict()
 
     async def save_uploads(self, session_id: str, files: list[Any]) -> list[dict[str, Any]]:
         """Persist uploaded files into the workspace and return attachment metadata."""
@@ -1949,7 +1606,6 @@ def create_app(
     app.include_router(browser_router)
     app.include_router(chat_router)
     app.include_router(config_router)
-    app.include_router(creative_router)
     app.include_router(cron_router)
     app.include_router(knowledge_router)
     app.include_router(memory_router)

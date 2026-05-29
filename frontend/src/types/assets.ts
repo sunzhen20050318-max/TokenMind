@@ -1,10 +1,6 @@
 export type AssetCategory =
   | 'image'
   | 'video'
-  | 'music'
-  | 'tts'
-  | 'voice_clone'
-  | 'voice_design'
   | 'audio'
   | 'file';
 

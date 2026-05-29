@@ -13,10 +13,6 @@ const PAGE_SIZE = 60;
 const CATEGORY_TABS: Array<{ id: AssetCategory; label: string; emptyHint: string }> = [
   { id: 'image', label: '图片', emptyHint: '还没有生成或上传过图片。' },
   { id: 'video', label: '视频', emptyHint: '还没有视频资产。' },
-  { id: 'music', label: '音乐', emptyHint: '还没有生成过音乐。' },
-  { id: 'tts', label: '语音合成', emptyHint: '还没有语音合成资产。' },
-  { id: 'voice_clone', label: '声音克隆', emptyHint: '还没有声音克隆试听资产。' },
-  { id: 'voice_design', label: '音色设计', emptyHint: '还没有音色设计试听资产。' },
   { id: 'file', label: '文件', emptyHint: '还没有可展示的文件。' },
 ];
 
@@ -57,7 +53,7 @@ function groupByDate(items: AssetItem[]): AssetGroup[] {
 }
 
 function isAudioAssetCategory(category: AssetCategory): boolean {
-  return ['music', 'tts', 'voice_clone', 'voice_design', 'audio'].includes(category);
+  return category === 'audio';
 }
 
 export const AssetsPage: React.FC<AssetsPageProps> = ({ onNavigateToSession }) => {

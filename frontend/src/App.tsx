@@ -10,7 +10,6 @@ import { ChatWindow } from './components/Chat/ChatWindow';
 import { createProjectConversation } from './components/Projects/projectEntryFlow';
 import { BrowserPage } from './pages/Browser';
 import { KnowledgePage } from './pages/Knowledge';
-import { MusicPage } from './pages/Music';
 import { AssetsPage } from './pages/Assets';
 import { ProjectHome } from './pages/ProjectHome';
 import { ProjectsGrid } from './pages/ProjectsGrid';
@@ -21,10 +20,6 @@ import type { SectionId } from './pages/Settings';
 const UsagePage = lazy(() =>
   import('./pages/UsagePage').then((module) => ({ default: module.UsagePage })),
 );
-import { VideoPage } from './pages/Video';
-import { VoiceClonePage } from './pages/voice/VoiceCloneStudio';
-import { TtsPage } from './pages/voice/TtsStudio';
-import { VoiceDesignPage } from './pages/voice/VoiceDesignStudio';
 import { api } from './services/api';
 import {
   compareVersions,
@@ -134,9 +129,7 @@ const App: React.FC = () => {
 
   const {
     currentSession,
-    creativeCapabilities,
     fetchModelProviders,
-    loadCreativeCapabilities,
     setCurrentSession,
     activeProjectId,
     activeProject,
@@ -158,11 +151,6 @@ const App: React.FC = () => {
     | 'knowledge'
     | 'assets'
     | 'browser'
-    | 'music'
-    | 'voice-clone'
-    | 'tts'
-    | 'voice-design'
-    | 'video'
     | 'project-list'
     | 'project-home'
     | 'project-chat'
@@ -245,9 +233,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     void fetchModelProviders();
-    void loadCreativeCapabilities();
     void loadKnowledgeBases();
-  }, [fetchModelProviders, loadCreativeCapabilities, loadKnowledgeBases]);
+  }, [fetchModelProviders, loadKnowledgeBases]);
 
   // Surface chatStore.error (currently sprinkled across ~12 call sites but
   // never rendered) as a transient toast. After toasting we clear the field
@@ -406,19 +393,6 @@ const App: React.FC = () => {
                   setMainView('chat');
                 }}
               />
-            ) : mainView === 'music' ? (
-              <MusicPage
-                capability={creativeCapabilities?.music}
-                coverCapability={creativeCapabilities?.music_cover}
-              />
-            ) : mainView === 'voice-clone' ? (
-              <VoiceClonePage capability={creativeCapabilities?.voice_clone} />
-            ) : mainView === 'tts' ? (
-              <TtsPage capability={creativeCapabilities?.tts} />
-            ) : mainView === 'voice-design' ? (
-              <VoiceDesignPage capability={creativeCapabilities?.voice_design} />
-            ) : mainView === 'video' ? (
-              <VideoPage capability={creativeCapabilities?.video} />
             ) : mainView === 'usage' ? (
               <Suspense fallback={<div className="app-main__empty">加载中…</div>}>
                 <UsagePage />

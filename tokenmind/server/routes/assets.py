@@ -20,21 +20,12 @@ router = APIRouter(prefix="/api/assets", tags=["assets"])
 _IMAGE_CATEGORIES: set[str] = {"image"}
 _VIDEO_CATEGORIES: set[str] = {"video"}
 _AUDIO_CATEGORIES: set[str] = {"audio"}
-_MUSIC_SESSIONS: set[str] = {"creative:music"}
-_TTS_SESSIONS: set[str] = {"creative:tts"}
-_VOICE_CLONE_SESSIONS: set[str] = {"creative:voice_clone"}
-_VOICE_DESIGN_SESSIONS: set[str] = {"creative:voice_design"}
-# "file" tab covers everything else that isn't audio (audio is consumed by the
-# voice/music studios separately).
+# "file" tab covers everything else that isn't a recognised media kind.
 _FILE_EXCLUDED: set[str] = {"image", "video", "audio"}
 
 CategoryFilter = Literal[
     "image",
     "video",
-    "music",
-    "tts",
-    "voice_clone",
-    "voice_design",
     "audio",
     "file",
 ]
@@ -121,14 +112,6 @@ def _matches_category(record: AttachmentRecord, category: CategoryFilter) -> boo
         return True
     if record.category in _IMAGE_CATEGORIES and category == "image":
         return True
-    if category == "music":
-        return record.category in _AUDIO_CATEGORIES and record.session_id in _MUSIC_SESSIONS
-    if category == "tts":
-        return record.category in _AUDIO_CATEGORIES and record.session_id in _TTS_SESSIONS
-    if category == "voice_clone":
-        return record.category in _AUDIO_CATEGORIES and record.session_id in _VOICE_CLONE_SESSIONS
-    if category == "voice_design":
-        return record.category in _AUDIO_CATEGORIES and record.session_id in _VOICE_DESIGN_SESSIONS
     if record.category in _AUDIO_CATEGORIES and category == "audio":
         return True
     if category == "file":

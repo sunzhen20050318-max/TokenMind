@@ -9,11 +9,6 @@ export type NavTarget =
   | 'chat'
   | 'knowledge'
   | 'assets'
-  | 'music'
-  | 'voice-clone'
-  | 'tts'
-  | 'voice-design'
-  | 'video'
   | 'project-list'
   | 'project-home'
   | 'settings'
@@ -49,11 +44,6 @@ const NAV_ITEMS: Array<{ id: NavTarget; label: string; hint?: string }> = [
   { id: 'project-list', label: '项目', hint: '查看全部项目' },
   { id: 'tasks', label: '定时任务' },
   { id: 'usage', label: '用量' },
-  { id: 'music', label: '音乐工作室' },
-  { id: 'tts', label: '语音合成' },
-  { id: 'voice-clone', label: '声音克隆' },
-  { id: 'voice-design', label: '声音设计' },
-  { id: 'video', label: '视频生成' },
   { id: 'settings', label: '设置中心' },
 ];
 

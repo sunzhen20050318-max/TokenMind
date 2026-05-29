@@ -98,12 +98,6 @@ class CreativeConfig(Base):
     """Configuration for creative capabilities."""
 
     image: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
-    music: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
-    music_cover: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
-    voice_clone: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
-    tts: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
-    voice_design: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
-    video: CreativeCapabilityConfig = Field(default_factory=CreativeCapabilityConfig)
 
 
 class GatewayConfig(Base):

@@ -141,48 +141,6 @@ const CREATIVE_CAPABILITY_META: Record<
     defaultModel: 'image-01',
     usage: '聊天内可用',
   },
-  music: {
-    label: '音乐',
-    description: '用于独立音乐生成页的模型配置，当前版本先提供入口和状态。',
-    defaultProvider: 'minimax',
-    defaultModel: 'music-2.6',
-    usage: '独立页面',
-  },
-  music_cover: {
-    label: '翻唱模型',
-    description: '上传参考音乐时使用的翻唱/参考音频模型，未启用时音乐页不能使用参考音乐。',
-    defaultProvider: 'minimax',
-    defaultModel: 'music-cover',
-    usage: '音乐页参考音乐',
-  },
-  voice_clone: {
-    label: '声音克隆',
-    description: '从音频样本克隆出专属音色，可用于后续的语音合成。',
-    defaultProvider: 'minimax',
-    defaultModel: 'speech-2.8-hd',
-    usage: '声音工程 · 声音克隆',
-  },
-  tts: {
-    label: '语音合成',
-    description: '文字转语音（TTS），支持使用系统、克隆或设计出来的音色。',
-    defaultProvider: 'minimax',
-    defaultModel: 'speech-2.8-hd',
-    usage: '声音工程 · 语音合成',
-  },
-  voice_design: {
-    label: '音色设计',
-    description: '用文字描述生成全新音色，无需上传参考音频。',
-    defaultProvider: 'minimax',
-    defaultModel: 'speech-2.8-hd',
-    usage: '声音工程 · 音色设计',
-  },
-  video: {
-    label: '视频',
-    description: '用于独立视频生成页的模型配置，当前版本先提供入口和状态。',
-    defaultProvider: 'minimax',
-    defaultModel: 'video-01',
-    usage: '独立页面',
-  },
 };
 
 const LEGACY_SECTION_META = [
@@ -220,17 +178,6 @@ const SECTION_META = [
 ] as const;
 
 const HIDDEN_NAV_SECTIONS: ReadonlySet<string> = new Set(['automation']);
-
-/** Capabilities that are MiniMax-only (audio / music pipelines). They get
- * grouped under a collapsible "MiniMax 音乐工程" header so the top-level
- * creative list shows only the multi-vendor capabilities (image / video). */
-const MINIMAX_STUDIO_IDS: ReadonlySet<CreativeCapabilityKey> = new Set([
-  'music',
-  'music_cover',
-  'voice_clone',
-  'tts',
-  'voice_design',
-]);
 
 const NAV_GROUPS: Array<{ id: 'core' | 'workspace'; label: string }> = [
   { id: 'core', label: '核心设置' },
@@ -750,7 +697,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     sessions,
     fetchModelProviders,
     loadSessions,
-    setCreativeCapabilities,
     setCurrentSession,
   } = useChatStore();
   const navigateToSession = (sessionId: string) => {
@@ -782,7 +728,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [creativeDraft, setCreativeDraft] = useState<CreativeSettings | null>(null);
   const [selectedCreativeId, setSelectedCreativeId] = useState<CreativeCapabilityKey>('image');
-  const [minimaxStudioExpanded, setMinimaxStudioExpanded] = useState(false);
   const [editingCreativeId, setEditingCreativeId] = useState<CreativeCapabilityKey | null>(null);
   const [creativeForm, setCreativeForm] = useState<CreativeCapabilityFormState>(
     buildCreativeCapabilityForm('image')
@@ -850,7 +795,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const data = await api.getConfig();
         setProviders(data.providers);
         setCreativeDraft(data.creative);
-        setCreativeCapabilities(data.creative);
         setAgentDraft({
           ...data.agent,
           fallback_models: data.agent.fallback_models ?? [],
@@ -988,11 +932,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       };
     });
   }, [creativeDraft]);
-
-  const minimaxStudioCards = useMemo(
-    () => creativeCards.filter((capability) => MINIMAX_STUDIO_IDS.has(capability.id)),
-    [creativeCards],
-  );
 
   type CapabilityCard = (typeof creativeCards)[number];
   const renderCapabilityCard = (capability: CapabilityCard) => (
@@ -1491,10 +1430,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }
           : current
       );
-      setCreativeCapabilities({
-        ...(creativeDraft || ({} as CreativeSettings)),
-        [editingCreativeId]: response.config,
-      } as CreativeSettings);
       setCreativeForm((current) => ({
         ...current,
         apiKey: '',
@@ -1529,10 +1464,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }
           : current
       );
-      setCreativeCapabilities({
-        ...(creativeDraft || ({} as CreativeSettings)),
-        [capabilityId]: response.config,
-      } as CreativeSettings);
       setSuccess(
         `${CREATIVE_CAPABILITY_META[capabilityId].label}${enabled ? ' 已启用' : ' 已停用'}`
       );
@@ -2301,38 +2232,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <p>这里的能力模型不会覆盖默认聊天模型，只决定对应创作入口是否可用。</p>
         </div>
         <div className="settings-provider-grid">
-          {creativeCards
-            .filter((capability) => !MINIMAX_STUDIO_IDS.has(capability.id))
-            .map((capability) => renderCapabilityCard(capability))}
-
-          <div className="settings-creative-group">
-            <button
-              type="button"
-              className={`settings-creative-group__header ${
-                minimaxStudioExpanded ? 'is-open' : ''
-              }`}
-              aria-expanded={minimaxStudioExpanded}
-              onClick={() => setMinimaxStudioExpanded((value) => !value)}
-            >
-              <span className="settings-creative-group__title">MiniMax 音乐工程</span>
-              <span className="settings-creative-group__count">
-                {minimaxStudioCards.length} 项
-              </span>
-              <span
-                className={`settings-creative-group__caret ${
-                  minimaxStudioExpanded ? 'is-open' : ''
-                }`}
-                aria-hidden
-              >
-                ▾
-              </span>
-            </button>
-            {minimaxStudioExpanded ? (
-              <div className="settings-creative-group__body">
-                {minimaxStudioCards.map((capability) => renderCapabilityCard(capability))}
-              </div>
-            ) : null}
-          </div>
+          {creativeCards.map((capability) => renderCapabilityCard(capability))}
         </div>
       </div>
 

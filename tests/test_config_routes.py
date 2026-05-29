@@ -67,7 +67,6 @@ async def test_get_config_includes_creative_defaults_and_masks_keys(temp_config_
 
     config = Config()
     config.creative.image.api_key = "creative-image-secret-1234"
-    config.creative.music.api_key = "music-secret-9876"
     save_config(config, temp_config_path)
 
     response = await get_config()
@@ -78,11 +77,6 @@ async def test_get_config_includes_creative_defaults_and_masks_keys(temp_config_
     assert response.creative["image"]["api_base"] is None
     assert response.creative["image"]["model"] == ""
     assert response.creative["image"]["extra_headers"] is None
-    assert response.creative["music"]["api_key"] == "****9876"
-    assert response.creative["music_cover"]["enabled"] is False
-    assert response.creative["music_cover"]["model"] == ""
-    assert response.creative["voice_clone"]["enabled"] is False
-    assert response.creative["video"]["provider"] == ""
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,6 @@ from tokenmind.server.routes.assets import router as assets_router
 from tokenmind.server.routes.browser import router as browser_router
 from tokenmind.server.routes.chat import router as chat_router
 from tokenmind.server.routes.config import router as config_router
-from tokenmind.server.routes.creative import router as creative_router
 from tokenmind.server.routes.cron import router as cron_router
 from tokenmind.server.routes.knowledge import router as knowledge_router
 from tokenmind.server.routes.memory import router as memory_router
@@ -21,7 +20,6 @@ __all__ = [
     "browser_router",
     "chat_router",
     "config_router",
-    "creative_router",
     "cron_router",
     "knowledge_router",
     "memory_router",
