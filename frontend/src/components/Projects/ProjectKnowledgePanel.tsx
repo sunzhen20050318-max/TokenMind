@@ -23,10 +23,16 @@ function describeStage(document: KnowledgeDocument): string {
       return '已上传 · 等待编译';
     case 'extracting':
       return '正在提取文本';
-    case 'compiling':
+    case 'chunking':
+      return '正在切分内容';
+    case 'compiling_source':
+      return '正在写源页面';
+    case 'compiling_with_llm':
+      return 'LLM 正在抽取实体与主题（可能 1–3 分钟）';
     case 'embedding':
+      return '正在生成向量';
     case 'indexing':
-      return '正在生成 Wiki 页面';
+      return '正在写入索引';
     case 'ready':
       return '已编译为 Wiki';
     default:
@@ -97,7 +103,17 @@ export const ProjectKnowledgePanel: React.FC<ProjectKnowledgePanelProps> = ({ pr
     }
   }, []);
 
-  useEffect(() => () => stopTicker(), [stopTicker]);
+  // On project switch or unmount, cancel any in-flight trackProcessing loop
+  // (bumping runIdRef makes its `while (runIdRef.current === runId)` exit) and
+  // stop the ticker, so we don't keep polling the old project or setState on an
+  // unmounted component.
+  useEffect(
+    () => () => {
+      runIdRef.current += 1;
+      stopTicker();
+    },
+    [projectId, stopTicker],
+  );
 
   // Time-based asymptotic ticker: visual percent approaches 89% during compile
   // (mirrors the global knowledge page). Only the backend ready signal pushes

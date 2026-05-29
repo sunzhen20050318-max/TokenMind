@@ -160,10 +160,13 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
     void loadDetail(selectedId);
   }, [loadDetail, selectedId]);
 
-  // Stop any running progress ticker on unmount so an unmounted component
-  // doesn't keep calling setUploadProgress.
+  // Stop any running progress ticker AND cancel the processing poll loop on
+  // unmount so an unmounted component doesn't keep calling setUploadProgress or
+  // polling refreshDetail. Bumping uploadPollRef makes the loop's
+  // `while (uploadPollRef.current === runId)` guard fail on its next iteration.
   useEffect(() => {
     return () => {
+      uploadPollRef.current += 1;
       if (progressTickerRef.current !== null) {
         window.clearInterval(progressTickerRef.current);
         progressTickerRef.current = null;

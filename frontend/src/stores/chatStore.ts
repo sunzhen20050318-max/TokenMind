@@ -782,6 +782,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         last_prompt_at,
         last_prompt_model,
       } = await api.getHistory(sessionId);
+      // The user may have navigated to another session while this request was
+      // in flight; applying stale history would clobber the now-current
+      // session's foreground state.
+      if (get().currentSession !== sessionId) {
+        return;
+      }
       set({
         messages,
         timelineEvents: timeline_events || [],
@@ -796,8 +802,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         lastPromptModel: last_prompt_model || null,
         isLoading: false,
       });
-    } catch (e) {
-      // Session might not exist yet, that's ok
+    } catch {
+      // Session might not exist yet, that's ok. Same stale-navigation guard as
+      // the success path — don't reset a session the user already left.
+      if (get().currentSession !== sessionId) {
+        return;
+      }
       set({
         messages: [],
         timelineEvents: [],
@@ -1117,6 +1127,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadLinkedKnowledgeBases: async (sessionId) => {
     try {
       const payload = await api.getSessionKnowledgeLinks(sessionId);
+      // Ignore a result that arrives after the user switched sessions, so it
+      // doesn't overwrite the now-current session's linked-KB list.
+      if (get().currentSession !== sessionId) {
+        return;
+      }
       set({ linkedKnowledgeBaseIds: payload.knowledge_base_ids });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to load linked knowledge bases' });
