@@ -1090,17 +1090,21 @@ class KnowledgeService:
     ) -> None:
         import json
 
+        # Serialize the cache read-modify-write under _state_lock so it can't
+        # interleave with the compile/delete paths (which write the same file)
+        # and lose entries. RLock → safe even if a caller already holds it.
         cache_path = kb_root / ".wiki-cache.json"
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
-        cache["sources"][f"sha256:{sha256}"] = {
-            "document_id": document.id,
-            "title": document.name,
-            "raw_path": str(Path(document.path).relative_to(kb_root)),
-            "status": "registered",
-            "created_at": document.created_at,
-        }
-        cache["updated_at"] = utc_now_iso()
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self._state_lock:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache["sources"][f"sha256:{sha256}"] = {
+                "document_id": document.id,
+                "title": document.name,
+                "raw_path": str(Path(document.path).relative_to(kb_root)),
+                "status": "registered",
+                "created_at": document.created_at,
+            }
+            cache["updated_at"] = utc_now_iso()
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def process_document(
         self, document_id: str, *, force: bool = False
@@ -1198,41 +1202,51 @@ class KnowledgeService:
         safe_name = safe_wiki_filename(Path(title).stem) + ".md"
 
         cache_path = kb_root / ".wiki-cache.json"
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
-        sha = ""
-        for key, entry in cache.get("sources", {}).items():
-            if entry.get("document_id") == document_id:
-                sha = key.split(":", 1)[1] if ":" in key else ""
-                break
+        # Cache read-modify-write held under _state_lock (see _update_wiki_cache)
+        # so a concurrent registration/delete can't drop this source/page entry.
+        # The expensive LLM compile below runs OUTSIDE the lock.
+        with self._state_lock:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            sha = ""
+            for key, entry in cache.get("sources", {}).items():
+                if entry.get("document_id") == document_id:
+                    sha = key.split(":", 1)[1] if ":" in key else ""
+                    break
 
-        page_md = compile_source_page_template(
-            page_id=page_id,
-            source_id=document_id,
-            title=title,
-            raw_path=raw_rel,
-            sha256=sha,
-            body_text=text,
-        )
-        page_path = kb_root / "wiki" / "sources" / safe_name
-        page_path.parent.mkdir(parents=True, exist_ok=True)
-        page_path.write_text(page_md, encoding="utf-8")
+            page_md = compile_source_page_template(
+                page_id=page_id,
+                source_id=document_id,
+                title=title,
+                raw_path=raw_rel,
+                sha256=sha,
+                body_text=text,
+            )
+            page_path = kb_root / "wiki" / "sources" / safe_name
+            page_path.parent.mkdir(parents=True, exist_ok=True)
+            page_path.write_text(page_md, encoding="utf-8")
 
-        sources_map = cache.setdefault("sources", {})
-        sha_key = f"sha256:{sha}"
-        sources_map.setdefault(sha_key, {})
-        sources_map[sha_key]["status"] = "ready"
-        sources_map[sha_key]["source_page_id"] = page_id
-        cache.setdefault("pages", {})[page_id] = {
-            "path": f"wiki/sources/{safe_name}",
-            "type": "source",
-            "title": title,
-            "source_id": document_id,
-        }
-        cache["updated_at"] = utc_now_iso()
-        cache_path.write_text(
-            json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+            sources_map = cache.setdefault("sources", {})
+            sha_key = f"sha256:{sha}"
+            sources_map.setdefault(sha_key, {})
+            sources_map[sha_key]["status"] = "ready"
+            sources_map[sha_key]["source_page_id"] = page_id
+            cache.setdefault("pages", {})[page_id] = {
+                "path": f"wiki/sources/{safe_name}",
+                "type": "source",
+                "title": title,
+                "source_id": document_id,
+            }
+            cache["updated_at"] = utc_now_iso()
+            cache_path.write_text(
+                json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
+        # Track whether the LLM enrichment actually succeeded. A hard failure
+        # must surface as status="failed" (not a silent "ready") AND must not
+        # stamp compiled_at — otherwise the cache gate would treat the broken
+        # doc as done and never retry it on re-upload/recompile.
+        compile_error: str | None = None
+        compile_incomplete = False
         if self._wiki_llm_provider is not None and self._wiki_llm_model:
             save_state(
                 processing_stage="compiling_with_llm",
@@ -1276,6 +1290,7 @@ class KnowledgeService:
                     summary_empty = bool(re.search(r"## 摘要\s*\n\s*##", body))
                     concepts_empty = bool(re.search(r"## 提到的概念\s*$", body))
                     if summary_empty or concepts_empty:
+                        compile_incomplete = True
                         logger.warning(
                             "wiki compile finished but source page sections empty for {} "
                             "(summary_empty={}, concepts_empty={})",
@@ -1286,6 +1301,7 @@ class KnowledgeService:
                 except OSError:
                     pass
             except Exception as exc:
+                compile_error = str(exc)
                 logger.warning(f"wiki LLM compile (runner) failed: {exc}")
 
         try:
@@ -1294,18 +1310,31 @@ class KnowledgeService:
             logger.warning(f"wiki graph rebuild failed: {exc}")
 
         # Mark this SHA as compiled so a subsequent re-upload with identical
-        # content can hit the cache gate at the top of this function.
-        if sha:
-            try:
-                cache = json.loads(cache_path.read_text(encoding="utf-8"))
-                key = f"sha256:{sha}"
-                if key in cache.get("sources", {}):
-                    cache["sources"][key]["compiled_at"] = utc_now_iso()
-                    cache_path.write_text(
-                        json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
-                    )
-            except Exception as exc:
-                logger.warning(f"failed to mark cache compiled_at: {exc}")
+        # content can hit the cache gate — but ONLY when the compile actually
+        # succeeded. Stamping a failed/incomplete compile would cache the broken
+        # result and prevent any retry. RMW held under _state_lock (D2).
+        if sha and compile_error is None and not compile_incomplete:
+            with self._state_lock:
+                try:
+                    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+                    key = f"sha256:{sha}"
+                    if key in cache.get("sources", {}):
+                        cache["sources"][key]["compiled_at"] = utc_now_iso()
+                        cache_path.write_text(
+                            json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8"
+                        )
+                except Exception as exc:
+                    logger.warning(f"failed to mark cache compiled_at: {exc}")
+
+        if compile_error is not None:
+            # Source page was written (raw text is on disk), but entity/topic
+            # extraction failed — surface it so the user can recompile.
+            return save_state(
+                status="failed",
+                processing_stage="failed",
+                processing_progress=100,
+                error_message=f"Wiki 编译失败：{compile_error}",
+            )
 
         return save_state(
             status="ready",
@@ -1455,17 +1484,19 @@ class KnowledgeService:
     def _wiki_delete_document(self, kb: KnowledgeBaseRecord, document_id: str) -> dict[str, Any]:
         kb_root = Path(kb.root_path)
         cache_path = kb_root / ".wiki-cache.json"
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
-
-        source_page_id = None
-        cache_key_to_remove = None
-        for key, entry in cache.get("sources", {}).items():
-            if entry.get("document_id") == document_id:
-                source_page_id = entry.get("source_page_id")
-                cache_key_to_remove = key
-                break
-
+        # Hold _state_lock across the whole cache read-modify-write (D2) so a
+        # concurrent compile/registration can't lose entries. No long ops here.
         with self._state_lock:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+
+            source_page_id = None
+            cache_key_to_remove = None
+            for key, entry in cache.get("sources", {}).items():
+                if entry.get("document_id") == document_id:
+                    source_page_id = entry.get("source_page_id")
+                    cache_key_to_remove = key
+                    break
+
             self._reload()
             doc = next((d for d in self._state["documents"] if d["id"] == document_id), None)
             if doc is None:
@@ -1477,16 +1508,16 @@ class KnowledgeService:
             self._update_knowledge_base_counts(kb.id)
             self._save()
 
-        if source_page_id and source_page_id in cache.get("pages", {}):
-            page_rel = cache["pages"][source_page_id]["path"]
-            page_path = kb_root / page_rel
-            if page_path.exists():
-                page_path.unlink()
-            del cache["pages"][source_page_id]
-        if cache_key_to_remove:
-            del cache["sources"][cache_key_to_remove]
-        cache["updated_at"] = utc_now_iso()
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+            if source_page_id and source_page_id in cache.get("pages", {}):
+                page_rel = cache["pages"][source_page_id]["path"]
+                page_path = kb_root / page_rel
+                if page_path.exists():
+                    page_path.unlink()
+                del cache["pages"][source_page_id]
+            if cache_key_to_remove:
+                del cache["sources"][cache_key_to_remove]
+            cache["updated_at"] = utc_now_iso()
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
         cascade_stats = {"deleted": 0, "updated": 0}
         if source_page_id:
