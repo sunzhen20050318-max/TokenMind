@@ -625,15 +625,11 @@ class OpenAICompatProvider(LLMProvider):
         finish_reason = primary.finish_reason or "stop"
         content = getattr(message, "content", None)
 
-        raw_tool_calls: list[Any] = []
-        for choice in choices:
-            msg = choice.message
-            if getattr(msg, "tool_calls", None):
-                raw_tool_calls.extend(msg.tool_calls)
-                if choice.finish_reason in ("tool_calls", "stop"):
-                    finish_reason = choice.finish_reason
-            if not content and getattr(msg, "content", None):
-                content = msg.content
+        # Only the primary choice (choices[0]) is part of this response. Earlier
+        # this looped over ALL choices and concatenated their tool_calls /
+        # clobbered finish_reason, which would merge independent completions when
+        # a gateway returns n>1. We request n=1, so use the primary alone.
+        raw_tool_calls: list[Any] = list(getattr(message, "tool_calls", None) or [])
 
         tool_calls: list[ToolCallRequest] = []
         for tool_call in raw_tool_calls:
