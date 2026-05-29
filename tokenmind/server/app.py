@@ -2015,6 +2015,7 @@ def create_app(
             session_key=session_id,
             connection_manager=connection_manager,
             inbound_queue=bus.inbound,
+            uploads_root=chat_service.attachments.uploads_root,
         )
 
     # Set WebChannel's ws manager

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -11,11 +12,28 @@ from loguru import logger
 from tokenmind.server.websocket.manager import ConnectionManager
 
 
+def _path_within(path: str, root: Path | None) -> bool:
+    """True if ``path`` resolves to a location inside ``root``.
+
+    Clients send back server-issued upload paths over the WebSocket; without
+    this check a client could pass an arbitrary path (e.g. /etc/…) which the
+    context builder would read and base64-encode into the LLM prompt.
+    """
+    if root is None:
+        return False
+    try:
+        resolved = Path(path).resolve()
+        return resolved == root.resolve() or root.resolve() in resolved.parents
+    except OSError:
+        return False
+
+
 async def websocket_handler(
     websocket: WebSocket,
     session_key: str,
     connection_manager: ConnectionManager,
     inbound_queue: Any,  # MessageBus.inbound queue
+    uploads_root: Path | None = None,
 ) -> None:
     """
     Handle a WebSocket connection for chat.
@@ -57,7 +75,10 @@ async def websocket_handler(
                 media = [
                     item.get("path")
                     for item in attachments
-                    if isinstance(item, dict) and item.get("is_image") and item.get("path")
+                    if isinstance(item, dict)
+                    and item.get("is_image")
+                    and item.get("path")
+                    and _path_within(item["path"], uploads_root)
                 ]
                 if not content and not attachments:
                     continue

@@ -13,11 +13,26 @@ from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from fastapi import HTTPException
 
+from tokenmind.security.network import validate_resolved_url, validate_url_target
 from tokenmind.utils.helpers import safe_filename
+
+
+class _SSRFGuardRedirectHandler(HTTPRedirectHandler):
+    """Reject redirects whose target resolves to a private/internal address.
+
+    ``redirect_request`` runs *before* the request to the new URL is issued,
+    so raising here prevents the internal request from ever firing.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        ok, error = validate_resolved_url(newurl)
+        if not ok:
+            raise ValueError(f"Blocked redirect to internal address: {error}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 AttachmentDownloader = Callable[[str], tuple[bytes, str | None]]
 
@@ -259,8 +274,17 @@ class AttachmentStore:
 
     @staticmethod
     def _default_remote_downloader(url: str) -> tuple[bytes, str | None]:
+        # SSRF guard: validate the original target (scheme + resolved IP) before
+        # fetching, and validate every redirect hop before it fires. Without
+        # this an attacker who can steer the URL (e.g. via the deliver_attachment
+        # tool with source_type=remote_url) could reach cloud metadata/internal
+        # hosts.
+        ok, error = validate_url_target(url)
+        if not ok:
+            raise ValueError(f"Blocked URL: {error}")
         request = Request(url, headers={"User-Agent": "TokenMind/1.0"})
-        with urlopen(request, timeout=20) as response:  # noqa: S310 - controlled server-side fetch
+        opener = build_opener(_SSRFGuardRedirectHandler())
+        with opener.open(request, timeout=20) as response:  # noqa: S310 - validated server-side fetch
             content_type = response.headers.get_content_type() if response.headers else None
             return response.read(), content_type
 

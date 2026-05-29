@@ -283,19 +283,37 @@ class WebFetchTool(Tool):
         from readability import Document
 
         try:
+            from tokenmind.security.network import validate_url_target
+
+            # Follow redirects MANUALLY so each hop is validated BEFORE the
+            # request to it fires. With httpx's follow_redirects=True the
+            # internal request would already be sent before we could inspect the
+            # final URL, leaving an SSRF hole (public URL -> 302 -> 169.254.x.x).
             async with httpx.AsyncClient(
-                follow_redirects=True,
-                max_redirects=MAX_REDIRECTS,
+                follow_redirects=False,
                 timeout=30.0,
                 proxy=self.proxy,
             ) as client:
-                r = await client.get(url, headers={"User-Agent": USER_AGENT})
+                current = url
+                r = None
+                for _ in range(MAX_REDIRECTS + 1):
+                    r = await client.get(current, headers={"User-Agent": USER_AGENT})
+                    if r.is_redirect and r.headers.get("location"):
+                        next_url = str(httpx.URL(current).join(r.headers["location"]))
+                        redir_ok, redir_err = validate_url_target(next_url)
+                        if not redir_ok:
+                            return json.dumps(
+                                {"error": f"Redirect blocked: {redir_err}", "url": url},
+                                ensure_ascii=False,
+                            )
+                        current = next_url
+                        continue
+                    break
+                else:
+                    return json.dumps(
+                        {"error": "Too many redirects", "url": url}, ensure_ascii=False
+                    )
                 r.raise_for_status()
-
-            from tokenmind.security.network import validate_resolved_url
-            redir_ok, redir_err = validate_resolved_url(str(r.url))
-            if not redir_ok:
-                return json.dumps({"error": f"Redirect blocked: {redir_err}", "url": url}, ensure_ascii=False)
 
             ctype = r.headers.get("content-type", "")
 

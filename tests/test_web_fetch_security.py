@@ -54,6 +54,7 @@ async def test_web_fetch_result_contains_untrusted_flag():
         url = "https://example.com/page"
         text = fake_html
         headers = {"content-type": "text/html"}
+        is_redirect = False
         def raise_for_status(self): pass
         def json(self): return {}
 
@@ -67,3 +68,39 @@ async def test_web_fetch_result_contains_untrusted_flag():
     data = json.loads(result)
     assert data.get("untrusted") is True
     assert "[External content" in data.get("text", "")
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_blocks_redirect_to_internal():
+    """A public URL that 302-redirects to an internal address must be blocked
+    BEFORE the request to the internal host fires."""
+    tool = WebFetchTool()
+
+    class RedirectResponse:
+        status_code = 302
+        url = "https://example.com/page"
+        text = ""
+        headers = {"location": "http://169.254.169.254/latest/meta-data/"}
+        is_redirect = True
+        def raise_for_status(self): pass
+        def json(self): return {}
+
+    requested_urls: list[str] = []
+
+    async def _fake_get(self, url, **kwargs):
+        requested_urls.append(str(url))
+        return RedirectResponse()
+
+    def _resolve(hostname, port, family=0, type_=0):
+        ip = "169.254.169.254" if "169.254" in hostname else "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 0))]
+
+    with patch("tokenmind.security.network.socket.getaddrinfo", _resolve), \
+         patch("httpx.AsyncClient.get", _fake_get):
+        result = await tool.execute(url="https://example.com/page")
+
+    data = json.loads(result)
+    assert "error" in data
+    assert "redirect" in data["error"].lower()
+    # The internal host must never have been requested.
+    assert not any("169.254" in u for u in requested_urls)
