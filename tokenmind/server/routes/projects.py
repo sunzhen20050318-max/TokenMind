@@ -6,6 +6,7 @@ import inspect
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from loguru import logger
 from pydantic import BaseModel
 
 from tokenmind.server.dependencies import get_chat_service
@@ -96,7 +97,10 @@ async def upload_project_documents(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to upload project documents: {exc}") from exc
+        # Log the detail server-side; return a generic message so internal
+        # paths/state don't leak to the client.
+        logger.exception("Failed to upload project documents for {}", project_id)
+        raise HTTPException(status_code=500, detail="Failed to upload project documents") from exc
 
 
 @router.post("/{project_id}/sources/url")
