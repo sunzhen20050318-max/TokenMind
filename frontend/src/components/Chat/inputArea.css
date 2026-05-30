@@ -431,6 +431,166 @@
   flex: 0 0 auto;
 }
 
+/* ── Footer chip button (plan toggle) — labeled pill, height-matched ── */
+.composer__chip-button {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #dddfe4;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.composer__chip-button:hover {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.11);
+  color: #f3f4f6;
+}
+
+.composer__chip-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.composer__chip-button svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.composer__plan-toggle.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fafafa;
+}
+
+/* ── Consolidated model menu (pill + side flyout for Effort / models) ── */
+.composer__model-menu {
+  position: relative;
+}
+
+/* The trigger is itself the pill — no extra wrapper — so the hover
+   highlight is symmetric (the previous wrapper had uneven padding). */
+.composer__model-trigger {
+  height: 38px;
+  max-width: 240px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.composer__model-trigger:hover {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.11);
+  color: #f3f4f6;
+}
+
+.composer__model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__model-effort {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #b6bac1;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Positioning anchor for the panel + side flyout. */
+.composer__model-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+}
+
+.composer__model-panel,
+.composer__model-flyout {
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  background: #1b1c20;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.composer__model-panel {
+  min-width: 210px;
+}
+
+/* Flyout opens to the right of the main panel, bottom-aligned so it
+   grows upward (away from the composer) like the reference. */
+.composer__model-flyout {
+  position: absolute;
+  left: calc(100% + 6px);
+  bottom: 0;
+  min-width: 168px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.composer__model-section {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #dfe2e7;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.composer__model-section:hover,
+.composer__model-section.is-open {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+.composer__model-section-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8d9199;
+  font-size: 12px;
+}
+
+.composer__model-section svg {
+  width: 14px;
+  height: 14px;
+  color: #8d9199;
+  flex: 0 0 auto;
+}
+
+.composer__model-suboption {
+  padding: 9px 12px;
+  font-size: 12.5px;
+}
+
 .composer__icon-button,
 .composer__submit {
   width: 38px;
@@ -465,6 +625,64 @@
 .composer__submit svg {
   width: 18px;
   height: 18px;
+}
+
+/* Voice input mic button */
+.composer__mic--recording {
+  background: rgba(229, 72, 77, 0.16);
+  border-color: rgba(229, 72, 77, 0.5);
+  color: #ff8085;
+  animation: composer-mic-pulse 1.4s ease-in-out infinite;
+}
+
+.composer__mic--recording:hover {
+  background: rgba(229, 72, 77, 0.24);
+  border-color: rgba(229, 72, 77, 0.6);
+}
+
+.composer__mic--transcribing {
+  color: #9aa0aa;
+}
+
+.composer__mic-spinner {
+  animation: composer-mic-spin 0.8s linear infinite;
+}
+
+@keyframes composer-mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(229, 72, 77, 0);
+  }
+}
+
+@keyframes composer-mic-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.composer__voice-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 6px;
+  font-size: 12px;
+  color: #9aa0aa;
+}
+
+.composer__voice-status--error {
+  color: #ff8085;
+}
+
+.composer__voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #e5484d;
+  animation: composer-mic-pulse 1.4s ease-in-out infinite;
 }
 
 .composer__submit.is-ready {
@@ -567,6 +785,11 @@
   .composer__icon-button,
   .composer__submit {
     width: 36px;
+    height: 36px;
+  }
+
+  .composer__chip-button,
+  .composer__model-trigger {
     height: 36px;
   }
 

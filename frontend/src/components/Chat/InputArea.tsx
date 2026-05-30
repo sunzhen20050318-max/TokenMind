@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../../services/api';
 import type { UploadProgress } from '../../types';
 import type { KnowledgeBase } from '../../types/knowledge';
 import { KnowledgeMenu } from './KnowledgeMenu';
@@ -100,13 +101,15 @@ interface InlineSelectOption {
   label: string;
 }
 
-interface InlineSelectProps {
-  value: string;
-  placeholder: string;
-  options: InlineSelectOption[];
-  onSelect: (value: string) => void;
+interface ComposerModelMenuProps {
+  modelOptions: InlineSelectOption[];
+  activeModelId: string;
+  modelPlaceholder: string;
+  onSelectModel: (value: string) => void;
+  reasoningOptions: InlineSelectOption[];
+  activeReasoning: string;
+  onSelectReasoning: (value: string) => void;
   disabled?: boolean;
-  align?: 'left' | 'right';
 }
 
 function formatFileSize(size: number): string {
@@ -121,20 +124,52 @@ function formatFileSize(size: number): string {
   return `${value >= 100 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
 }
 
-const InlineSelect: React.FC<InlineSelectProps> = ({
-  value,
-  placeholder,
-  options,
-  onSelect,
+const CheckIcon: React.FC = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const ChevronIcon: React.FC<{ direction?: 'down' | 'right' }> = ({ direction = 'down' }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+    {direction === 'right' ? (
+      <polyline points="9 6 15 12 9 18" />
+    ) : (
+      <polyline points="6 9 12 15 18 9" />
+    )}
+  </svg>
+);
+
+/**
+ * Consolidated model selector — a single compact pill (``<model> · <effort>``)
+ * that opens one panel containing the active model, an expandable "Effort"
+ * section, and an expandable "More models" section. Replaces the previous
+ * row of separate inline selects so the composer footer stays uncluttered.
+ */
+const ComposerModelMenu: React.FC<ComposerModelMenuProps> = ({
+  modelOptions,
+  activeModelId,
+  modelPlaceholder,
+  onSelectModel,
+  reasoningOptions,
+  activeReasoning,
+  onSelectReasoning,
   disabled = false,
-  align = 'right',
 }) => {
   const [open, setOpen] = useState(false);
+  const [section, setSection] = useState<'effort' | 'models' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const currentLabel = options.find((option) => option.value === value)?.label || placeholder;
+
+  const activeModelLabel =
+    modelOptions.find((option) => option.value === activeModelId)?.label || modelPlaceholder;
+  const otherModels = modelOptions.filter((option) => option.value !== activeModelId);
+  const activeEffortLabel = reasoningOptions.find(
+    (option) => option.value === activeReasoning,
+  )?.label;
 
   useEffect(() => {
     if (!open) {
+      setSection(null);
       return;
     }
 
@@ -143,13 +178,11 @@ const InlineSelect: React.FC<InlineSelectProps> = ({
         setOpen(false);
       }
     };
-
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpen(false);
       }
     };
-
     window.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('keydown', handleEscape);
     return () => {
@@ -159,43 +192,100 @@ const InlineSelect: React.FC<InlineSelectProps> = ({
   }, [open]);
 
   return (
-    <div className="composer__inline-select" ref={rootRef}>
+    <div className="composer__model-menu" ref={rootRef}>
       <button
         type="button"
-        className="composer__inline-trigger"
+        className="composer__inline-trigger composer__model-trigger"
         disabled={disabled}
         onClick={() => setOpen((state) => !state)}
         aria-expanded={open}
       >
-        <span>{currentLabel}</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        <span className="composer__model-name">{activeModelLabel}</span>
+        {activeEffortLabel ? (
+          <span className="composer__model-effort">{activeEffortLabel}</span>
+        ) : null}
+        <ChevronIcon />
       </button>
 
       {open ? (
-        <div className={`composer__inline-menu composer__inline-menu--${align}`}>
-          {options.map((option) => {
-            const selected = option.value === value;
-            return (
+        <div className="composer__model-popover">
+          <div className="composer__model-panel">
+            <button
+              type="button"
+              className="composer__inline-option is-selected"
+              onClick={() => setOpen(false)}
+            >
+              <span>{activeModelLabel}</span>
+              <CheckIcon />
+            </button>
+
+            {reasoningOptions.length > 0 ? (
               <button
-                key={option.value || 'empty'}
                 type="button"
-                className={`composer__inline-option ${selected ? 'is-selected' : ''}`}
-                onClick={() => {
-                  onSelect(option.value);
-                  setOpen(false);
-                }}
+                className={`composer__model-section ${section === 'effort' ? 'is-open' : ''}`}
+                onClick={() => setSection((s) => (s === 'effort' ? null : 'effort'))}
+                aria-expanded={section === 'effort'}
               >
-                <span>{option.label}</span>
-                {selected ? (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : null}
+                <span>Effort</span>
+                <span className="composer__model-section-value">
+                  {activeEffortLabel || '关闭'}
+                  <ChevronIcon direction="right" />
+                </span>
               </button>
-            );
-          })}
+            ) : null}
+
+            {otherModels.length > 0 ? (
+              <button
+                type="button"
+                className={`composer__model-section ${section === 'models' ? 'is-open' : ''}`}
+                onClick={() => setSection((s) => (s === 'models' ? null : 'models'))}
+                aria-expanded={section === 'models'}
+              >
+                <span>More models</span>
+                <ChevronIcon direction="right" />
+              </button>
+            ) : null}
+          </div>
+
+          {section === 'effort' && reasoningOptions.length > 0 ? (
+            <div className="composer__model-flyout">
+              {reasoningOptions.map((option) => {
+                const selected = option.value === activeReasoning;
+                return (
+                  <button
+                    key={option.value || 'off'}
+                    type="button"
+                    className={`composer__inline-option composer__model-suboption ${selected ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      onSelectReasoning(option.value);
+                      setOpen(false);
+                    }}
+                  >
+                    <span>{option.label}</span>
+                    {selected ? <CheckIcon /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {section === 'models' && otherModels.length > 0 ? (
+            <div className="composer__model-flyout">
+              {otherModels.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="composer__inline-option composer__model-suboption"
+                  onClick={() => {
+                    onSelectModel(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -248,6 +338,105 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
+
+  // ── Voice input (mic → faster-whisper → composer text) ────────────────
+  const [voiceState, setVoiceState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const onChangeRef = useRef(onChange);
+  const valueRef = useRef(value);
+  onChangeRef.current = onChange;
+  valueRef.current = value;
+
+  const stopAudioStream = () => {
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    audioStreamRef.current = null;
+  };
+
+  // Tear down any live recording if the composer unmounts mid-capture.
+  useEffect(() => {
+    return () => {
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        // already stopped
+      }
+      stopAudioStream();
+    };
+  }, []);
+
+  const appendTranscript = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const current = valueRef.current;
+    const needsSpace = current.length > 0 && !/\s$/.test(current);
+    onChangeRef.current(`${current}${needsSpace ? ' ' : ''}${trimmed}`);
+  };
+
+  const startRecording = async () => {
+    setVoiceError(null);
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setVoiceError('当前浏览器不支持录音');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        stopAudioStream();
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        if (chunks.length === 0) {
+          setVoiceState('idle');
+          return;
+        }
+        const mime = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunks, { type: mime });
+        const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'mp4' : 'webm';
+        setVoiceState('transcribing');
+        try {
+          const text = await api.transcribeAudio(blob, `voice.${ext}`);
+          appendTranscript(text);
+          if (!text.trim()) setVoiceError('没有识别到语音');
+        } catch (err) {
+          setVoiceError(err instanceof Error ? err.message : '语音转写失败');
+        } finally {
+          setVoiceState('idle');
+        }
+      };
+      recorder.start();
+      setVoiceState('recording');
+    } catch {
+      stopAudioStream();
+      setVoiceState('idle');
+      setVoiceError('无法访问麦克风，请检查权限');
+    }
+  };
+
+  const stopRecording = () => {
+    try {
+      mediaRecorderRef.current?.stop();
+    } catch {
+      stopAudioStream();
+      setVoiceState('idle');
+    }
+  };
+
+  const toggleRecording = () => {
+    if (voiceState === 'recording') {
+      stopRecording();
+    } else if (voiceState === 'idle') {
+      void startRecording();
+    }
+  };
   // Connection-down keeps the textarea fully usable (so the user isn't
   // trapped while we silently reconnect) but blocks send — sending would
   // drop the message because the WS isn't OPEN.
@@ -281,9 +470,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
       : availableModels.length === 0
         ? '未配置模型'
         : '选择模型';
-
-  const reasoningPlaceholder =
-    reasoningSelectOptions.find((option) => option.value === activeReasoning)?.label || '关闭';
 
   // ── Slash-command menu ────────────────────────────────────────────────
   // Open the menu only when the textarea starts with "/" and the user
@@ -605,6 +791,20 @@ export const InputArea: React.FC<InputAreaProps> = ({
           className="composer__textarea"
         />
 
+        {voiceState === 'recording' ? (
+          <div className="composer__voice-status" role="status">
+            <span className="composer__voice-dot" /> 正在录音 · 点击麦克风结束并转写
+          </div>
+        ) : voiceState === 'transcribing' ? (
+          <div className="composer__voice-status" role="status">
+            正在转写语音…
+          </div>
+        ) : voiceError ? (
+          <div className="composer__voice-status composer__voice-status--error" role="alert">
+            {voiceError}
+          </div>
+        ) : null}
+
         <div className="composer__footer">
           <div className="composer__footer-left">
             <button
@@ -632,58 +832,78 @@ export const InputArea: React.FC<InputAreaProps> = ({
           </div>
 
           <div className="composer__footer-right">
-            {/* Model + reasoning selectors render in both launch and active
-                modes — hiding them on the welcome page surprised users who
-                wanted to pick the model BEFORE typing the first message. */}
-            <div className="composer__controls">
-              <InlineSelect
-                value={activeModelId || ''}
-                placeholder={modelPlaceholder}
-                options={modelSelectOptions}
-                onSelect={(next) => onSelectModel?.(next)}
-                disabled={modelStatus === 'loading' || modelSelectOptions.length === 0}
-              />
-              <span className="composer__controls-divider" />
-              <InlineSelect
-                value={activeReasoning || ''}
-                placeholder={reasoningPlaceholder}
-                options={reasoningSelectOptions}
-                onSelect={(next) => onSelectReasoning?.(next)}
-              />
-              {onTogglePlanMode ? (
-                <>
-                  <span className="composer__controls-divider" />
-                  <button
-                    type="button"
-                    disabled={!!disabled || !!isUploading}
-                    onClick={onTogglePlanMode}
-                    aria-pressed={planMode}
-                    aria-label={planMode ? '关闭计划模式' : '开启计划模式'}
-                    title={
-                      planMode
-                        ? '计划模式开启 — Agent 会先列任务再执行（点击关闭）'
-                        : '开启计划模式 — Agent 会在多步任务前先列出 task_list'
-                    }
-                    className="composer__inline-trigger"
-                    style={planMode ? { color: '#fafafa' } : undefined}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      style={planMode ? { color: '#fafafa' } : undefined}
-                    >
-                      <rect x="4" y="5" width="16" height="14" rx="2" />
-                      <path d="M8 9h8" />
-                      <path d="M8 13h5" />
-                      <path d="M8 17h3" />
-                    </svg>
-                    <span>计划{planMode ? ' · 开' : ''}</span>
-                  </button>
-                </>
-              ) : null}
-            </div>
+            {/* Plan-mode stays a standalone icon (not in the reference image
+                but kept on request) — labeled chip so new users recognise it. */}
+            {onTogglePlanMode ? (
+              <button
+                type="button"
+                disabled={!!disabled || !!isUploading}
+                onClick={onTogglePlanMode}
+                aria-pressed={planMode}
+                aria-label={planMode ? '关闭计划模式' : '开启计划模式'}
+                title={
+                  planMode
+                    ? '计划模式开启 — Agent 会先列任务再执行（点击关闭）'
+                    : '开启计划模式 — Agent 会在多步任务前先列出 task_list'
+                }
+                className={`composer__chip-button composer__plan-toggle ${planMode ? 'is-active' : ''}`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <rect x="4" y="5" width="16" height="14" rx="2" />
+                  <path d="M8 9h8" />
+                  <path d="M8 13h5" />
+                  <path d="M8 17h3" />
+                </svg>
+                <span>计划{planMode ? ' · 开' : ''}</span>
+              </button>
+            ) : null}
+
+            {/* Single consolidated model pill: model · effort, with a
+                side flyout for Effort / More models. */}
+            <ComposerModelMenu
+              modelOptions={modelSelectOptions}
+              activeModelId={activeModelId || ''}
+              modelPlaceholder={modelPlaceholder}
+              onSelectModel={(next) => onSelectModel?.(next)}
+              reasoningOptions={reasoningSelectOptions}
+              activeReasoning={activeReasoning || ''}
+              onSelectReasoning={(next) => onSelectReasoning?.(next)}
+              disabled={modelStatus === 'loading' || modelSelectOptions.length === 0}
+            />
+
+            <button
+              type="button"
+              disabled={!!disabled || !!isUploading || voiceState === 'transcribing'}
+              onClick={toggleRecording}
+              className={`composer__icon-button composer__mic composer__mic--${voiceState}`}
+              aria-label={
+                voiceState === 'recording'
+                  ? '停止录音并转写'
+                  : voiceState === 'transcribing'
+                    ? '正在转写语音'
+                    : '语音输入'
+              }
+              aria-pressed={voiceState === 'recording'}
+              title={
+                voiceState === 'recording'
+                  ? '点击停止并转写为文字'
+                  : voiceState === 'transcribing'
+                    ? '正在转写…'
+                    : '语音输入 — 说话自动转成文字'
+              }
+            >
+              {voiceState === 'transcribing' ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="composer__mic-spinner">
+                  <path d="M12 3a9 9 0 1 0 9 9" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <rect x="9" y="3" width="6" height="11" rx="3" />
+                  <path d="M5 11a7 7 0 0 0 14 0" strokeLinecap="round" />
+                  <path d="M12 18v3" strokeLinecap="round" />
+                </svg>
+              )}
+            </button>
 
             {isStreaming ? (
               <button

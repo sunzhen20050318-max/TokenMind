@@ -374,6 +374,33 @@ export const api = {
     });
   },
 
+  /**
+   * Transcribe a recorded audio clip to text (voice input for the composer).
+   * Posts the blob to the local faster-whisper backend and returns the text.
+   */
+  async transcribeAudio(blob: Blob, filename = 'voice.webm'): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    const res = await fetch(`${API_BASE}/transcribe`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      let detail = `语音转写失败: ${res.statusText}`;
+      try {
+        const payload = await res.json();
+        if (payload && typeof payload.detail === 'string') {
+          detail = payload.detail;
+        }
+      } catch {
+        // ignore non-JSON error bodies
+      }
+      throw new Error(detail);
+    }
+    const data = (await res.json()) as { text?: string };
+    return data.text ?? '';
+  },
+
   getAttachmentUrl(attachmentId: string): string {
     return `${API_BASE}/chat/attachments/${encodeURIComponent(attachmentId)}`;
   },

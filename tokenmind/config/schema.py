@@ -113,6 +113,24 @@ class GatewayConfig(Base):
     auth_secret: str = ""
 
 
+class TranscriptionConfig(Base):
+    """Voice-to-text (ASR) configuration for the Web UI mic button.
+
+    The default ``local`` backend runs faster-whisper entirely on-device with
+    no API key. Set ``backend`` to ``groq`` to reuse the cloud Whisper provider
+    (requires ``providers.groq.api_key``).
+    """
+
+    backend: Literal["local", "groq"] = "local"
+    # faster-whisper model size: tiny / base / small / medium / large-v3.
+    # "base" (~150MB) is the default; bump to "small"/"medium" for better
+    # Chinese accuracy at the cost of a larger download and slower transcribe.
+    model: str = "base"
+    device: str = "auto"  # auto / cpu / cuda
+    compute_type: str = "auto"  # auto / int8 / float16 / float32
+    language: str = ""  # empty -> auto-detect (zh/en/...)
+
+
 class WebSearchConfig(Base):
     """Web search tool configuration."""
 
@@ -251,6 +269,7 @@ class Config(BaseSettings):
     templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
 
     @property
     def workspace_path(self) -> Path:

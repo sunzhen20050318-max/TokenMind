@@ -52,6 +52,7 @@ from tokenmind.server.routes import (
     skills_router,
     status_router,
     storage_router,
+    transcription_router,
     updates_router,
     usage_router,
 )
@@ -1614,6 +1615,7 @@ def create_app(
     app.include_router(skills_router)
     app.include_router(status_router)
     app.include_router(storage_router)
+    app.include_router(transcription_router)
     app.include_router(updates_router)
     app.include_router(usage_router)
 
