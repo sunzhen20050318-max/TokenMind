@@ -25,6 +25,12 @@ interface PooledConnection {
   closed: boolean;
   /** Resolves when the socket has reached OPEN at least once. */
   ready: Promise<void>;
+  /** Heartbeat interval handle (null when not running). */
+  heartbeatTimer: number | null;
+  /** Epoch ms of the last message received (incl. pong) — drives half-open detection. */
+  lastActivityAt: number;
+  /** User messages queued while the socket was down, resent on reconnect. */
+  pending: string[];
 }
 
 // Reconnect strategy: infinite retries with exponential backoff capped at
@@ -39,10 +45,32 @@ export function backoffDelay(attempt: number): number {
   return Math.min(RECONNECT_BASE_DELAY_MS * 2 ** exp, RECONNECT_MAX_DELAY_MS);
 }
 
+// Heartbeat: ping every 25s; if no message (incl. pong) arrives within the
+// interval + a 10s grace, the socket is treated as half-open and force-closed
+// so the existing reconnect logic kicks in. Detects dead connections that
+// never fire `onclose` (laptop sleep, wifi switch).
+export const HEARTBEAT_INTERVAL_MS = 25_000;
+export const PONG_TIMEOUT_MS = 10_000;
+// isLoading watchdog: if a session stays disconnected this long with no events,
+// release the stuck "生成中" state so the user isn't trapped on a dead turn.
+export const LOADING_WATCHDOG_MS = 120_000;
+
+/** True when a socket has gone silent past one heartbeat window + pong grace,
+ * i.e. it's probably half-open and should be force-reconnected. */
+export function isConnectionStale(
+  lastActivityAt: number,
+  now: number,
+  heartbeatIntervalMs: number,
+  pongTimeoutMs: number,
+): boolean {
+  return now - lastActivityAt > heartbeatIntervalMs + pongTimeoutMs;
+}
+
 class WebSocketPool {
   private connections: Map<string, PooledConnection> = new Map();
   private handlers: Set<PoolHandler> = new Set();
   private connectionListeners: Set<ConnectionListener> = new Set();
+  private globalListenersAttached = false;
 
   /** Notify subscribers when a session's WebSocket transitions between
    * connected (OPEN) and disconnected (any non-OPEN) state. */
@@ -71,6 +99,12 @@ class WebSocketPool {
     return this.openConnection(sessionId);
   }
 
+  private buildUrl(sessionId: string): string {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const baseUrl = `${protocol}//${window.location.host}/ws/chat?session_id=${encodeURIComponent(sessionId)}`;
+    return withSecretQuery(baseUrl);
+  }
+
   private openConnection(sessionId: string): Promise<void> {
     let resolveReady: (() => void) | null = null;
     let rejectReady: ((err: unknown) => void) | null = null;
@@ -86,77 +120,43 @@ class WebSocketPool {
       reconnectTimer: null,
       closed: false,
       ready,
+      heartbeatTimer: null,
+      lastActivityAt: 0,
+      pending: [],
     };
     this.connections.set(sessionId, conn);
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const baseUrl = `${protocol}//${window.location.host}/ws/chat?session_id=${encodeURIComponent(sessionId)}`;
-    const wsUrl = withSecretQuery(baseUrl);
-    const ws = new WebSocket(wsUrl);
-    conn.ws = ws;
-
-    ws.onopen = () => {
-      conn.reconnectAttempts = 0;
-      this.fireConnectionChange(sessionId, true);
-      resolveReady?.();
-      resolveReady = null;
-      rejectReady = null;
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data: WSMessageType = JSON.parse(event.data);
-        this.handlers.forEach((handler) => {
-          try {
-            handler(sessionId, data);
-          } catch (err) {
-            console.error('[wsPool] handler threw', err);
-          }
-        });
-      } catch (err) {
-        console.error('[wsPool] failed to parse message', err);
-      }
-    };
-
-    ws.onerror = (event) => {
-      console.error('[wsPool] socket error', event);
-      rejectReady?.(event);
-      rejectReady = null;
-      resolveReady = null;
-    };
-
-    ws.onclose = () => {
-      // Drop the live socket reference; reconnect logic may replace it.
-      conn.ws = null;
-      this.fireConnectionChange(sessionId, false);
-      if (conn.closed) return;
-      conn.reconnectAttempts += 1;
-      const delay = backoffDelay(conn.reconnectAttempts);
-      conn.reconnectTimer = window.setTimeout(() => {
-        conn.reconnectTimer = null;
-        if (conn.closed) return;
-        // Best-effort: reuse the same conn slot, replace its ws via a fresh
-        // openConnection-like flow but reusing the entry.
-        this.reattachSocket(conn);
-      }, delay);
-    };
+    this.attachSocket(conn, resolveReady ?? undefined, rejectReady ?? undefined);
 
     return ready;
   }
 
-  private reattachSocket(conn: PooledConnection): void {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const baseUrl = `${protocol}//${window.location.host}/ws/chat?session_id=${encodeURIComponent(conn.sessionId)}`;
-    const wsUrl = withSecretQuery(baseUrl);
-    const ws = new WebSocket(wsUrl);
+  /** Build a socket for `conn`, wire all handlers + heartbeat + resend. Used
+   * for both the initial connect and every reconnect (no more duplicated
+   * onopen/onmessage/onclose between two near-identical methods). */
+  private attachSocket(
+    conn: PooledConnection,
+    resolveReady?: () => void,
+    rejectReady?: (err: unknown) => void,
+  ): void {
+    this.ensureGlobalListeners();
+    const ws = new WebSocket(this.buildUrl(conn.sessionId));
     conn.ws = ws;
+    let resolve = resolveReady ?? null;
+    let reject = rejectReady ?? null;
 
     ws.onopen = () => {
       conn.reconnectAttempts = 0;
+      conn.lastActivityAt = Date.now();
+      this.startHeartbeat(conn);
+      this.flushPending(conn);
       this.fireConnectionChange(conn.sessionId, true);
+      resolve?.();
+      resolve = null;
+      reject = null;
     };
 
     ws.onmessage = (event) => {
+      conn.lastActivityAt = Date.now();
       try {
         const data: WSMessageType = JSON.parse(event.data);
         this.handlers.forEach((handler) => {
@@ -172,11 +172,15 @@ class WebSocketPool {
     };
 
     ws.onerror = (event) => {
-      console.error('[wsPool] reattach error', event);
+      console.error('[wsPool] socket error', event);
+      reject?.(event);
+      reject = null;
+      resolve = null;
     };
 
     ws.onclose = () => {
       conn.ws = null;
+      this.stopHeartbeat(conn);
       this.fireConnectionChange(conn.sessionId, false);
       if (conn.closed) return;
       conn.reconnectAttempts += 1;
@@ -184,9 +188,89 @@ class WebSocketPool {
       conn.reconnectTimer = window.setTimeout(() => {
         conn.reconnectTimer = null;
         if (conn.closed) return;
-        this.reattachSocket(conn);
+        this.attachSocket(conn);
       }, delay);
     };
+  }
+
+  private startHeartbeat(conn: PooledConnection): void {
+    this.stopHeartbeat(conn);
+    if (typeof window === 'undefined') return;
+    conn.heartbeatTimer = window.setInterval(() => {
+      const ws = conn.ws;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (isConnectionStale(conn.lastActivityAt, Date.now(), HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS)) {
+        // Half-open: silent for a full window. Force-close so onclose fires and
+        // reconnect runs — a silently-dead socket won't emit onclose by itself.
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      try {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      } catch {
+        // ignore — onclose/onerror handles a dead socket
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  private stopHeartbeat(conn: PooledConnection): void {
+    if (conn.heartbeatTimer !== null) {
+      if (typeof window !== 'undefined') {
+        window.clearInterval(conn.heartbeatTimer);
+      }
+      conn.heartbeatTimer = null;
+    }
+  }
+
+  /** Resend queued user messages once the socket is OPEN again. */
+  private flushPending(conn: PooledConnection): void {
+    const ws = conn.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const queued = conn.pending;
+    conn.pending = [];
+    for (const payload of queued) {
+      try {
+        ws.send(payload);
+      } catch {
+        conn.pending.push(payload);
+      }
+    }
+  }
+
+  /** Register window-level revive triggers once. Guarded for non-browser
+   * (test) environments where `window` is absent. */
+  private ensureGlobalListeners(): void {
+    if (this.globalListenersAttached || typeof window === 'undefined') return;
+    this.globalListenersAttached = true;
+    const revive = () => this.reviveConnections();
+    window.addEventListener('online', revive);
+    window.addEventListener('visibilitychange', () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        revive();
+      }
+    });
+  }
+
+  /** Immediately reconnect any non-OPEN session — used when the tab becomes
+   * visible or the network returns, instead of waiting out the backoff. */
+  private reviveConnections(): void {
+    this.connections.forEach((conn) => {
+      if (conn.closed) return;
+      const ws = conn.ws;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      if (conn.reconnectTimer !== null) {
+        window.clearTimeout(conn.reconnectTimer);
+        conn.reconnectTimer = null;
+      }
+      conn.reconnectAttempts = 0;
+      this.attachSocket(conn);
+    });
   }
 
   /** Close and forget a session's socket (orchestrator-driven). */
@@ -194,6 +278,7 @@ class WebSocketPool {
     const conn = this.connections.get(sessionId);
     if (!conn) return;
     conn.closed = true;
+    this.stopHeartbeat(conn);
     if (conn.reconnectTimer) {
       window.clearTimeout(conn.reconnectTimer);
       conn.reconnectTimer = null;
@@ -216,15 +301,18 @@ class WebSocketPool {
   }
 
   send(sessionId: string, content: string, attachments: Attachment[] = []): void {
-    const ws = this.socketFor(sessionId);
-    if (!ws) return;
-    ws.send(
-      JSON.stringify({
-        type: 'message',
-        content,
-        attachments,
-      }),
-    );
+    const payload = JSON.stringify({ type: 'message', content, attachments });
+    const conn = this.connections.get(sessionId);
+    const ws = conn?.ws;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+      return;
+    }
+    // Socket not open: queue the user message for resend on reconnect instead
+    // of silently dropping it (the old behaviour lost messages on a blip).
+    if (conn && !conn.closed) {
+      conn.pending.push(payload);
+    }
   }
 
   stop(sessionId: string): void {

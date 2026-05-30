@@ -325,6 +325,7 @@ interface ChatState {
   clearPendingMessages: (sessionId: string) => void;
   setSessionExecTrusted: (sessionId: string, trusted: boolean) => void;
   setSessionError: (sessionId: string, error: string | null) => void;
+  failTurn: (sessionId: string, message: string) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -1539,6 +1540,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Background sessions surface errors lazily — store on the slice so the
     // sidebar / orchestrator can flag them if needed.
     applySliceUpdate(set, get, sessionId, () => ({}));
+  },
+
+  failTurn: (sessionId, message) => {
+    // Force-end a stuck turn (e.g. the connection dropped mid-response and the
+    // closing frame never arrived) — release the loading/tool state and surface
+    // a retryable error instead of leaving the UI spinning forever.
+    if (get().currentSession === sessionId) {
+      set({ error: message });
+    }
+    applySliceUpdate(set, get, sessionId, () => ({
+      isLoading: false,
+      activeTool: null,
+    }));
   },
 }));
 

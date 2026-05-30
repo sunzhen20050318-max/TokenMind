@@ -3,7 +3,7 @@ import {
   installNotificationSoundUnlock,
   playReplyNotification,
 } from '../services/notificationSound';
-import { wsPool } from '../services/websocket';
+import { LOADING_WATCHDOG_MS, wsPool } from '../services/websocket';
 import { useChatStore } from '../stores/chatStore';
 import type { WSMessageType } from '../types';
 
@@ -242,10 +242,35 @@ export function useSessionOrchestrator(): void {
   // stuck — the WebSocket can transition without React being told.
   useEffect(() => {
     const setSessionConnected = useChatStore.getState().setSessionConnected;
+    // Per-session watchdog: if a session stays disconnected past the watchdog
+    // window while a turn is in flight, release the stuck loading state so the
+    // user isn't trapped on a dead turn (a lost closing frame never resets it).
+    const watchdogTimers = new Map<string, number>();
     const unsubscribe = wsPool.onConnectionChange((sessionId, connected) => {
       setSessionConnected(sessionId, connected);
+
+      const existing = watchdogTimers.get(sessionId);
+      if (existing) {
+        window.clearTimeout(existing);
+        watchdogTimers.delete(sessionId);
+      }
+      if (!connected) {
+        const timer = window.setTimeout(() => {
+          watchdogTimers.delete(sessionId);
+          const store = useChatStore.getState();
+          const isLoading =
+            store.currentSession === sessionId
+              ? store.isLoading
+              : store.sessionsState[sessionId]?.isLoading;
+          if (isLoading && !wsPool.isConnected(sessionId)) {
+            store.failTurn(sessionId, '连接中断，本轮已停止。请检查网络后重试。');
+          }
+        }, LOADING_WATCHDOG_MS);
+        watchdogTimers.set(sessionId, timer);
+      }
     });
     return () => {
+      watchdogTimers.forEach((t) => window.clearTimeout(t));
       unsubscribe();
     };
   }, []);
