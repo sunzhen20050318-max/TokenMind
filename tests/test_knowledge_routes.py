@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import io
 from types import SimpleNamespace
 
 import pytest
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 
 @pytest.mark.asyncio
@@ -132,3 +133,42 @@ async def test_delete_knowledge_document_returns_success_payload() -> None:
     response = await route_module.delete_knowledge_document("kb_1", "doc_1", service=service)
 
     assert response["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_oversized_file() -> None:
+    """A file larger than the configured upload limit is rejected with 413 so
+    the browser never streams a huge file the backend would read into memory."""
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
+    service = SimpleNamespace(
+        knowledge_upload_max_bytes=lambda: 5 * 1024 * 1024,
+        upload_knowledge_documents=lambda kb, files: {"documents": []},
+    )
+    oversized = UploadFile(
+        file=io.BytesIO(b"x"),
+        size=6 * 1024 * 1024,
+        filename="big.pdf",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await route_module.upload_knowledge_documents(
+            "kb_1", files=[oversized], service=service
+        )
+
+    assert exc_info.value.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_upload_accepts_file_within_limit() -> None:
+    route_module = importlib.import_module("tokenmind.server.routes.knowledge")
+    service = SimpleNamespace(
+        knowledge_upload_max_bytes=lambda: 5 * 1024 * 1024,
+        upload_knowledge_documents=lambda kb, files: {"documents": [{"id": "doc_1"}]},
+    )
+    small = UploadFile(file=io.BytesIO(b"x"), size=1024, filename="ok.pdf")
+
+    result = await route_module.upload_knowledge_documents(
+        "kb_1", files=[small], service=service
+    )
+
+    assert result["documents"][0]["id"] == "doc_1"

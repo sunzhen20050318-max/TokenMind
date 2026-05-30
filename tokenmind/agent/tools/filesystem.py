@@ -182,8 +182,22 @@ class WriteFileTool(_FsTool):
     async def execute(self, path: str, content: str, **kwargs: Any) -> str:
         try:
             fp = self._resolve(path)
+            # Overwriting an existing file destroys its current content. Apply
+            # the same read-before-write guard as edit_file so the agent can't
+            # silently clobber a file it never read (or that changed since it
+            # last read it). Brand-new files write freely.
+            if fp.exists() and self._file_states is not None:
+                sk = self._session_key()
+                if sk:
+                    warning = self._file_states.check_before_edit(sk, fp)
+                    if warning:
+                        return f"Error: {warning}"
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(content, encoding="utf-8")
+            if self._file_states is not None:
+                sk = self._session_key()
+                if sk:
+                    self._file_states.record_read(sk, fp)
             return f"Successfully wrote {len(content)} bytes to {fp}"
         except PermissionError as e:
             return f"Error: {e}"

@@ -2,13 +2,14 @@
 
 import pytest
 
+from tokenmind.agent.tools.file_state import FileStates
 from tokenmind.agent.tools.filesystem import (
     EditFileTool,
     ListDirTool,
     ReadFileTool,
+    WriteFileTool,
     _find_match,
 )
-
 
 # ---------------------------------------------------------------------------
 # ReadFileTool
@@ -362,3 +363,51 @@ class TestWorkspaceRestriction:
         assert "Error" in result
         assert "outside" in result.lower()
         assert skill_file.read_text() == "# Weather\nOriginal content."
+
+
+# ---------------------------------------------------------------------------
+# WriteFileTool — read-before-overwrite guard
+# ---------------------------------------------------------------------------
+
+class TestWriteFileStaleGuard:
+    """write_file must not silently clobber an existing file the agent never
+    read (or that changed since it was read). New files write freely."""
+
+    def _tool(self, tmp_path):
+        states = FileStates()
+        tool = WriteFileTool(
+            workspace=tmp_path,
+            file_states=states,
+            get_session_key=lambda: "sess",
+        )
+        return tool, states
+
+    @pytest.mark.asyncio
+    async def test_new_file_writes_without_prior_read(self, tmp_path):
+        tool, _ = self._tool(tmp_path)
+        result = await tool.execute(path="new.txt", content="hello")
+        assert "Successfully wrote" in result
+        assert (tmp_path / "new.txt").read_text() == "hello"
+
+    @pytest.mark.asyncio
+    async def test_overwriting_unread_existing_file_is_rejected(self, tmp_path):
+        existing = tmp_path / "exists.txt"
+        existing.write_text("original")
+        tool, _ = self._tool(tmp_path)
+
+        result = await tool.execute(path="exists.txt", content="clobbered")
+
+        assert result.startswith("Error")
+        assert existing.read_text() == "original"  # content preserved
+
+    @pytest.mark.asyncio
+    async def test_overwriting_after_read_succeeds(self, tmp_path):
+        existing = tmp_path / "exists.txt"
+        existing.write_text("original")
+        tool, states = self._tool(tmp_path)
+        states.record_read("sess", existing)  # simulate read_file
+
+        result = await tool.execute(path="exists.txt", content="updated")
+
+        assert "Successfully wrote" in result
+        assert existing.read_text() == "updated"

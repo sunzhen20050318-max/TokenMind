@@ -907,6 +907,10 @@ class ChatService:
         self._sync_knowledge_config()
         self.knowledge.set_session_links(session_id, knowledge_base_ids)
 
+    def knowledge_upload_max_bytes(self) -> int:
+        """Per-file size ceiling (bytes) for knowledge-base uploads."""
+        return int(self._upload_policy()["max_file_bytes"])
+
     async def upload_knowledge_documents(self, knowledge_base_id: str, files: list[Any]) -> dict[str, Any]:
         self._sync_knowledge_config()
         uploaded: list[dict[str, Any]] = []

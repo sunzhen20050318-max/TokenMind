@@ -194,7 +194,11 @@ class AgentLoop:
         else:
             self.creative_config = CreativeConfig()
 
-        self.context = ContextBuilder(workspace, memory_config=self.memory_config)
+        self.context = ContextBuilder(
+            workspace,
+            memory_config=self.memory_config,
+            knowledge_excerpt_max_chars=self.knowledge_config.chunk_size,
+        )
         self.knowledge = KnowledgeService(
             workspace,
             vector_backend=self.knowledge_config.vector_backend,
@@ -306,7 +310,12 @@ class AgentLoop:
             file_states=self.file_states,
             get_session_key=get_sk,
         ))
-        self.tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
+        self.tools.register(WriteFileTool(
+            workspace=self.workspace,
+            allowed_dir=allowed_dir,
+            file_states=self.file_states,
+            get_session_key=get_sk,
+        ))
         self.tools.register(EditFileTool(
             workspace=self.workspace,
             allowed_dir=allowed_dir,
@@ -2230,8 +2239,7 @@ class AgentLoop:
         )
         return rendered or content
 
-    @staticmethod
-    def _build_knowledge_citations(knowledge_chunks: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    def _build_knowledge_citations(self, knowledge_chunks: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         """Build compact, user-facing citation metadata from retrieved knowledge chunks."""
         if not knowledge_chunks:
             return []
@@ -2262,7 +2270,7 @@ class AgentLoop:
                     "score": chunk.get("score"),
                 }
             )
-            if len(citations) >= 3:
+            if len(citations) >= self.knowledge_config.top_k:
                 break
         return citations
 

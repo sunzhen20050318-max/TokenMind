@@ -22,7 +22,7 @@ from tokenmind.cli.model_info import (
     get_model_suggestions,
 )
 from tokenmind.config.loader import get_config_path, load_config
-from tokenmind.config.schema import Config
+from tokenmind.config.schema import AgentDefaults, Config
 
 console = Console()
 
@@ -673,6 +673,33 @@ def _get_provider_names() -> dict[str, str]:
     return {name: data[0] for name, data in info.items() if name}
 
 
+def _maybe_adopt_provider_default(config: Config, provider_name: str) -> None:
+    """Point the agent defaults at a freshly-configured provider while they're
+    still the factory values.
+
+    Onboarding only writes ``providers.<name>``. If the user configures, say,
+    DeepSeek but never touches Anthropic (the factory default model's provider),
+    they finish the wizard with a default model they can't call and the first
+    message fails with "No API key". When the defaults are untouched and the
+    just-configured provider has both a connection and an explicit
+    default_model, adopt it as the new default.
+    """
+    initial = AgentDefaults()
+    defaults = config.agents.defaults
+    if defaults.provider != initial.provider or defaults.model != initial.model:
+        return  # user already chose a default — don't second-guess it
+    provider_config = getattr(config.providers, provider_name, None)
+    if provider_config is None:
+        return
+    if not (provider_config.api_key or provider_config.api_base):
+        return
+    model = (provider_config.default_model or "").strip()
+    if not model:
+        return
+    defaults.provider = provider_name
+    defaults.model = model if "/" in model else f"{provider_name}/{model}"
+
+
 def _configure_provider(config: Config, provider_name: str) -> None:
     """Configure a single LLM provider."""
     provider_config = getattr(config.providers, provider_name, None)
@@ -693,6 +720,7 @@ def _configure_provider(config: Config, provider_name: str) -> None:
     )
     if updated_provider is not None:
         setattr(config.providers, provider_name, updated_provider)
+    _maybe_adopt_provider_default(config, provider_name)
 
 
 def _configure_providers(config: Config) -> None:

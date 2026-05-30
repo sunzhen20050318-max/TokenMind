@@ -4,6 +4,7 @@ import { BrandMark } from '../BrandMark';
 import { useSessions } from '../../hooks/useSessions';
 import { useChatStore } from '../../stores/chatStore';
 import { MoveSessionToProjectModal } from '../Projects/MoveSessionToProjectModal';
+import { ProjectConfirmModal } from '../Projects/ProjectConfirmModal';
 import { OverlayPortal } from '../Overlay/OverlayPortal';
 import './sidebar.css';
 
@@ -270,6 +271,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     [currentSession, sessionsState, isLoading, pendingApproval, activeTool],
   );
   const [moveTargetSessionId, setMoveTargetSessionId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [query, setQuery] = useState('');
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -395,7 +398,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [projects]);
   const isProjectViewActive =
     mainView === 'project-list' || mainView === 'project-home' || mainView === 'project-chat';
-  const hasSidebarOverlay = moveTargetSessionId !== null;
+  const hasSidebarOverlay = moveTargetSessionId !== null || deleteTarget !== null;
 
   const beginRename = (sessionId: string, currentTitle?: string, firstMessage?: string) => {
     setEditingSessionId(sessionId);
@@ -549,7 +552,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="shell-sidebar__session-action"
                 onClick={(event) => {
                   event.stopPropagation();
-                  void deleteSession(session.session_id);
+                  setDeleteTarget({
+                    id: session.session_id,
+                    title: session.title || session.first_message || '新对话',
+                  });
                 }}
                 title="删除"
                 type="button"
@@ -912,6 +918,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
               sessionId={moveTargetSessionId}
               onClose={() => setMoveTargetSessionId(null)}
               onMoved={() => onSelectMainView('project-home')}
+            />
+          ) : null}
+          {deleteTarget ? (
+            <ProjectConfirmModal
+              title="删除会话"
+              message={`确定删除“${deleteTarget.title}”吗？该会话的所有消息和上传文件都会被永久删除，无法恢复。`}
+              confirmLabel="删除会话"
+              busy={deleteBusy}
+              onClose={() => {
+                if (!deleteBusy) setDeleteTarget(null);
+              }}
+              onConfirm={async () => {
+                setDeleteBusy(true);
+                try {
+                  await deleteSession(deleteTarget.id);
+                  setDeleteTarget(null);
+                } finally {
+                  setDeleteBusy(false);
+                }
+              }}
             />
           ) : null}
         </OverlayPortal>

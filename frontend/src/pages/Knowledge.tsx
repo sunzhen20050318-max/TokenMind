@@ -515,7 +515,7 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                 <CardGridSkeleton count={6} />
               ) : items.length === 0 ? (
                 <div className="knowledge-page__empty">
-                  还没有知识库。先创建一个库，再往里面添加 PDF、Markdown、表格、图片或演示文档。
+                  还没有知识库。先创建一个库，再往里面添加 PDF、Word、PPT、Markdown 或文本文档。
                 </div>
               ) : (
                 <div className="knowledge-page__grid">
@@ -793,6 +793,11 @@ export const KnowledgePage: React.FC<KnowledgePageProps> = ({ isActive = true })
                               <span>{document.chunk_count} chunks</span>
                               <span>{document.status}</span>
                             </div>
+                            {document.status === 'failed' && document.error_message ? (
+                              <div className="knowledge-document__error" title={document.error_message}>
+                                {document.error_message}
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>

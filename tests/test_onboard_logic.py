@@ -4,12 +4,10 @@ These tests focus on the business logic behind the onboard wizard,
 without testing the interactive UI components.
 """
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-import pytest
 from pydantic import BaseModel, Field
 
 from tokenmind.cli import onboard_wizard
@@ -24,7 +22,7 @@ from tokenmind.cli.onboard_wizard import (
     _get_field_type_info,
     run_onboard,
 )
-from tokenmind.config.schema import Config
+from tokenmind.config.schema import AgentDefaults, Config
 from tokenmind.utils.helpers import sync_workspace_templates
 
 
@@ -491,3 +489,47 @@ class TestRunOnboardExitBehavior:
 
         assert result.should_save is False
         assert result.config.model_dump(by_alias=True) == initial_config.model_dump(by_alias=True)
+
+
+class TestAdoptProviderDefault:
+    """After a provider is configured in onboarding, the agent defaults should
+    adopt it while they're still the factory values — otherwise the user ends
+    onboarding with a default model whose provider they never configured."""
+
+    def test_adopts_provider_when_defaults_are_factory(self):
+        config = Config()
+        config.providers.deepseek.api_key = "sk-test"
+        config.providers.deepseek.default_model = "deepseek-chat"
+
+        onboard_wizard._maybe_adopt_provider_default(config, "deepseek")
+
+        assert config.agents.defaults.provider == "deepseek"
+        assert "deepseek-chat" in config.agents.defaults.model
+
+    def test_does_not_override_user_set_defaults(self):
+        config = Config()
+        config.agents.defaults.provider = "openai"
+        config.agents.defaults.model = "openai/gpt-4o"
+        config.providers.deepseek.api_key = "sk-test"
+        config.providers.deepseek.default_model = "deepseek-chat"
+
+        onboard_wizard._maybe_adopt_provider_default(config, "deepseek")
+
+        assert config.agents.defaults.provider == "openai"
+        assert config.agents.defaults.model == "openai/gpt-4o"
+
+    def test_skips_when_provider_has_no_default_model(self):
+        config = Config()
+        config.providers.deepseek.api_key = "sk-test"
+
+        onboard_wizard._maybe_adopt_provider_default(config, "deepseek")
+
+        assert config.agents.defaults.model == AgentDefaults().model
+
+    def test_skips_when_provider_not_configured(self):
+        config = Config()
+        config.providers.deepseek.default_model = "deepseek-chat"
+
+        onboard_wizard._maybe_adopt_provider_default(config, "deepseek")
+
+        assert config.agents.defaults.model == AgentDefaults().model

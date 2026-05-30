@@ -858,6 +858,14 @@
   font-size: 12px;
 }
 
+.knowledge-document__error {
+  margin-top: 6px;
+  color: #d4565b;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .knowledge-document__delete {
   min-width: 56px;
   min-height: 28px;

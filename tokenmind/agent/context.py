@@ -25,6 +25,9 @@ class ContextBuilder:
     _KNOWLEDGE_CONTEXT_TAG = "[Linked Knowledge - retrieved context only, not user text]"
     _KNOWLEDGE_CONTEXT_END_TAG = "[/Linked Knowledge]"
     _KNOWLEDGE_CONTEXT_TRAILER = "If the retrieved context is not relevant, say so instead of forcing it into the answer."
+    # Fallback per-chunk character budget for injected knowledge excerpts when
+    # no explicit value is supplied. Comfortably above the default chunk_size.
+    _DEFAULT_KNOWLEDGE_EXCERPT_MAX_CHARS = 2000
     _ACTIVE_WIKI_TAG = "[Active Wiki Knowledge Base]"
     _ACTIVE_WIKI_END_TAG = "[/Active Wiki Knowledge Base]"
 
@@ -33,9 +36,18 @@ class ContextBuilder:
         workspace: Path,
         disabled_skills: list[str] | None = None,
         memory_config: MemoryConfig | None = None,
+        knowledge_excerpt_max_chars: int | None = None,
     ):
         self.workspace = workspace
         self.memory_config = memory_config or MemoryConfig()
+        # Per-chunk character budget when injecting retrieved knowledge into the
+        # prompt. Must be >= the knowledge chunk_size, otherwise a full retrieved
+        # chunk gets cut mid-way and the model answers from half the evidence.
+        self._knowledge_excerpt_max_chars = (
+            knowledge_excerpt_max_chars
+            if knowledge_excerpt_max_chars and knowledge_excerpt_max_chars > 0
+            else self._DEFAULT_KNOWLEDGE_EXCERPT_MAX_CHARS
+        )
         # Default (global) memory store — used for non-project sessions and
         # as a fallback. Project sessions get their own per-project store
         # built on-demand inside ``build_system_prompt``.
@@ -287,8 +299,7 @@ If the question is fully answerable from the current conversation, do not search
         lines.append(ContextBuilder._ATTACHMENTS_CONTEXT_END_TAG)
         return "\n".join(lines)
 
-    @staticmethod
-    def _build_knowledge_context(knowledge_chunks: list[dict[str, Any]] | None) -> str | None:
+    def _build_knowledge_context(self, knowledge_chunks: list[dict[str, Any]] | None) -> str | None:
         if not knowledge_chunks:
             return None
 
@@ -300,8 +311,9 @@ If the question is fully answerable from the current conversation, do not search
             kb_name = chunk.get("knowledge_base_name") or chunk.get("knowledge_base_id") or "知识库"
             doc_name = chunk.get("document_name") or chunk.get("document_id") or "文档"
             content = " ".join(str(chunk.get("content") or "").split())
-            if len(content) > 500:
-                content = content[:497] + "..."
+            max_chars = self._knowledge_excerpt_max_chars
+            if len(content) > max_chars:
+                content = content[: max_chars - 3] + "..."
             lines.append(f"{index}. [{kb_name} / {doc_name}] {content}")
         lines.append(ContextBuilder._KNOWLEDGE_CONTEXT_TRAILER)
         lines.append(ContextBuilder._KNOWLEDGE_CONTEXT_END_TAG)

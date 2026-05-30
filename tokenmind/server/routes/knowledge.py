@@ -154,6 +154,23 @@ async def upload_knowledge_documents(
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
+    # Reject oversized files up front so the backend never streams a huge file
+    # into memory. Falls back to "no limit" if the service doesn't expose one.
+    max_bytes_getter = getattr(service, "knowledge_upload_max_bytes", None)
+    max_bytes = max_bytes_getter() if callable(max_bytes_getter) else 0
+    if max_bytes:
+        oversized = [
+            (f.filename or "(unnamed)")
+            for f in files
+            if (getattr(f, "size", None) or 0) > max_bytes
+        ]
+        if oversized:
+            limit_mb = max_bytes // (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"以下文件超过 {limit_mb}MB 上限，请压缩或拆分后再上传：{', '.join(oversized)}",
+            )
+
     try:
         result = service.upload_knowledge_documents(knowledge_base_id, files)
         if inspect.isawaitable(result):
