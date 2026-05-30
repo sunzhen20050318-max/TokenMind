@@ -1,5 +1,6 @@
 """Tool registry for dynamic tool management."""
 
+import asyncio
 from typing import Any
 
 from tokenmind.agent.tools.base import Tool
@@ -44,8 +45,16 @@ class ToolRegistry:
             if tool.is_available()
         ]
 
-    async def execute(self, name: str, params: dict[str, Any]) -> str:
-        """Execute a tool by name with given parameters."""
+    async def execute(self, name: str, params: dict[str, Any], timeout: float | None = None) -> str:
+        """Execute a tool by name with given parameters.
+
+        When ``timeout`` (seconds) is set, a runaway tool is abandoned after
+        that long so it can't hang the whole turn — the caller gets an error
+        string and the agent loop keeps control. The underlying coroutine is
+        cancelled (a blocking ``to_thread`` may keep running in the background,
+        but it no longer blocks the conversation). An external cancel (user
+        ``/stop``) still propagates, since CancelledError isn't caught here.
+        """
         _HINT = "\n\n[Analyze the error above and try a different approach.]"
 
         tool = self._tools.get(name)
@@ -55,15 +64,23 @@ class ToolRegistry:
         try:
             # Attempt to cast parameters to match schema types
             params = tool.cast_params(params)
-            
+
             # Validate parameters
             errors = tool.validate_params(params)
             if errors:
                 return f"Error: Invalid parameters for tool '{name}': " + "; ".join(errors) + _HINT
-            result = await tool.execute(**params)
+            if timeout is not None and timeout > 0:
+                result = await asyncio.wait_for(tool.execute(**params), timeout)
+            else:
+                result = await tool.execute(**params)
             if isinstance(result, str) and result.startswith("Error"):
                 return result + _HINT
             return result
+        except asyncio.TimeoutError:
+            return (
+                f"Error: 工具 {name} 执行超时（>{timeout:g}s），已放弃。"
+                "请缩小范围或换一种方式。" + _HINT
+            )
         except Exception as e:
             return f"Error executing {name}: {str(e)}" + _HINT
 

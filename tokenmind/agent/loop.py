@@ -146,6 +146,7 @@ class AgentLoop:
         web_proxy: str | None = None,
         exec_config: ExecToolConfig | None = None,
         knowledge_config: KnowledgeConfig | None = None,
+        tool_timeout_s: int = 180,
         cron_service: CronService | None = None,
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
@@ -180,6 +181,7 @@ class AgentLoop:
         self.web_proxy = web_proxy
         self.exec_config = exec_config or ExecToolConfig()
         self.knowledge_config = knowledge_config or KnowledgeConfig()
+        self.tool_timeout_s = tool_timeout_s
         self.templates_config = templates_config or TemplatesConfig()
         self.memory_config = memory_config or MemoryConfig()
         self.cron_service = cron_service
@@ -1367,7 +1369,9 @@ class AgentLoop:
                                 "User did not respond. Proceed with your best judgement or ask a different question."
                             )
                     else:
-                        result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                        result = await self.tools.execute(
+                            tool_call.name, tool_call.arguments, timeout=self.tool_timeout_s
+                        )
                     duration = time.monotonic() - start_time
                     logger.info(f"[TOOL] {tool_call.name} END (id={tool_call.id}, duration={duration:.2f}s)")
                     outcome = "error" if isinstance(result, str) and result.startswith("Error") else "success"

@@ -243,6 +243,10 @@ class ToolsConfig(Base):
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     audit_enabled: bool = True
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
+    # Hard ceiling (seconds) on a single tool execution — a runaway/hung tool is
+    # abandoned after this so it can't freeze the whole turn. Each tool's own
+    # (usually shorter) timeout still applies first; this is the backstop.
+    tool_timeout_s: int = 180
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
