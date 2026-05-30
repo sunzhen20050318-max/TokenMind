@@ -29,6 +29,41 @@ def test_persist_task_result_creates_task_results_session(tmp_path):
     assert session.messages[1]["content"] == "Here is today's summary."
 
 
+async def test_process_direct_session_key_does_not_double_prefix():
+    """When cron runs a turn in an already-prefixed session ("web:xyz"), the
+    derived msg.session_key must equal that key — not "web:web:xyz". The double
+    prefix used to spawn a phantom session and waste a title-gen LLM call on
+    every cron delivery (title-gen and usage key off msg.session_key)."""
+    from types import SimpleNamespace
+
+    from tokenmind.agent.loop import AgentLoop
+
+    captured: dict[str, object] = {}
+
+    class _Shim:
+        async def _connect_mcp(self) -> None:
+            return None
+
+        async def _process_message(self, msg, session_key=None, on_progress=None):
+            captured["msg"] = msg
+            captured["session_key"] = session_key
+            return SimpleNamespace(content="ok")
+
+        process_direct = AgentLoop.process_direct
+
+    out = await _Shim().process_direct(
+        "hello",
+        session_key="web:cron-test",
+        channel="web",
+        chat_id="web:cron-test",
+    )
+
+    assert out == "ok"
+    assert captured["session_key"] == "web:cron-test"
+    # The bug: f"{channel}:{chat_id}" == "web:web:cron-test".
+    assert captured["msg"].session_key == "web:cron-test"
+
+
 def test_web_cron_uses_target_session_for_execution():
     """Web cron jobs should keep tool timelines in the visible delivery session."""
     from tokenmind.cli.commands import _cron_execution_session_key

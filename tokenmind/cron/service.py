@@ -17,6 +17,17 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+# Wall-clock heartbeat: re-evaluate due jobs at least this often. A single long
+# asyncio.sleep is monotonic and pauses during system sleep, so a laptop that
+# sleeps through a job's scheduled time would never fire it; a periodic tick
+# re-checks the wall clock and catches it within one interval after wake.
+_HEARTBEAT_SECONDS = 30.0
+# How far in the past a missed run may be and still be caught up on restart.
+# Beyond this the occurrence is considered stale and we schedule forward instead
+# of firing an ancient run (e.g. don't run yesterday's report on today's open).
+_CATCHUP_GRACE_MS = 24 * 60 * 60 * 1000
+
+
 def _compute_next_run(schedule: CronSchedule, now_ms: int) -> int | None:
     """Compute next run time in ms."""
     if schedule.kind == "at":
@@ -66,13 +77,17 @@ class CronService:
     def __init__(
         self,
         store_path: Path,
-        on_job: Callable[[CronJob], Coroutine[Any, Any, str | None]] | None = None
+        on_job: Callable[[CronJob], Coroutine[Any, Any, str | None]] | None = None,
+        heartbeat_seconds: float = _HEARTBEAT_SECONDS,
     ):
         self.store_path = store_path
         self.on_job = on_job
+        self._heartbeat_seconds = heartbeat_seconds
         self._store: CronStore | None = None
         self._last_mtime: float = 0.0
         self._timer_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
+        self._ticking = False
         self._running = False
 
     def _load_store(self) -> CronStore:
@@ -176,9 +191,10 @@ class CronService:
         """Start the cron service."""
         self._running = True
         self._load_store()
-        self._recompute_next_runs()
+        self._init_next_runs()
         self._save_store()
         self._arm_timer()
+        self._start_heartbeat()
         logger.info("Cron service started with {} jobs", len(self._store.jobs if self._store else []))
 
     def stop(self) -> None:
@@ -187,15 +203,45 @@ class CronService:
         if self._timer_task:
             self._timer_task.cancel()
             self._timer_task = None
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
 
-    def _recompute_next_runs(self) -> None:
-        """Recompute next run times for all enabled jobs."""
+    def _init_next_runs(self) -> None:
+        """Settle each enabled job's next run on startup.
+
+        Unlike a blind recompute-to-future, this PRESERVES a past-due next run
+        that's still within the catch-up grace window, so a run missed while the
+        process was down fires on the next tick instead of being silently
+        skipped. Stale (beyond grace) or missing times are scheduled forward.
+        """
         if not self._store:
             return
         now = _now_ms()
         for job in self._store.jobs:
-            if job.enabled:
+            if not job.enabled:
+                continue
+            nr = job.state.next_run_at_ms
+            if nr is None or (nr <= now and (now - nr) > _CATCHUP_GRACE_MS):
                 job.state.next_run_at_ms = _compute_next_run(job.schedule, now)
+            # past-due within grace → keep (tick catches it up); future → keep
+
+    def _start_heartbeat(self) -> None:
+        """Run a periodic wall-clock tick so due jobs fire even when no precise
+        timer survived (long sleeps pause during system sleep)."""
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+
+        async def beat() -> None:
+            while self._running:
+                try:
+                    await asyncio.sleep(self._heartbeat_seconds)
+                except asyncio.CancelledError:
+                    break
+                if self._running:
+                    await self._on_timer()
+
+        self._heartbeat_task = asyncio.create_task(beat())
 
     def _get_next_wake_ms(self) -> int | None:
         """Get the earliest next run time across all jobs."""
@@ -225,22 +271,33 @@ class CronService:
         self._timer_task = asyncio.create_task(tick())
 
     async def _on_timer(self) -> None:
-        """Handle timer tick - run due jobs."""
-        self._load_store()
-        if not self._store:
+        """Handle a tick (precise timer or heartbeat) - run due jobs.
+
+        Guarded against re-entrancy: a slow job (an agent turn) can outlast the
+        heartbeat interval, and we must not let an overlapping tick fire the same
+        job twice before its next run is advanced.
+        """
+        if self._ticking:
             return
+        self._ticking = True
+        try:
+            self._load_store()
+            if not self._store:
+                return
 
-        now = _now_ms()
-        due_jobs = [
-            j for j in self._store.jobs
-            if j.enabled and j.state.next_run_at_ms and now >= j.state.next_run_at_ms
-        ]
+            now = _now_ms()
+            due_jobs = [
+                j for j in self._store.jobs
+                if j.enabled and j.state.next_run_at_ms and now >= j.state.next_run_at_ms
+            ]
 
-        for job in due_jobs:
-            await self._execute_job(job)
+            for job in due_jobs:
+                await self._execute_job(job)
 
-        self._save_store()
-        self._arm_timer()
+            self._save_store()
+            self._arm_timer()
+        finally:
+            self._ticking = False
 
     async def _execute_job(self, job: CronJob) -> None:
         """Execute a single job."""

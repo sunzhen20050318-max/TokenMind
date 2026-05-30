@@ -2676,6 +2676,18 @@ class AgentLoop:
     ) -> str:
         """Process a message directly (for CLI or cron usage)."""
         await self._connect_mcp()
-        msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
+        # Pin session_key_override so msg.session_key matches the session the
+        # turn actually runs in. Cron passes a fully-qualified session id (e.g.
+        # "web:cron-test") as chat_id; without the override, msg.session_key
+        # would be f"{channel}:{chat_id}" = "web:web:cron-test", spawning a
+        # phantom session and a wasted title-gen call (title-gen + usage key off
+        # msg.session_key, not the explicit session_key argument).
+        msg = InboundMessage(
+            channel=channel,
+            sender_id="user",
+            chat_id=chat_id,
+            content=content,
+            session_key_override=session_key,
+        )
         response = await self._process_message(msg, session_key=session_key, on_progress=on_progress)
         return response.content if response else ""

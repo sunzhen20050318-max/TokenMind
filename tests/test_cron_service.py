@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from tokenmind.cron.service import CronService
+from tokenmind.cron.service import _now_ms, CronService
 from tokenmind.cron.types import CronSchedule
 
 
@@ -59,3 +59,73 @@ async def test_running_service_honors_external_disable(tmp_path) -> None:
         assert called == []
     finally:
         service.stop()
+
+
+@pytest.mark.asyncio
+async def test_start_catches_up_a_recently_missed_run(tmp_path) -> None:
+    """A run whose time passed while the process was down must still fire on
+    restart (within the catch-up grace window). This is the exact failure that
+    kept daily jobs from ever running on a desktop app opened intermittently."""
+    store_path = tmp_path / "cron" / "jobs.json"
+    called: list[str] = []
+
+    async def on_job(job) -> None:
+        called.append(job.id)
+
+    seed = CronService(store_path)
+    job = seed.add_job(
+        name="daily",
+        schedule=CronSchedule(kind="every", every_ms=3_600_000),
+        message="hi",
+    )
+    # Simulate the process having been down past the scheduled time.
+    store = seed._load_store()
+    store.jobs[0].state.next_run_at_ms = _now_ms() - 60_000  # 1 min ago
+    seed._save_store()
+
+    service = CronService(store_path, on_job=on_job, heartbeat_seconds=30.0)
+    await service.start()  # fresh instance == process restart
+    try:
+        await asyncio.sleep(0.1)
+        assert job.id in called  # the missed run was caught up
+    finally:
+        service.stop()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_picks_up_a_job_that_became_due(tmp_path) -> None:
+    """A periodic heartbeat must re-check wall-clock and fire due jobs even when
+    no precise timer was armed for them (e.g. after system sleep, or a job
+    modified out-of-band) — not rely on a single long monotonic sleep."""
+    store_path = tmp_path / "cron" / "jobs.json"
+    called: list[str] = []
+
+    async def on_job(job) -> None:
+        called.append(job.id)
+
+    service = CronService(store_path, on_job=on_job, heartbeat_seconds=0.05)
+    await service.start()  # starts with zero jobs → no precise timer armed
+    try:
+        external = CronService(store_path)
+        job = external.add_job(
+            name="x",
+            schedule=CronSchedule(kind="every", every_ms=3_600_000),
+            message="hi",
+        )
+        st = external._load_store()
+        st.jobs[0].state.next_run_at_ms = _now_ms() - 1  # due now
+        external._save_store()
+
+        await asyncio.sleep(0.3)  # several heartbeats
+        assert job.id in called
+    finally:
+        service.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_heartbeat(tmp_path) -> None:
+    service = CronService(tmp_path / "cron" / "jobs.json", heartbeat_seconds=0.05)
+    await service.start()
+    assert service._heartbeat_task is not None
+    service.stop()
+    assert service._heartbeat_task is None
