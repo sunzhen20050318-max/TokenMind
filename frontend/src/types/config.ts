@@ -273,6 +273,8 @@ export interface ChannelCatalogEntry {
   fields: string[];
   required: string[];
   enabled: boolean;
+  /** Live runtime state from the channel manager (web process). */
+  running?: boolean;
   config: Record<string, unknown>;
 }
 

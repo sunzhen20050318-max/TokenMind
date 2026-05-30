@@ -509,6 +509,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
   // to the LLM — otherwise the second click stacks another expensive
   // request behind the lock and the user sees ghost progress.
   const compactBusyRef = useRef(false);
+  // Reactive mirror of compactBusyRef so the context ring can grey out
+  // while a compaction is in flight (the ref alone won't re-render).
+  const [compactBusy, setCompactBusy] = useState(false);
   const dispatchSkill = useCallback(
     async (name: string, args: string) => {
       try {
@@ -579,6 +582,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
           return;
         }
         compactBusyRef.current = true;
+        setCompactBusy(true);
         setPendingSlashToast('正在压缩对话历史，请稍候…（LLM 摘要中）');
         // Snapshot the offset + messages BEFORE the call so we can
         // translate the backend's raw-message count into a
@@ -611,6 +615,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
           );
         } finally {
           compactBusyRef.current = false;
+          setCompactBusy(false);
         }
         return;
       }
@@ -1371,6 +1376,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onNavigateToS
               void handleSlashCommand(name, args || '');
             }}
             planMode={planMode}
+            lastPromptTokens={lastPromptTokens}
+            contextThreshold={compactionThresholdTokens}
+            onCompactContext={() => {
+              void handleSlashCommand('compact', '');
+            }}
+            compacting={compactBusy}
             onTogglePlanMode={() => {
               const next = !planMode;
               void setSessionPlanMode(sessionId, next).then(() => {

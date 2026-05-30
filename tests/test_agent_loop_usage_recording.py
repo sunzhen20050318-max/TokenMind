@@ -84,6 +84,28 @@ def test_record_usage_uses_provider_name_for_provider_dimension(recorder: UsageR
     assert rows[0].bucket == "stub-provider"
 
 
+def test_record_usage_attributes_to_response_model_when_present(recorder: UsageRecorder) -> None:
+    """A fallback response carries its real model; usage must be recorded under it,
+    not the loop's configured primary model."""
+    loop = _LoopShim(recorder)  # loop.model == "claude-opus-4-5"
+    response = SimpleNamespace(
+        usage={"input_tokens": 100, "output_tokens": 50},
+        model="deepseek/deepseek-chat",
+    )
+    loop._record_usage(response, session_key="s1")
+    rows = recorder.aggregate(group_by="model")
+    assert len(rows) == 1
+    assert rows[0].bucket == "deepseek/deepseek-chat"
+
+
+def test_record_usage_falls_back_to_loop_model_without_response_model(recorder: UsageRecorder) -> None:
+    loop = _LoopShim(recorder)
+    response = SimpleNamespace(usage={"input_tokens": 100, "output_tokens": 50})
+    loop._record_usage(response, session_key="s1")
+    rows = recorder.aggregate(group_by="model")
+    assert rows[0].bucket == "claude-opus-4-5"
+
+
 def test_record_usage_falls_back_to_unknown_session_id(recorder: UsageRecorder) -> None:
     loop = _LoopShim(recorder)
     loop._record_usage(

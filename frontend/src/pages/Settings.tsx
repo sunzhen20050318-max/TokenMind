@@ -9,6 +9,7 @@ import {
   createEmptyCreativeCapabilitySettings,
   isCreativeCapabilityConfigured,
 } from '../types/config';
+import { channelRuntimeBadge } from './channelStatusBadge';
 import type {
   AgentSettings,
   CreativeCapabilityKey,
@@ -5583,6 +5584,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             });
             const toggleDisabled =
               channelSavingName === entry.name || (!isConfigured && !entry.enabled);
+            const runtimeBadge = channelRuntimeBadge(entry.enabled, !!entry.running);
             return (
               <div
                 className={`settings-mcp-card ${entry.enabled ? '' : 'is-disabled'}`}
@@ -5593,7 +5595,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {entry.label.charAt(0)}
                   </div>
                   <div className="settings-mcp-card__title">
-                    <div className="settings-mcp-card__name">{entry.label}</div>
+                    <div className="settings-mcp-card__name">
+                      {entry.label}
+                      {runtimeBadge ? (
+                        <span
+                          className={`channel-status-badge channel-status-badge--${runtimeBadge.tone}`}
+                          title={
+                            runtimeBadge.tone === 'online'
+                              ? '该渠道已连接并在运行'
+                              : '已启用但当前未连接（可能正在重连或启动失败）'
+                          }
+                        >
+                          <span className="channel-status-badge__dot" aria-hidden />
+                          {runtimeBadge.label}
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="settings-mcp-card__transport">
                       {entry.enabled
                         ? '已配置启用'

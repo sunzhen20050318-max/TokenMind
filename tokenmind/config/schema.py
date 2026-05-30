@@ -35,7 +35,10 @@ class AgentDefaults(Base):
         "auto"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
     )
     max_tokens: int = 16384
-    context_window_tokens: int = 65_536
+    # Soft compaction threshold (NOT the model's hardware limit): memory
+    # consolidation kicks in once an estimated prompt reaches this, trimming
+    # back to ~half. 256Ki keeps long sessions intact before compacting.
+    context_window_tokens: int = 262_144
     temperature: float = 0.1
     max_tool_iterations: int = 40
     reasoning_effort: str | None = None  # low / medium / high - enables LLM thinking mode

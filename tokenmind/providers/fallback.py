@@ -111,6 +111,8 @@ class FallbackProvider(LLMProvider):
             response = await self._primary.chat(**kwargs)
             if response.finish_reason != "error":
                 self._record_primary_success()
+                if response.model is None:
+                    response.model = primary_model
                 return response
             logger.warning(
                 "Primary model '{}' failed: {}",
@@ -156,6 +158,8 @@ class FallbackProvider(LLMProvider):
                     "Backup model '{}' succeeded after primary '{}' failed",
                     fallback_model, primary_model,
                 )
+                if fallback_response.model is None:
+                    fallback_response.model = fallback_model
                 return fallback_response
 
             last_response = fallback_response

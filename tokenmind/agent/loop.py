@@ -51,6 +51,7 @@ from tokenmind.creative.image_generation import ImageGenerationService
 from tokenmind.knowledge import KnowledgeService
 from tokenmind.projects.store import ProjectStore
 from tokenmind.providers.base import LLMProvider
+from tokenmind.providers.error_messages import friendly_error_message
 from tokenmind.server.attachments import AttachmentStore
 from tokenmind.session.manager import Session, SessionManager
 from tokenmind.usage import UsageRecord, UsageRecorder
@@ -141,7 +142,7 @@ class AgentLoop:
         workspace: Path,
         model: str | None = None,
         max_iterations: int = 40,
-        context_window_tokens: int = 65_536,
+        context_window_tokens: int = 262_144,
         web_search_config: WebSearchConfig | None = None,
         web_proxy: str | None = None,
         exec_config: ExecToolConfig | None = None,
@@ -466,11 +467,14 @@ class AgentLoop:
                     project_id = None
             input_tokens = int(usage.get("input_tokens", 0) or 0)
             cached_input_tokens = int(usage.get("cached_input_tokens", 0) or 0)
+            # Prefer the model the response says it came from (a FallbackProvider
+            # backup tags it), so a failed-over turn is attributed correctly.
+            model_used = getattr(response, "model", None) or model or self.model
             self.usage_recorder.record(
                 UsageRecord(
                     session_id=sid or "unknown",
                     provider=self.provider.provider_name,
-                    model=model or self.model,
+                    model=model_used,
                     input_tokens=input_tokens,
                     cached_input_tokens=cached_input_tokens,
                     cache_write_tokens=int(usage.get("cache_write_tokens", 0) or 0),
@@ -485,7 +489,7 @@ class AgentLoop:
             if session is not None:
                 prompt_tokens = input_tokens + cached_input_tokens
                 if prompt_tokens > 0:
-                    session.record_last_prompt(prompt_tokens, model or self.model)
+                    session.record_last_prompt(prompt_tokens, model_used)
                     try:
                         self.sessions.save(session)
                     except Exception:
@@ -506,7 +510,7 @@ class AgentLoop:
                                     "_session_id": sid,
                                     "_last_prompt_tokens": prompt_tokens,
                                     "_last_prompt_at": session.last_prompt_at,
-                                    "_last_prompt_model": model or self.model,
+                                    "_last_prompt_model": model_used,
                                 },
                             )
                         )
@@ -1450,7 +1454,7 @@ class AgentLoop:
                     # entries on the WebUI timeline as errored, otherwise
                     # they'd sit in "正在写入..." forever.
                     await streaming.abandon_open_edits()
-                    final_content = clean or "Sorry, I encountered an error calling the AI model."
+                    final_content = friendly_error_message(response)
                     break
                 messages = self.context.add_assistant_message(
                     messages, clean, reasoning_content=response.reasoning_content,
@@ -1588,7 +1592,7 @@ class AgentLoop:
                     logger.exception("Error processing message for session {}", msg.session_key)
                     await self.bus.publish_outbound(OutboundMessage(
                         channel=msg.channel, chat_id=msg.chat_id,
-                        content="Sorry, I encountered an error.",
+                        content="抱歉，处理消息时出现了内部错误，请重试。",
                     ))
         finally:
             self._current_session_key.reset(token)

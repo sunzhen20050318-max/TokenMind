@@ -880,11 +880,33 @@ def _get_channel_section(config: Config, name: str) -> dict[str, Any]:
     return _normalize_channel_config(raw)
 
 
+def _channel_running_map() -> dict[str, bool]:
+    """Live ``name -> running`` map from the channel manager, best-effort.
+
+    The web process runs the channel manager in-process, so this reflects real
+    connection state. Returns an empty map (everything offline) when no manager
+    is registered — e.g. a pure API process — instead of failing the request.
+    """
+    try:
+        from tokenmind.server.dependencies import get_channel_manager
+
+        manager = get_channel_manager()
+        if manager is None:
+            return {}
+        return {
+            name: bool(info.get("running"))
+            for name, info in (manager.get_status() or {}).items()
+        }
+    except Exception:
+        return {}
+
+
 @router.get("/channels")
 async def list_channels():
     """Return the catalog of supported channels with their current configuration."""
     try:
         config = load_config()
+        running = _channel_running_map()
         channels = []
         for name, meta in _CHANNEL_REGISTRY.items():
             stored = _get_channel_section(config, name)
@@ -896,6 +918,7 @@ async def list_channels():
                     "fields": meta["fields"],
                     "required": meta.get("required", []),
                     "enabled": bool(stored.get("enabled", False)),
+                    "running": bool(running.get(name, False)),
                     "config": stored,
                 }
             )

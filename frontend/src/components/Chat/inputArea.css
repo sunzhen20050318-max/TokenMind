@@ -314,11 +314,69 @@
 
 .composer__footer-left {
   flex-wrap: wrap;
-  align-items: flex-end;
+  /* Center mixed-height controls (38px icon buttons, 32px knowledge pill,
+     the context ring) on one line so they read as a single toolbar row;
+     matches .composer__footer-right. */
+  align-items: center;
 }
 
 .composer__footer-right {
   margin-left: auto;
+}
+
+.composer__context-gauge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 50%;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.composer__context-gauge:hover:not(:disabled) {
+  transform: scale(1.12);
+}
+
+.composer__context-gauge:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Custom tooltip: instant (no native title delay), anchored ABOVE the ring. */
+.composer__context-gauge__tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e8e8e8;
+  font-size: 11.5px;
+  line-height: 1.4;
+  max-width: 240px;
+  width: max-content;
+  white-space: normal;
+  text-align: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.08s ease;
+  z-index: 30;
+}
+
+.composer__context-gauge:hover .composer__context-gauge__tip,
+.composer__context-gauge:focus-visible .composer__context-gauge__tip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .composer__controls {

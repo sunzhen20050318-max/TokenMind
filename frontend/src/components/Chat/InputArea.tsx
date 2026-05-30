@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import type { UploadProgress } from '../../types';
 import type { KnowledgeBase } from '../../types/knowledge';
 import { KnowledgeMenu } from './KnowledgeMenu';
+import { ContextGaugeRing } from './ContextGaugeRing';
 import { hasFileTransfer } from './inputAreaDrag';
 import { SlashCommandMenu, type SlashCommandOption } from './SlashCommandMenu';
 import './inputArea.css';
@@ -94,6 +95,14 @@ interface InputAreaProps {
    */
   planMode?: boolean;
   onTogglePlanMode?: () => void;
+  /** Last LLM call's prompt-token count, for the context-remaining ring. */
+  lastPromptTokens?: number | null;
+  /** Soft compaction threshold (config-driven), for the context ring. */
+  contextThreshold?: number | null;
+  /** Clicking the context ring compacts earlier history (same as /compact). */
+  onCompactContext?: () => void;
+  /** A compaction is already running — disable the ring. */
+  compacting?: boolean;
 }
 
 interface InlineSelectOption {
@@ -328,6 +337,10 @@ export const InputArea: React.FC<InputAreaProps> = ({
   onSlashCommandSelect,
   planMode = false,
   onTogglePlanMode,
+  lastPromptTokens = null,
+  contextThreshold = null,
+  onCompactContext,
+  compacting = false,
 }) => {
   // Pending list collapses by default once it would dominate the screen.
   const [pendingExpanded, setPendingExpanded] = useState(false);
@@ -828,6 +841,13 @@ export const InputArea: React.FC<InputAreaProps> = ({
               activeWikiId={activeWikiKbId}
               onSetActiveWiki={(id) => onSetActiveWikiKb?.(id)}
               disabled={!!disabled || !!isUploading}
+            />
+
+            <ContextGaugeRing
+              lastPromptTokens={lastPromptTokens}
+              threshold={contextThreshold}
+              onCompact={onCompactContext}
+              busy={compacting}
             />
           </div>
 

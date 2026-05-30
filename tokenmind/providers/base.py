@@ -63,6 +63,10 @@ class LLMResponse:
     error_code: str | None = None
     retry_after_s: float | None = None
     is_transient: bool | None = None
+    # Fully-qualified model that actually produced this response. Set by the
+    # FallbackProvider so usage accounting and the /status card attribute a
+    # turn to the backup that answered, not the configured primary.
+    model: str | None = None
 
     @property
     def has_tool_calls(self) -> bool:

@@ -41,7 +41,7 @@ async def test_get_config_returns_extended_sections(temp_config_path):
 
     response = await get_config()
 
-    assert response.agent["context_window_tokens"] == 65_536
+    assert response.agent["context_window_tokens"] == 262_144
     assert "memory_provider" not in response.agent
     assert "memory_model" not in response.agent
     assert not hasattr(response, "memory_model")
@@ -481,6 +481,39 @@ async def test_list_channels_returns_chinese_app_catalog(temp_config_path):
     for channel in response["channels"]:
         assert "allow_from" in channel["fields"]
         assert "allow_from" in channel["required"]
+
+
+@pytest.mark.asyncio
+async def test_list_channels_reports_runtime_running_state(temp_config_path):
+    """GET /channels surfaces each channel's live running state from the manager."""
+    from tokenmind.server.dependencies import set_channel_manager
+    from tokenmind.server.routes.config import list_channels
+
+    class _StubManager:
+        def get_status(self):
+            return {"feishu": {"enabled": True, "running": True}}
+
+    set_channel_manager(_StubManager())
+    try:
+        response = await list_channels()
+    finally:
+        set_channel_manager(None)
+
+    by_name = {ch["name"]: ch for ch in response["channels"]}
+    assert by_name["feishu"]["running"] is True
+    # A channel the manager isn't running reports False, not missing.
+    assert by_name["dingtalk"]["running"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_channels_running_false_when_no_manager(temp_config_path):
+    """Without a live channel manager (e.g. pure web process), nothing is running."""
+    from tokenmind.server.dependencies import set_channel_manager
+    from tokenmind.server.routes.config import list_channels
+
+    set_channel_manager(None)
+    response = await list_channels()
+    assert all(ch["running"] is False for ch in response["channels"])
 
 
 @pytest.mark.asyncio
