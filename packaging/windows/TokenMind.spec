@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 
 project_root = Path(SPECPATH).parents[1]
@@ -16,7 +16,8 @@ if not (frontend_dist / "index.html").is_file():
 if not app_icon.is_file():
     raise SystemExit("packaging/windows/tokenmind.ico is missing.")
 
-datas = [
+datas = copy_metadata("tokenmind-ai")
+datas += [
     (str(frontend_dist), "tokenmind/webui"),
     (str(project_root / "tokenmind" / "templates"), "tokenmind/templates"),
     (str(project_root / "tokenmind" / "skills"), "tokenmind/skills"),

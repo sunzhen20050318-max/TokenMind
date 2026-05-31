@@ -8,7 +8,7 @@ Info.plist metadata and the .icns app icon.
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 
 project_root = Path(SPECPATH).parents[1]
@@ -26,7 +26,8 @@ if not app_icon.is_file():
         "Run: bash packaging/icons/build-icons.sh"
     )
 
-datas = [
+datas = copy_metadata("tokenmind-ai")
+datas += [
     (str(frontend_dist), "tokenmind/webui"),
     (str(project_root / "tokenmind" / "templates"), "tokenmind/templates"),
     (str(project_root / "tokenmind" / "skills"), "tokenmind/skills"),
